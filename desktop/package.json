@@ -2,6 +2,7 @@
   "name": "penplot-desktop",
   "version": "0.3.0",
   "description": "Penplot desktop workbench (Electron + Python + MCP)",
+  "author": "PenPlot contributors",
   "main": "main.cjs",
   "private": true,
   "scripts": {
@@ -17,6 +18,7 @@
   "build": {
     "appId": "org.penplot.desktop",
     "productName": "Penplot",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist-electron",
       "buildResources": "assets"
@@ -53,16 +55,20 @@
     "win": {
       "icon": "assets/icon.ico",
       "target": [
-        "nsis"
+        "nsis",
+        "zip"
       ]
     },
     "mac": {
       "icon": "assets/icon.png",
-      "target": "dmg"
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.graphics-design"
     },
     "linux": {
       "icon": "assets/icon.png",
-      "target": "AppImage"
+      "target": ["AppImage", "deb"],
+      "category": "Graphics",
+      "maintainer": "tsunehimatoi <tsunehimatoi@users.noreply.github.com>"
     }
   }
 }
