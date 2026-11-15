@@ -1,7 +1,7 @@
-import { ChevronDown, ChevronRight, Plus, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Layers, Plus, Trash2, X } from 'lucide-react'
 import * as React from 'react'
 import type { FontMixEntry, FontRoles } from '@/api/studio'
-import { Button, NumberField } from '@/components/ui'
+import { Button, NumberField, Slider } from '@/components/ui'
 import { useFonts } from '../data'
 import { Row } from './controls'
 import { FontPicker } from './font-picker'
@@ -29,9 +29,10 @@ export function FontConfig({ fontId, fontRoles, fontMix, text, onChange }: FontC
   const roles = fontRoles ?? {}
   const activeRoleCount = ROLE_ITEMS.filter((r) => !!roles[r.key]).length
   const mixList = fontMix ?? []
+  const isMixed = mixList.length > 1
+  const singleFontId = mixList.length === 1 ? mixList[0].font_id : fontId
 
   const [rolesOpen, setRolesOpen] = React.useState(activeRoleCount > 0)
-  const [mixOpen, setMixOpen] = React.useState(mixList.length > 0)
 
   const setRole = (key: keyof FontRoles, val: string | null) => {
     const next: FontRoles = { ...roles, [key]: val || null }
@@ -40,25 +41,24 @@ export function FontConfig({ fontId, fontRoles, fontMix, text, onChange }: FontC
   }
 
   const updateMix = (next: FontMixEntry[]) => {
-    onChange({ font_mix: next.length ? next : null }, 'font_mix')
+    if (next.length <= 1) {
+      const keepId = next[0]?.font_id ?? fontId ?? null
+      onChange({ font_id: keepId, font_mix: null }, 'font_mix')
+    } else {
+      onChange({ font_mix: next }, 'font_mix')
+    }
   }
 
   const addMixFont = () => {
     if (!allFonts.length) return
-    const used = new Set(mixList.map((m) => m.font_id))
-    const candidate =
-      (mixList.length === 0 && fontId ? allFonts.find((f) => f.id === fontId) : undefined) ??
-      allFonts.find((f) => !used.has(f.id)) ??
-      allFonts[0]
+    const baseList: FontMixEntry[] =
+      mixList.length >= 1
+        ? mixList
+        : [{ font_id: singleFontId ?? allFonts[0].id, weight: 1 }]
+    const used = new Set(baseList.map((m) => m.font_id))
+    const candidate = allFonts.find((f) => !used.has(f.id)) ?? allFonts[0]
     if (!candidate) return
-    if (mixList.length === 0 && fontId && candidate.id !== fontId) {
-      updateMix([
-        { font_id: fontId, weight: 1 },
-        { font_id: candidate.id, weight: 1 },
-      ])
-    } else {
-      updateMix([...mixList, { font_id: candidate.id, weight: 1 }])
-    }
+    updateMix([...baseList, { font_id: candidate.id, weight: 1 }])
   }
 
   const totalWeight = mixList.reduce((sum, m) => sum + Math.max(0, m.weight), 0)
@@ -66,38 +66,147 @@ export function FontConfig({ fontId, fontRoles, fontMix, text, onChange }: FontC
   return (
     <>
       <Row label="字体" htmlFor={mainId}>
-        <FontPicker
-          id={mainId}
-          value={fontId}
-          onChange={(v) => onChange({ font_id: v })}
-          text={text}
-        />
+        {isMixed ? (
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <div
+              id={mainId}
+              className="inline-flex h-7 min-w-0 flex-1 items-center justify-between gap-1.5 rounded-sm bg-bg-elevated px-2 text-body text-label shadow-sm pointer-coarse:h-11"
+            >
+              <span className="flex min-w-0 items-center gap-1.5 truncate">
+                <Layers className="size-3.5 shrink-0 text-accent" />
+                <span className="truncate font-medium">混合字体</span>
+              </span>
+              <span className="shrink-0 rounded bg-accent/12 px-1.5 py-0.5 text-caption font-medium text-accent">
+                {mixList.length} 种
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              title="退出混排并恢复单字体"
+              onClick={() => updateMix(mixList.slice(0, 1))}
+            >
+              <X className="size-3.5" />
+            </Button>
+          </div>
+        ) : (
+          <FontPicker
+            id={mainId}
+            value={singleFontId}
+            onChange={(v) => onChange({ font_id: v, font_mix: null })}
+            text={text}
+          />
+        )}
       </Row>
 
-      <div className="pt-0.5">
+      <div className="px-1">
+        {isMixed ? (
+          <div className="space-y-1.5 rounded-md bg-quaternary-fill p-2">
+            {mixList.map((entry, idx) => {
+              const pct = totalWeight > 0 ? Math.round((Math.max(0, entry.weight) / totalWeight) * 100) : 0
+              return (
+                <div key={idx} className="space-y-1.5 rounded-sm bg-bg-elevated p-2 shadow-sm">
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-1">
+                    <FontPicker
+                      value={entry.font_id}
+                      onChange={(v) => {
+                        const next = mixList.map((m, i) => (i === idx ? { ...m, font_id: v } : m))
+                        updateMix(next)
+                      }}
+                      text={text}
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="移除此字体"
+                      onClick={() => updateMix(mixList.filter((_, i) => i !== idx))}
+                    >
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 text-caption text-secondary-label">权重</span>
+                    <Slider
+                      min={0}
+                      max={10}
+                      step={0.5}
+                      value={[entry.weight]}
+                      onValueChange={([w]) => {
+                        const next = mixList.map((m, i) => (i === idx ? { ...m, weight: Math.max(0, w) } : m))
+                        updateMix(next)
+                      }}
+                      className="flex-1"
+                    />
+                    <NumberField
+                      value={entry.weight}
+                      min={0}
+                      max={100}
+                      step={0.5}
+                      onChange={(w) => {
+                        const next = mixList.map((m, i) => (i === idx ? { ...m, weight: Math.max(0, w) } : m))
+                        updateMix(next)
+                      }}
+                      className="w-14"
+                    />
+                    <span className="w-8 text-right text-caption tabular-nums text-secondary-label">
+                      {pct}%
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+            <Button
+              size="sm"
+              variant="tinted"
+              onClick={addMixFont}
+              disabled={!allFonts.length}
+              className="w-full"
+            >
+              <Plus className="size-3.5" />
+              添加混合字体
+            </Button>
+          </div>
+        ) : (
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={addMixFont}
+              disabled={!allFonts.length}
+              title="添加混合字体"
+              className="h-6 px-2 text-caption text-secondary-label hover:text-label"
+            >
+              <Plus className="size-3" />
+              添加混合字体
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="px-1 pt-0.5">
         <button
           type="button"
           onClick={() => setRolesOpen((v) => !v)}
-          className="flex w-full items-center justify-between py-1 text-[11px] font-medium text-[var(--ink-2)] hover:text-[var(--ink)]"
+          className="flex w-full items-center justify-between rounded-sm py-1 text-footnote font-medium text-secondary-label transition-colors hover:text-label"
         >
           <span className="flex items-center gap-1">
-            {rolesOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {rolesOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
             分类字体
           </span>
           {activeRoleCount > 0 && (
-            <span className="rounded bg-[var(--accent-soft)] px-1.5 py-0.5 text-[10px] text-[var(--accent)]">
+            <span className="rounded bg-accent/12 px-1.5 py-0.5 text-caption font-medium text-accent">
               已设 {activeRoleCount} 项
             </span>
           )}
         </button>
 
         {rolesOpen && (
-          <div className="mt-1 space-y-1.5 rounded border border-[var(--line)] bg-[var(--bg-2)]/40 p-2">
+          <div className="mt-1 space-y-1.5 rounded-md bg-quaternary-fill p-2">
             {ROLE_ITEMS.map(({ key, label, sample }) => {
               const val = roles[key] ?? null
               return (
-                <div key={key} className="grid grid-cols-[40px_1fr_auto] items-center gap-1.5">
-                  <span className="text-[11px] text-[var(--ink-2)]">{label}</span>
+                <div key={key} className="grid grid-cols-[36px_1fr_auto] items-center gap-1.5">
+                  <span className="text-footnote text-secondary-label">{label}</span>
                   <FontPicker
                     value={val}
                     onChange={(v) => setRole(key, v)}
@@ -110,115 +219,14 @@ export function FontConfig({ fontId, fontRoles, fontMix, text, onChange }: FontC
                       title={`清除${label}字体`}
                       onClick={() => setRole(key, null)}
                     >
-                      <X className="h-3 w-3" />
+                      <X className="size-3" />
                     </Button>
                   ) : (
-                    <span className="w-6 text-center text-[10px] text-[var(--ink-3)]">默认</span>
+                    <span className="w-7 text-center text-caption text-tertiary-label">默认</span>
                   )}
                 </div>
               )
             })}
-          </div>
-        )}
-      </div>
-
-      <div className="pt-0.5">
-        <button
-          type="button"
-          onClick={() => setMixOpen((v) => !v)}
-          className="flex w-full items-center justify-between py-1 text-[11px] font-medium text-[var(--ink-2)] hover:text-[var(--ink)]"
-        >
-          <span className="flex items-center gap-1">
-            {mixOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            按比例混排
-          </span>
-          {mixList.length > 0 && (
-            <span className="rounded bg-[var(--accent-soft)] px-1.5 py-0.5 text-[10px] text-[var(--accent)]">
-              {mixList.length} 种字体
-            </span>
-          )}
-        </button>
-
-        {mixOpen && (
-          <div className="mt-1 space-y-2 rounded border border-[var(--line)] bg-[var(--bg-2)]/40 p-2">
-            {mixList.length === 0 ? (
-              <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--ink-3)]">
-                <span>未启用混排，当前仅使用主字体</span>
-                <Button size="sm" variant="bordered" onClick={addMixFont}>
-                  <Plus className="mr-1 h-3 w-3" />
-                  启用
-                </Button>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-1.5">
-                  {mixList.map((entry, idx) => {
-                    const pct = totalWeight > 0 ? Math.round((Math.max(0, entry.weight) / totalWeight) * 100) : 0
-                    return (
-                      <div key={idx} className="space-y-1 rounded border border-[var(--line)]/60 bg-[var(--bg-1)] p-1.5">
-                        <div className="grid grid-cols-[1fr_auto] items-center gap-1">
-                          <FontPicker
-                            value={entry.font_id}
-                            onChange={(v) => {
-                              const next = mixList.map((m, i) => (i === idx ? { ...m, font_id: v } : m))
-                              updateMix(next)
-                            }}
-                            text={text}
-                          />
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title="移除此字体"
-                            onClick={() => updateMix(mixList.filter((_, i) => i !== idx))}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-[var(--ink-2)]">权重</span>
-                          <input
-                            type="range"
-                            min={0}
-                            max={10}
-                            step={0.5}
-                            value={entry.weight}
-                            onChange={(e) => {
-                              const w = Math.max(0, parseFloat(e.currentTarget.value) || 0)
-                              const next = mixList.map((m, i) => (i === idx ? { ...m, weight: w } : m))
-                              updateMix(next)
-                            }}
-                            className="h-1.5 flex-1 accent-[var(--accent)]"
-                          />
-                          <NumberField
-                            value={entry.weight}
-                            min={0}
-                            max={100}
-                            step={0.5}
-                            onChange={(w) => {
-                              const next = mixList.map((m, i) => (i === idx ? { ...m, weight: Math.max(0, w) } : m))
-                              updateMix(next)
-                            }}
-                            className="w-14"
-                          />
-                          <span className="w-8 text-right text-[10px] tabular-nums text-[var(--ink-2)]">
-                            {pct}%
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-                <div className="flex items-center justify-between pt-0.5">
-                  <Button size="sm" variant="bordered" onClick={addMixFont}>
-                    <Plus className="mr-1 h-3 w-3" />
-                    添加字体
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => updateMix([])}>
-                    清空混排
-                  </Button>
-                </div>
-              </>
-            )}
           </div>
         )}
       </div>

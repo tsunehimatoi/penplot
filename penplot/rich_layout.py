@@ -322,11 +322,6 @@ class RichTextDocument:
 
             if isinstance(blk, HrBlock):
                 self._ensure_lines(1)
-                y = self._line_y() + self.line_h * 0.5
-                p = Path()
-                p.move_to(base_left, y)
-                p.line_to(base_left + avail_base, y)
-                self._cur_page.append(p)
                 self._advance_lines(1)
                 continue
 
@@ -346,12 +341,6 @@ class RichTextDocument:
                     if quote_depth:
                         self._draw_quote_bars(quote_depth, y_top, lines_per_row)
                     self._advance_lines(lines_per_row)
-                if blk.level <= 2 and self._line_idx > 0:
-                    uy = self._line_y() - self.line_h * 0.12
-                    rule = Path()
-                    rule.move_to(base_left, uy)
-                    rule.line_to(base_left + avail_base, uy)
-                    self._cur_page.append(rule)
                 continue
 
             if isinstance(blk, ParagraphBlock):
