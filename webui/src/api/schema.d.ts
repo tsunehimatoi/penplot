@@ -342,6 +342,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Project
+         * @description Element-local canvas paths only. The returned ID cannot be printed/exported.
+         */
+        post: operations["preview_project_api_v1_projects__project_id__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/batch": {
         parameters: {
             query?: never;
@@ -462,6 +482,23 @@ export interface paths {
          *     (point index), f32 xy[2*offsets[n]]. Page space: mm, y down.
          */
         get: operations["paths_bin_api_v1_render__rid__pages__index__paths_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/render/{rid}/paths-stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paths Stream */
+        get: operations["paths_stream_api_v1_render__rid__paths_stream_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2489,6 +2526,40 @@ export interface components {
             hidden?: boolean | null;
             /** Name */
             name?: string | null;
+        };
+        /** ElementPreviewPage */
+        ElementPreviewPage: {
+            /** Index */
+            index: number;
+            /** Source Page */
+            source_page: number;
+            /**
+             * @default {
+             *       "missing_glyphs": [],
+             *       "clipped": false,
+             *       "overflow": false,
+             *       "messages": []
+             *     }
+             */
+            warnings: components["schemas"]["PageWarnings"];
+        };
+        /** ElementPreviewResult */
+        ElementPreviewResult: {
+            /** Rid */
+            rid: string;
+            /**
+             * Preview Only
+             * @default true
+             * @constant
+             */
+            preview_only: true;
+            /** Pages */
+            pages: components["schemas"]["ElementPreviewPage"][];
+            /**
+             * Elapsed Ms
+             * @default 0
+             */
+            elapsed_ms: number;
         };
         /** ErrorInfo */
         ErrorInfo: {
@@ -6558,6 +6629,8 @@ export type DiagnosticsResult = components['schemas']['DiagnosticsResult'];
 export type DiskInfo = components['schemas']['DiskInfo'];
 export type DxfElement = components['schemas']['DxfElement'];
 export type ElementPatch = components['schemas']['ElementPatch'];
+export type ElementPreviewPage = components['schemas']['ElementPreviewPage'];
+export type ElementPreviewResult = components['schemas']['ElementPreviewResult'];
 export type ErrorInfo = components['schemas']['ErrorInfo'];
 export type Features = components['schemas']['Features'];
 export type FileInfo = components['schemas']['FileInfo'];
@@ -7889,6 +7962,61 @@ export interface operations {
             };
         };
     };
+    preview_project_api_v1_projects__project_id__preview_post: {
+        parameters: {
+            query?: {
+                wait?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ElementPreviewResult"];
+                };
+            };
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRef"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     batch_api_v1_projects__project_id__batch_post: {
         parameters: {
             query?: {
@@ -8178,6 +8306,48 @@ export interface operations {
             path: {
                 rid: string;
                 index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    paths_stream_api_v1_render__rid__paths_stream_get: {
+        parameters: {
+            query?: {
+                space?: string;
+            };
+            header?: never;
+            path: {
+                rid: string;
             };
             cookie?: never;
         };

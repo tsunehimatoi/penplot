@@ -1724,6 +1724,91 @@
     }
    }
   },
+  "/api/v1/projects/{project_id}/preview": {
+   "post": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Preview Project",
+    "description": "Element-local canvas paths only. The returned ID cannot be printed/exported.",
+    "operationId": "preview_project_api_v1_projects__project_id__preview_post",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "wait",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "number",
+       "maximum": 60,
+       "minimum": 0,
+       "default": 0.0,
+       "title": "Wait"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RenderRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ElementPreviewResult"
+        }
+       }
+      }
+     },
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TaskRef"
+        }
+       }
+      },
+      "description": "Accepted"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorBody"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorBody"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/projects/{project_id}/batch": {
    "post": {
     "tags": [
@@ -2197,6 +2282,65 @@
       "schema": {
        "type": "integer",
        "title": "Index"
+      }
+     },
+     {
+      "name": "space",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "pattern": "^(page|machine)$",
+       "default": "page",
+       "title": "Space"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/octet-stream": {}
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorBody"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorBody"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/render/{rid}/paths-stream": {
+   "get": {
+    "tags": [
+     "render"
+    ],
+    "summary": "Paths Stream",
+    "operationId": "paths_stream_api_v1_render__rid__paths_stream_get",
+    "parameters": [
+     {
+      "name": "rid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Rid"
       }
      },
      {
@@ -8382,6 +8526,65 @@
     },
     "type": "object",
     "title": "ElementPatch"
+   },
+   "ElementPreviewPage": {
+    "properties": {
+     "index": {
+      "type": "integer",
+      "title": "Index"
+     },
+     "source_page": {
+      "type": "integer",
+      "title": "Source Page"
+     },
+     "warnings": {
+      "$ref": "#/components/schemas/PageWarnings",
+      "default": {
+       "missing_glyphs": [],
+       "clipped": false,
+       "overflow": false,
+       "messages": []
+      }
+     }
+    },
+    "type": "object",
+    "required": [
+     "index",
+     "source_page"
+    ],
+    "title": "ElementPreviewPage"
+   },
+   "ElementPreviewResult": {
+    "properties": {
+     "rid": {
+      "type": "string",
+      "title": "Rid"
+     },
+     "preview_only": {
+      "type": "boolean",
+      "const": true,
+      "title": "Preview Only",
+      "default": true
+     },
+     "pages": {
+      "items": {
+       "$ref": "#/components/schemas/ElementPreviewPage"
+      },
+      "type": "array",
+      "title": "Pages"
+     },
+     "elapsed_ms": {
+      "type": "number",
+      "title": "Elapsed Ms",
+      "default": 0.0
+     }
+    },
+    "type": "object",
+    "required": [
+     "rid",
+     "pages"
+    ],
+    "title": "ElementPreviewResult"
    },
    "ErrorInfo": {
     "properties": {

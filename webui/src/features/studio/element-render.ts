@@ -12,6 +12,7 @@ export function useElementRender(el: Element): { r: ElRender | undefined; stale:
 }
 
 export function resolveElementRender(id: string, r: ElRender | undefined): { r: ElRender | undefined; stale: boolean } {
+  if ((r?.status === 'pending' || r?.status === 'error') && r.pages) return { r, stale: false }
   if (r?.status === 'ok') {
     lastGood.set(id, r)
     return { r, stale: false }

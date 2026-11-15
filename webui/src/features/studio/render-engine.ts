@@ -13,12 +13,13 @@ import { useEffect, useRef } from 'react'
 import { create } from 'zustand'
 import { errorMessage, isApiError } from '@/api/client'
 import {
-  fetchPaths, renderProject, type Element, type PaperRef, type Polylines, type ProjectDoc, type RenderResult,
+  fetchPaths, previewProject, renderProject, type Element, type PaperRef, type Polylines, type ProjectDoc, type RenderResult,
 } from '@/api/studio'
 import { uid } from '@/lib/id'
 import { onLinkRestored } from '@/api/net'
 import { cacheGetMany, cachePutMany } from './el-cache'
-import { fetchPathPreview } from './path-conversion'
+import { streamPathPreviews } from './path-conversion'
+import type { PathPreview } from './path-data'
 import { IDENTITY } from './model'
 
 export const CLIENT_ID = uid('ui').slice(0, 10)
@@ -39,6 +40,9 @@ export interface ElRender {
   cached?: boolean
   /** 0..1 while a slow (202 task) render runs */
   progress?: number
+  message?: string
+  completedPages?: number
+  totalPages?: number
 }
 
 export interface PageRenderState {
@@ -86,6 +90,15 @@ let wanted = new Set<string>()
 let lastItems: RenderItem[] = []
 const attempts = new Map<string, number>()
 let retryTimer: ReturnType<typeof setTimeout> | null = null
+const controllers = new Map<string, AbortController>()
+export function cancelElementRender(key: string) { controllers.get(key)?.abort() }
+
+const idleWaiters = new Set<() => void>()
+function elementsIdle() {
+  if (!inflight && !queue.size) return Promise.resolve()
+  return new Promise<void>(resolve => idleWaiters.add(resolve))
+}
+
 let inflight = false
 let timer: ReturnType<typeof setTimeout> | null = null
 let projectId: string | null = null
@@ -98,19 +111,26 @@ export function requestElements(pid: string, items: RenderItem[], variables: Rec
   vars = variables
   lastItems = items
   wanted = new Set(items.map((i) => i.key))
+  for (const ctl of new Set(controllers.values())) {
+    if (![...controllers].some(([k, c]) => c === ctl && wanted.has(k))) ctl.abort()
+  }
   const els = useRender.getState().els
   let added = false
   const fresh: string[] = []
   for (const it of items) {
     const cur = els[it.key]
-    if (cur && (cur.status !== 'error' || Date.now() - cur.at < 15_000)) continue
+    if (cur && (cur.status !== 'error' || cur.code === 'cancelled' || Date.now() - cur.at < 15_000)) continue
     if (!cur) fresh.push(it.key)
     if (!queue.has(it.key)) {
       queue.set(it.key, it)
       added = true
     }
   }
-  if (added) schedule(160)
+  if (added) {
+    // Background G-code statistics must not occupy the only worker ahead of a new canvas.
+    if (running?.background) pageCtl?.abort()
+    schedule(160)
+  }
   // show the last known paths (IndexedDB) right away; the server render replaces them
   if (fresh.length) {
     void cacheGetMany(fresh).then((hit) => {
@@ -139,7 +159,7 @@ function retryFailed() {
   const els = useRender.getState().els
   let added = false
   for (const it of lastItems) {
-    if (els[it.key]?.status === 'error' && wanted.has(it.key) && !queue.has(it.key)) {
+    if (els[it.key]?.status === 'error' && els[it.key]?.code !== 'cancelled' && wanted.has(it.key) && !queue.has(it.key)) {
       queue.set(it.key, it)
       added = true
     }
@@ -156,6 +176,7 @@ export function retryErrors() {
   const els = { ...useRender.getState().els }
   for (const [k, v] of Object.entries(els)) if (v.status === 'error') delete els[k]
   useRender.setState({ els })
+  if (projectId) requestElements(projectId, lastItems, vars)
 }
 
 function schedule(ms: number) {
@@ -166,7 +187,7 @@ function schedule(ms: number) {
 async function flush() {
   if (inflight || !projectId) return
   for (const k of [...queue.keys()]) if (!wanted.has(k)) queue.delete(k)
-  if (!queue.size) return
+  if (!queue.size) { for (const resolve of idleWaiters) resolve(); idleWaiters.clear(); return }
   const batch = [...queue.values()].slice(0, 16)
   for (const it of batch) queue.delete(it.key)
   const pend: Record<string, ElRender> = {}
@@ -179,6 +200,7 @@ async function flush() {
   } finally {
     inflight = false
     if (queue.size) schedule(30)
+    else { for (const resolve of idleWaiters) resolve(); idleWaiters.clear() }
   }
 }
 
@@ -196,60 +218,64 @@ async function renderBatch(pid: string, batch: RenderItem[]): Promise<void> {
       elements: [{ ...it.el, transform: { ...IDENTITY }, page_offset: 0, z: 0, hidden: false, locked: false } as Element],
     })),
   }
-  let res: RenderResult
+  const ctl = new AbortController()
+  for (const it of batch) controllers.set(it.key, ctl)
+  const update = (progress: number, message: string) => {
+    const els = useRender.getState().els
+    const m: Record<string, ElRender> = {}
+    for (const it of batch) m[it.key] = { ...els[it.key], status: 'pending', progress, message, at: Date.now() }
+    useRender.getState().setMany(m)
+  }
+  const out: Record<string, ElRender> = {}
   try {
-    res = await renderProject(pid, { doc, variables: vars, overrides: SCRATCH_PRINT }, {
-      onProgress: (t) => {
-        const els = useRender.getState().els
-        const m: Record<string, ElRender> = {}
-        for (const it of batch) if (els[it.key]?.status === 'pending') m[it.key] = { ...els[it.key], progress: t.progress ?? 0 }
-        if (Object.keys(m).length) useRender.getState().setMany(m)
-      },
+    update(0, '正在排版并生成路径…')
+    const res = await previewProject(pid, { doc, variables: vars, overrides: SCRATCH_PRINT }, {
+      signal: ctl.signal, slot: `${CLIENT_ID}/elements`,
+      onProgress: t => update((t.progress ?? 0) * 0.8, t.message || '正在排版并生成路径…'),
     })
+    ctl.signal.throwIfAborted()
+    const groups = batch.map((_it, i) => res.pages.filter(p => p.source_page === i))
+    const previews: PathPreview[][] = groups.map(pages => pages.map(() => ({ d: '', bbox: null, strokes: 0 })))
+    const completed = batch.map(() => 0)
+    const locations = new Map(groups.flatMap((pages, i) => pages.map((p, j) => [p.index, [i, j] as const] as const)))
+    const publish = (i: number, done: boolean) => {
+      const it = batch[i], ds = previews[i], w = groups[i][0]?.warnings
+      const value: ElRender = {
+        status: done ? 'ok' : 'pending', d: ds[0]?.d ?? '', bbox: ds[0]?.bbox ?? null,
+        pages: it.el.type === 'flow_text' ? ds.slice() : undefined,
+        strokes: ds.reduce((n, p) => n + p.strokes, 0), missing: w?.missing_glyphs ?? [], overflow: !!w?.overflow,
+        progress: done ? 1 : 0.8 + 0.2 * completed[i] / Math.max(1, ds.length),
+        completedPages: completed[i], totalPages: ds.length,
+        message: `预览已就绪 ${completed[i]} / ${ds.length} 页`, at: Date.now(),
+      }
+      out[it.key] = value
+      useRender.getState().set(it.key, value)
+    }
+    batch.forEach((_it, i) => publish(i, false))
+    await streamPathPreviews(res.rid, res.pages.map(p => p.index), (index, preview) => {
+      const [i, j] = locations.get(index)!
+      previews[i][j] = preview
+      completed[i]++
+      publish(i, false)
+    }, ctl.signal)
+    batch.forEach((it, i) => { publish(i, true); attempts.delete(it.key) })
+    void cachePutMany(out)
   } catch (e) {
-    if (batch.length > 1 && !(isApiError(e) && e.isOffline)) {
-      // isolate the failing element(s)
+    const cancelled = ctl.signal.aborted || (e as DOMException)?.name === 'AbortError'
+    if (!cancelled && batch.length > 1 && !(isApiError(e) && e.isOffline)) {
       for (const it of batch) await renderBatch(pid, [it])
       return
     }
-    const out: Record<string, ElRender> = {}
-    const els = useRender.getState().els
-    for (const it of batch) {
-      // keep showing cached / previous paths while retrying
-      const prev = els[it.key]
-      out[it.key] = prev?.status === 'ok' && prev.cached ? prev : { status: 'error', error: errorMessage(e), code: isApiError(e) ? e.code : undefined, at: Date.now() }
+    for (const it of batch) out[it.key] = {
+      ...useRender.getState().els[it.key], status: 'error',
+      error: cancelled ? '已取消预览' : errorMessage(e),
+      code: cancelled ? 'cancelled' : isApiError(e) ? e.code : undefined, at: Date.now(),
     }
     useRender.getState().setMany(out)
-    scheduleRetry(batch.map((it) => it.key))
-    return
+    if (!cancelled) scheduleRetry(batch.map(it => it.key))
+  } finally {
+    for (const it of batch) if (controllers.get(it.key) === ctl) controllers.delete(it.key)
   }
-  const out: Record<string, ElRender> = {}
-  await Promise.all(
-    batch.map(async (it, i) => {
-      const pages = res.pages.filter((p) => p.source_page === i)
-      try {
-        const ds = await Promise.all(pages.map((p) => fetchPathPreview(res.rid, p.index)))
-        const w = pages[0]?.warnings
-        out[it.key] = {
-          status: 'ok',
-          d: ds[0]?.d ?? '',
-          bbox: ds[0]?.bbox ?? null,
-          pages: it.el.type === 'flow_text' ? ds : undefined,
-          strokes: ds.reduce((n, p) => n + p.strokes, 0),
-          missing: w?.missing_glyphs ?? [],
-          overflow: !!w?.overflow,
-          at: Date.now(),
-        }
-      } catch (e) {
-        out[it.key] = { status: 'error', error: errorMessage(e), at: Date.now() }
-      }
-    }),
-  )
-  useRender.getState().setMany(out)
-  const failed = Object.entries(out).filter(([, v]) => v.status === 'error').map(([k]) => k)
-  for (const k of Object.keys(out)) if (out[k].status === 'ok') attempts.delete(k)
-  if (failed.length) scheduleRetry(failed)
-  void cachePutMany(out)
 }
 
 // ------------------------------------------------------------------ page render
@@ -281,6 +307,7 @@ interface PageReq {
   version: number
   vars: Record<string, string>
   hash: string
+  background: boolean
   waiters: ((r: RenderResult | null) => void)[]
 }
 /** hash of the doc the current `page.result` was rendered from */
@@ -295,7 +322,7 @@ async function runPage(req: PageReq) {
   useRender.getState().setPage({ status: 'running', error: null })
   let out: RenderResult | null = null
   try {
-    const result = await renderProject(req.pid, { doc: req.doc, variables: req.vars }, { signal: ctl.signal, slot: `${CLIENT_ID}/page` })
+    const result = await renderProject(req.pid, { doc: req.doc, variables: req.vars }, { signal: ctl.signal, slot: `${CLIENT_ID}/page`, wait: 0 })
     if (!ctl.signal.aborted) {
       doneHash = req.hash
       out = result
@@ -314,7 +341,7 @@ async function runPage(req: PageReq) {
     for (const w of req.waiters) w(out)
     const n = nextReq
     nextReq = null
-    if (n && !ctl.signal.aborted) {
+    if (n) {
       if (n.hash === doneHash) {
         useRender.getState().setPage({ status: 'ok', version: n.version })
         for (const w of n.waiters) w(useRender.getState().page.result)
@@ -325,10 +352,10 @@ async function runPage(req: PageReq) {
 }
 
 /**
- * Render the whole document. Never cancels a running render (on a slow board that starved the preview):
+ * Render the whole document. Explicit print/export requests finish; background statistics yield to a new canvas:
  * a newer request waits and replaces any older waiting one. Identical content (stable hash) is not re-rendered.
  */
-export function renderDocNow(pid: string, doc: ProjectDoc, version: number, variables: Record<string, string>): Promise<RenderResult | null> {
+export function renderDocNow(pid: string, doc: ProjectDoc, version: number, variables: Record<string, string>, background = false): Promise<RenderResult | null> {
   const hash = stableHash([pid, doc, variables])
   const page = useRender.getState().page
   if (!running && hash === doneHash && page.result) {
@@ -336,11 +363,12 @@ export function renderDocNow(pid: string, doc: ProjectDoc, version: number, vari
     return Promise.resolve(page.result)
   }
   if (running && running.hash === hash) {
+    if (!background) running.background = false
     nextReq = null
     return new Promise((res) => running!.waiters.push(res))
   }
   return new Promise((res) => {
-    const req: PageReq = { pid, doc, version, vars: variables, hash, waiters: [res] }
+    const req: PageReq = { pid, doc, version, vars: variables, hash, background, waiters: [res] }
     if (running) {
       if (nextReq) req.waiters.push(...nextReq.waiters)
       nextReq = req
@@ -358,11 +386,15 @@ export function usePageRender(pid: string | null, doc: ProjectDoc | null, versio
   const last = useRef(0)
   useEffect(() => {
     if (!pid || !doc || version === last.current) return
+    let cancelled = false
     const t = setTimeout(() => {
-      last.current = version
-      void renderDocNow(pid, doc, version, variables)
+      void elementsIdle().then(() => {
+        if (cancelled || lastItems.some(it => useRender.getState().els[it.key]?.code === 'cancelled')) return
+        last.current = version
+        void renderDocNow(pid, doc, version, variables, true)
+      })
     }, 900)
-    return () => clearTimeout(t)
+    return () => { cancelled = true; clearTimeout(t) }
   }, [pid, doc, version, variables])
   useEffect(
     () => () => {

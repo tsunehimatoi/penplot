@@ -5,7 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
 from ..errors import ApiError
-from ..schemas import (BatchRequest, BatchResult, ElementPatch, Project, ProjectCreate,
+from ..schemas import (BatchRequest, BatchResult, ElementPatch, ElementPreviewResult, Project, ProjectCreate,
                        ProjectImportResult, ProjectSummary, ProjectUpdate, RenderRequest,
                        RenderResult, SaveAsTemplate, TaskRef)
 from ._util import attachment, wait_or_202
@@ -92,6 +92,16 @@ async def render_project(project_id: str, body: RenderRequest, request: Request,
     c = request.app.state.ctx
     slot = request.headers.get('x-render-slot')
     task = await run_in_threadpool(c.render.submit_project, project_id, body, slot)
+    return await wait_or_202(c, task, wait)
+
+
+@router.post('/{project_id}/preview', response_model=ElementPreviewResult, responses={202: {'model': TaskRef}})
+async def preview_project(project_id: str, body: RenderRequest, request: Request,
+                          wait: float = Query(0.0, ge=0, le=60)):
+    """Element-local canvas paths only. The returned ID cannot be printed/exported."""
+    c = request.app.state.ctx
+    task = await run_in_threadpool(c.render.submit_project, project_id, body,
+                                  request.headers.get('x-render-slot'), True)
     return await wait_or_202(c, task, wait)
 
 

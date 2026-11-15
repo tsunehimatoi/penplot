@@ -322,7 +322,9 @@ export function usedVariables(doc: ProjectDoc): string[] {
 export function elementKey(el: Element, paper: PaperBase, vars: Record<string, string>): string {
   const p = el.type === 'flow_text' ? JSON.stringify([paper.width_mm, paper.height_mm, paper.orientation, paper.margins, paper.ruling]) : ''
   const usesVars = (el.type === 'text' || el.type === 'flow_text') && el.props.text.includes('{{')
-  return `${el.type}|${JSON.stringify(el.props)}|${p}|${usesVars ? JSON.stringify(vars) : ''}`
+  // Invalidate persisted rich-text paths from the former offset-copy bold renderer.
+  const version = el.type === 'flow_text' ? 'single-pass-v1|' : ''
+  return `${version}${el.type}|${JSON.stringify(el.props)}|${p}|${usesVars ? JSON.stringify(vars) : ''}`
 }
 
 export function variableValues(doc: ProjectDoc): Record<string, string> {

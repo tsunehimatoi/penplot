@@ -33,7 +33,6 @@ class _RichItem:
     is_space: bool = False
     underline: bool = False
     strike: bool = False
-    bold: bool = False
 
 
 class RichTextDocument:
@@ -81,7 +80,7 @@ class RichTextDocument:
         return lo if lo == hi else lo + self.rng.random() * (hi - lo)
 
     def _glyph_paths(self, ch: str, line_h_mm: float, scale_mult: float = 1.0,
-                     bold: bool = False, italic: bool = False,
+                     italic: bool = False,
                      apply_jitter: bool = True) -> tuple[list[Path], float]:
         """Build glyph Path(s) in local coords (y=0 at top of line_h_mm, baseline at 0.75*line_h_mm)."""
         fs = self.fs
@@ -121,12 +120,7 @@ class RichTextDocument:
                     c[idx] = c[idx] - 0.22 * (c[idx + 1] - baseline)
             if fs.simple > 0 and apply_jitter:
                 p.rdp_simplify(fs.simple * 25.4 / 96.0)
-            out = [p]
-            if bold:
-                p2 = p.clone()
-                p2.transform(Affine2D().translate(min(0.14, line_h_mm * eff_size * 0.03), 0.0))
-                out.append(p2)
-            return out, adv
+            return [p], adv
 
         if ch == '\t':
             return [], line_h_mm * eff_size * 0.6
@@ -206,7 +200,7 @@ class RichTextDocument:
     # ------------------------------------------------------------------ inline layout & wrapping
 
     def _runs_to_wrapped_lines(self, runs: list[Inline], first_w: float, rest_w: float,
-                               scale_mult: float = 1.0, force_bold: bool = False) -> list[list[_RichItem]]:
+                               scale_mult: float = 1.0) -> list[list[_RichItem]]:
         """Wrap inline runs (TextRun + InlineMath) into lines of _RichItem."""
         lines: list[list[_RichItem]] = []
         cur: list[_RichItem] = []
@@ -237,6 +231,7 @@ class RichTextDocument:
                 cur_w += step
                 continue
 
+            # Bold remains an editor/IR style; a pen writes each glyph only once.
             # TextRun
             sc = scale_mult * (0.68 if (run.sup or run.sub) else 1.0)
             y_shift = (-self.line_h * 0.22) if run.sup else ((self.line_h * 0.16) if run.sub else 0.0)
@@ -248,7 +243,7 @@ class RichTextDocument:
                     continue
                 ps, adv = self._glyph_paths(
                     ch, self.line_h, scale_mult=sc,
-                    bold=force_bold or run.bold, italic=run.italic,
+                    italic=run.italic,
                 )
                 if y_shift:
                     for p in ps:
@@ -259,7 +254,7 @@ class RichTextDocument:
                     push_line()
                 cur.append(_RichItem(
                     ps, adv, step, is_space=(ch == ' '),
-                    underline=run.underline, strike=run.strike, bold=force_bold or run.bold,
+                    underline=run.underline, strike=run.strike,
                 ))
                 cur_w += step
 
@@ -330,7 +325,7 @@ class RichTextDocument:
                 lvl_factor = max(1.0, self.heading_scale - (blk.level - 1) * 0.12)
                 lines_per_row = 2 if lvl_factor >= 1.3 else 1
                 wrapped = self._runs_to_wrapped_lines(blk.runs, avail_base, avail_base,
-                                                      scale_mult=lvl_factor, force_bold=True)
+                                                      scale_mult=lvl_factor)
                 align = blk.align or default_align
                 for wl in wrapped:
                     self._ensure_lines(lines_per_row)
@@ -509,17 +504,17 @@ class RichTextDocument:
         pad_x = 1.5
         inner_w = max(4.0, col_w - pad_x * 2)
 
-        def prepare_row(cells: list[list[Inline]], is_hdr: bool) -> list[list[list[_RichItem]]]:
+        def prepare_row(cells: list[list[Inline]]) -> list[list[list[_RichItem]]]:
             wrapped_cols = []
             for ci in range(ncols):
                 runs = cells[ci] if ci < len(cells) else []
                 wrapped_cols.append(self._runs_to_wrapped_lines(runs, inner_w, inner_w,
-                                                                scale_mult=0.92, force_bold=is_hdr))
+                                                                scale_mult=0.92))
             return wrapped_cols
 
-        hdr_wrapped = prepare_row(tbl.headers, True) if tbl.headers else None
+        hdr_wrapped = prepare_row(tbl.headers) if tbl.headers else None
         all_rows = ([('hdr', hdr_wrapped)] if hdr_wrapped else []) + \
-                   [('row', prepare_row(r, False)) for r in tbl.rows]
+                   [('row', prepare_row(r)) for r in tbl.rows]
 
         def draw_row(wrapped_cols: list[list[list[_RichItem]]], is_hdr: bool):
             row_lines = max(1, max(len(wc) for wc in wrapped_cols))

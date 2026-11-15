@@ -2,7 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from ..schemas import FileInfo, PlacementInfo, RenderExport, RenderResult, RenderSave, RenderTextRequest, Task, TaskRef
 from ._util import attachment, wait_or_202
@@ -56,6 +56,15 @@ def paths_bin(rid: str, index: int, request: Request,
     data = request.app.state.ctx.render.paths_bin(rid, index, space)
     return Response(data, media_type='application/octet-stream',
                     headers={'Cache-Control': 'private, max-age=3600'})
+
+
+@router.get('/render/{rid}/paths-stream', response_class=StreamingResponse,
+            responses={200: {'content': {'application/octet-stream': {}}}})
+def paths_stream(rid: str, request: Request,
+                 space: str = Query('page', pattern='^(page|machine)$')):
+    return StreamingResponse(request.app.state.ctx.render.paths_stream(rid, space),
+                             media_type='application/octet-stream',
+                             headers={'Cache-Control': 'private, max-age=3600', 'X-Accel-Buffering': 'no'})
 
 
 @router.get('/render/{rid}/pages/{index}/gcode', response_class=FileResponse)

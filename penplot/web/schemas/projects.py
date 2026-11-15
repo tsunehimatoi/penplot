@@ -446,6 +446,19 @@ class RenderResult(Model):
     elapsed_ms: float = 0.0
 
 
+class ElementPreviewPage(Model):
+    index: int
+    source_page: int
+    warnings: PageWarnings = PageWarnings()
+
+
+class ElementPreviewResult(Model):
+    rid: str
+    preview_only: Literal[True] = True
+    pages: list[ElementPreviewPage]
+    elapsed_ms: float = 0.0
+
+
 class RenderSave(Model):
     page: Optional[int] = Field(None, description='null = all pages')
     name: str = Field(min_length=1, max_length=120)

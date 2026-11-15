@@ -185,9 +185,14 @@ export async function postAndWait<T>(
 
 // ------------------------------------------------------------------ render
 
-export function renderProject(projectId: string, body: Partial<RenderRequest> & { doc?: ProjectDoc }, opts: { signal?: AbortSignal; slot?: string; timeoutMs?: number } & TaskWatch = {}) {
+export function renderProject(projectId: string, body: Partial<RenderRequest> & { doc?: ProjectDoc }, opts: { signal?: AbortSignal; slot?: string; wait?: number; timeoutMs?: number } & TaskWatch = {}) {
   const req = { pages: 'all', variables: {}, ...body }
   return postAndWait<RenderResult>(`/projects/${projectId}/render`, req, opts)
+}
+
+export type ElementPreviewResult = S['ElementPreviewResult']
+export function previewProject(projectId: string, body: Partial<RenderRequest> & { doc?: ProjectDoc }, opts: { signal?: AbortSignal; slot?: string } & TaskWatch = {}) {
+  return postAndWait<ElementPreviewResult>(`/projects/${projectId}/preview`, { pages: 'all', variables: {}, ...body }, { ...opts, wait: 0 })
 }
 
 export { decodePaths, type Polylines } from './paths'

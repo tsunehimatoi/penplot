@@ -8,6 +8,7 @@ import logging
 import os
 import secrets
 import shutil
+import struct
 import zipfile
 
 from ..compose import decode_paths, preview_svg
@@ -104,7 +105,7 @@ class RenderService:
         self.prune()
         return res
 
-    def submit_project(self, project_id, body, slot=None):
+    def submit_project(self, project_id, body, slot=None, preview_only=False):
         if body.doc is not None:
             doc = body.doc.model_dump(by_alias=True)
             rev = None
@@ -118,6 +119,8 @@ class RenderService:
         variables = dict(body.variables or {})
         pf = None if body.pages == 'all' else list(body.pages)
         rid, args = self._args(doc, project_id, rev, variables, body.overrides, body.profile_id, pf, name)
+        if preview_only:
+            args['preview_only'] = True
         return self.ctx.tasks.submit('render_project', args, slot=slot, on_done=self._on_done)
 
     def submit_text(self, body, slot=None):
@@ -183,6 +186,7 @@ class RenderService:
             return True
 
     async def rerender(self, rid, overrides):
+        self.get(rid)  # Reject canvas-only IDs before reading a printable request.
         req = self._request(rid)
         merged = dict(req.get('overrides') or {})
         merged.update(overrides or {})
@@ -210,9 +214,11 @@ class RenderService:
         with open(os.path.join(self._dir(rid), 'request.json'), encoding='utf-8') as f:
             return json.load(f)
 
-    def get(self, rid):
+    def get(self, rid, allow_preview=False):
         with open(os.path.join(self._dir(rid), 'result.json'), encoding='utf-8') as f:
             r = json.load(f)
+        if r.get('preview_only') and not allow_preview:
+            raise ApiError(409, 'preview_only', '画布预览不能用于打印或导出，请生成完整渲染')
         try:
             with open(os.path.join(self._dir(rid), 'meta.json'), encoding='utf-8') as f:
                 r['name'] = json.load(f).get('name')
@@ -220,8 +226,8 @@ class RenderService:
             pass
         return r
 
-    def _page(self, rid, index):
-        r = self.get(rid)
+    def _page(self, rid, index, allow_preview=False):
+        r = self.get(rid, allow_preview=allow_preview)
         for p in r['pages']:
             if p['index'] == index:
                 return r, p
@@ -232,9 +238,26 @@ class RenderService:
         return os.path.join(self._dir(rid), 'page-%d.gcode' % index)
 
     def paths_bin(self, rid, index, space='page'):
-        self._page(rid, index)
+        self._page(rid, index, allow_preview=space == 'page')
         with open(os.path.join(self._dir(rid), 'page-%d.%s.bin' % (index, space)), 'rb') as f:
             return f.read()
+
+    def paths_stream(self, rid, space='page'):
+        """One validated request, bounded page-at-a-time reads; old page API stays intact.
+
+        Frames: little-endian u32 output index, u32 byte length, then PPL1 bytes.
+        Only completed renders are exposed (never printable partial results).
+        """
+        result = self.get(rid, allow_preview=space == 'page')
+        directory = self._dir(rid)
+
+        def frames():
+            for page in result['pages']:
+                index = page['index']
+                with open(os.path.join(directory, 'page-%d.%s.bin' % (index, space)), 'rb') as f:
+                    data = f.read()
+                yield struct.pack('<II', index, len(data)) + data
+        return frames()
 
     def _meta(self, rid, index):
         try:

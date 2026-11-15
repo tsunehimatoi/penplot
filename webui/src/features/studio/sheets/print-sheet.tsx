@@ -25,6 +25,7 @@ import { originSnapLines, originSnapPoints, parkText as parkWhere, useSvgOriginD
 import { createJobs, profileDefault, renderForOutput, runFrame, type FrameMode, type OverrideKey } from '../print'
 import { letterFrame, papersCache } from '../actions'
 import { outputIndex } from '../render-engine'
+import { fetchPathPreview } from '../path-conversion'
 import { useStudio } from '../store'
 import type { OriginSpec } from '@/api/studio'
 
@@ -76,6 +77,7 @@ export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: f
   }, [busySince])
   const [range, setRange] = React.useState<'all' | 'current' | 'custom'>('all')
   const [custom, setCustom] = React.useState('1')
+  const [previewIndex, setPreviewIndex] = React.useState<number | null>(null)
   const [ready, setReady] = React.useState(false)
   const [framed, setFramed] = React.useState(false)
   const [framing, setFraming] = React.useState(false)
@@ -89,6 +91,7 @@ export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: f
       setReady(false)
       setFramed(false)
       setProfileId(null)
+      setPreviewIndex(null)
     }
   }, [open])
 
@@ -105,13 +108,12 @@ export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: f
       setProg(null)
       setErr(null)
       try {
-        setResult(
-          await renderForOutput({
-            profileId: profile.id,
-            signal: ctl.signal,
-            onProgress: (tk) => setProg({ p: Math.round((tk.progress ?? 0) * 100), msg: tk.message ?? '' }),
-          }),
-        )
+        const next = await renderForOutput({
+          profileId: profile.id,
+          signal: ctl.signal,
+          onProgress: (tk) => setProg({ p: Math.round((tk.progress ?? 0) * 100), msg: tk.message ?? '' }),
+        })
+        if (!ctl.signal.aborted) setResult(next)
       } catch (e) {
         if (!ctl.signal.aborted) setErr(errText(e))
       } finally {
@@ -145,7 +147,7 @@ export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: f
   const total = perCopy * (pr.copy_mode && pr.copy_mode !== 'repeat_same' ? 1 : copies)
   const missing = [...new Set(selPages.flatMap((p) => p.warnings.missing_glyphs))]
   const clipped = selPages.some((p) => p.warnings.clipped)
-  const first = selPages[0]
+  const first = selPages.find((p) => p.index === previewIndex) ?? selPages[0]
   const previewPageIndex = first?.source_page ?? view.page
   const previewPage = doc.pages[previewPageIndex]
   const paper = previewPage ? resolvePaper(pagePaperRef(doc, previewPage), papersCache()) : fallbackPaper
@@ -234,7 +236,10 @@ export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: f
           <div className={cn('flex min-h-0 flex-1', compact ? 'flex-col overflow-y-auto' : '')}>
             {/* summary */}
             <aside className={cn('flex shrink-0 flex-col gap-3 p-4', compact ? '' : 'hairline-r w-[320px] overflow-y-auto')}>
-              <FitPreview paper={paper} bbox={bbox ?? null} work={wa ? workAreaRect(origin, pw, ph, wa.w_mm, wa.h_mm, cbox) : null} outWork={outWork} origin={origin} content={cbox} bg={previewPage?.background ?? null} pageIndex={previewPageIndex} />
+              <FitPreview paper={paper} bbox={bbox ?? null} work={wa ? workAreaRect(origin, pw, ph, wa.w_mm, wa.h_mm, cbox) : null} outWork={!!first?.out_of_work_area} origin={origin} content={cbox} bg={previewPage?.background ?? null} pageIndex={previewPageIndex} paths={open && result && first ? { rid: result.rid, index: first.index } : null} />
+              {selPages.length > 1 ? (
+                <Select aria-label="预览页" value={String(first?.index)} onValueChange={(v) => setPreviewIndex(Number(v))} options={selPages.map((p) => ({ value: String(p.index), label: `预览第 ${p.index + 1} 页` }))} />
+              ) : null}
               <p className="-mt-1 flex items-start gap-1.5 text-footnote text-secondary-label">
                 <span className="mt-1 size-2 shrink-0 rounded-full bg-axis-origin" aria-hidden />
                 <span>
@@ -454,8 +459,27 @@ function Verdict({ ok, label, detail, warn }: { ok: boolean; label: string; deta
   )
 }
 
-/** Paper + reference background + travel area + drawing bbox thumbnail; the origin dot can be dragged. */
-function FitPreview({ paper, bbox, work, outWork, origin, content, bg, pageIndex }: { pageIndex: number; paper: PaperBase; bbox: number[] | null; work: { x: number; y: number; w: number; h: number } | null; outWork: boolean; origin: OriginSpec; content: ContentBox; bg: PageBackground | null }) {
+/** Paper-space output paths already include placement; machine origin transforms must not be applied again. */
+function PrintPaths({ rid, index }: { rid: string; index: number }) {
+  const [d, setD] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  const [retry, setRetry] = React.useState(0)
+  React.useEffect(() => {
+    let active = true
+    setError(null)
+    void fetchPathPreview(rid, index).then(
+      (preview) => { if (active) setD(preview.d) },
+      (e) => { if (active) setError(errText(e)) },
+    )
+    return () => { active = false }
+  }, [rid, index, retry])
+  if (error) return <foreignObject x={4} y={4} width={190} height={60}><div className="bg-bg-grouped-secondary p-2 text-footnote text-red" role="alert">路径预览加载失败：{error}<Button size="sm" onClick={() => setRetry((n) => n + 1)}>重试预览</Button></div></foreignObject>
+  if (d == null) return <text x={8} y={16} fontSize={8} fill="rgb(var(--gray))" role="status">正在加载路径…</text>
+  return <path data-print-paths={index} d={d} fill="none" stroke="rgb(var(--ink))" strokeWidth={1} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" pointerEvents="none" />
+}
+
+/** Paper + reference background + travel area + actual drawing; the origin dot can be dragged. */
+function FitPreview({ paper, bbox, work, outWork, origin, content, bg, pageIndex, paths }: { paths: { rid: string; index: number } | null; pageIndex: number; paper: PaperBase; bbox: number[] | null; work: { x: number; y: number; w: number; h: number } | null; outWork: boolean; origin: OriginSpec; content: ContentBox; bg: PageBackground | null }) {
   const { w, h } = paperDims(paper)
   const originAt = originPoint(origin, w, h, content)
   const svgRef = React.useRef<SVGSVGElement>(null)
@@ -475,6 +499,7 @@ function FitPreview({ paper, bbox, work, outWork, origin, content, bg, pageIndex
       {bbox ? (
         <rect x={bbox[0]} y={bbox[1]} width={bbox[2] - bbox[0]} height={bbox[3] - bbox[1]} fill={outWork ? 'rgb(var(--red) / 0.15)' : 'rgb(var(--accent) / 0.12)'} stroke={outWork ? 'rgb(var(--red))' : 'rgb(var(--accent))'} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
       ) : null}
+      {paths ? <PrintPaths key={`${paths.rid}:${paths.index}`} {...paths} /> : null}
       <circle cx={originAt.x} cy={originAt.y} r={Math.max(w, h) / (drag.dragging ? 40 : 60)} fill="rgb(var(--axis-origin))" stroke="rgb(var(--canvas-paper))" strokeWidth={1} vectorEffect="non-scaling-stroke" pointerEvents="none" />
       {!readOnly ? (
         <circle cx={originAt.x} cy={originAt.y} r={Math.max(w, h) / 14} fill="transparent" style={{ cursor: drag.dragging ? 'grabbing' : 'grab' }} {...drag.handlers} role="button" aria-label="拖动原点">

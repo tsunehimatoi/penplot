@@ -63,7 +63,40 @@ def error_dict(e):
 # ---------------------------------------------------------------- render
 def render_project(args, progress):
     with budget('PENPLOT_RENDER_BUDGET_S', 110, '渲染超时（超过 %.0f 秒）：页面太复杂，或图片描摹参数过大（降低 max_px / 换用边缘模式）'):
+        if args.get('preview_only'):
+            return _render_preview(args, progress)
         return _render_project(args, progress)
+
+
+def _render_preview(args, progress):
+    """Element canvas paths, without generating/analyzing unneeded machine G-code.
+
+    These IDs are deliberately rejected by the normal render/print/export readers.
+    Composition is shared with full rendering so pagination and offsets stay identical.
+    """
+    from ...compose import Resolver, compose_pages, encode_paths
+    from ..printcfg import effective
+    start = time.perf_counter()
+    mc, _, _ = effective(args['profile_doc'], args.get('project_print'), args.get('overrides'))
+    resolver = Resolver(args.get('fonts'), args.get('files'), args.get('default_font'), cache_dir=args.get('el_cache'))
+    progress(0, '正在排版并生成路径')
+    pages = compose_pages(args['doc'], args['papers'], resolver, mc, args.get('variables'),
+                          set(args['page_filter']) if args.get('page_filter') is not None else None, progress)
+    out = args['out_dir']
+    os.makedirs(out, exist_ok=True)
+    infos = []
+    for index, (source, _paper, paths, warn) in enumerate(pages):
+        with open(os.path.join(out, 'page-%d.page.bin' % index), 'wb') as f:
+            f.write(encode_paths(paths))
+        infos.append({'index': index, 'source_page': source,
+                      'warnings': {'missing_glyphs': sorted(warn['missing']), 'overflow': bool(warn.get('overflow')),
+                                   'clipped': False, 'messages': warn.get('messages') or []}})
+        progress(0.6 + 0.4 * (index + 1) / max(1, len(pages)), '已生成 %d / %d 页路径' % (index + 1, len(pages)))
+    result = {'rid': args['rid'], 'preview_only': True, 'pages': infos,
+              'elapsed_ms': round((time.perf_counter() - start) * 1000, 1)}
+    with open(os.path.join(out, 'result.json'), 'w', encoding='utf-8') as f:
+        json.dump(result, f, ensure_ascii=False)
+    return result
 
 
 def _render_project(args, progress):

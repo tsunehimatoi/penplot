@@ -14,6 +14,7 @@ import { patchBackground } from '../background'
 import { svgTransform } from '../geometry'
 import { elementOnPage, elementName, pagePaperRef, paperDims, resolvePaper, sortedByZ } from '../model'
 import { usePagination } from '../pagination'
+import { RenderProgress } from '../render-progress'
 import { useElementRender } from '../element-render'
 import { studio, useStudio } from '../store'
 
@@ -45,6 +46,7 @@ export function PagesList({ horizontal = false }: { horizontal?: boolean }) {
   const papers = papersCache()
   return (
     <div className={cn(horizontal ? 'flex items-center gap-2 overflow-x-auto px-3 py-2 scrollbar-none' : 'flex flex-col gap-3 p-3')} role="listbox" aria-label="页面">
+      <RenderProgress />
       {doc.pages.map((p, i) => (
         <PageItem
           key={p.id}
