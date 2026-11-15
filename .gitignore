@@ -47,6 +47,7 @@ out*.png
 !webui/public/**/*.svg
 !webui/src/**/*.svg
 !fonts/previews/*.svg
+!desktop/assets/*.svg
 
 # built SPA, copied in by deploy/deploy.sh
 penplot/web/static/

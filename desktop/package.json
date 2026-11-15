@@ -18,12 +18,15 @@
     "appId": "org.penplot.desktop",
     "productName": "Penplot",
     "directories": {
-      "output": "dist-electron"
+      "output": "dist-electron",
+      "buildResources": "assets"
     },
     "files": [
       "main.cjs",
       "preload.cjs",
-      "package.json"
+      "package.json",
+      "assets/icon.ico",
+      "assets/icon.png"
     ],
     "extraResources": [
       {
@@ -48,14 +51,17 @@
       }
     ],
     "win": {
+      "icon": "assets/icon.ico",
       "target": [
         "nsis"
       ]
     },
     "mac": {
+      "icon": "assets/icon.png",
       "target": "dmg"
     },
     "linux": {
+      "icon": "assets/icon.png",
       "target": "AppImage"
     }
   }

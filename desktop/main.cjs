@@ -235,6 +235,7 @@ function buildMenu() {
 
 function createWindow() {
   const isMac = process.platform === 'darwin'
+  const windowIcon = path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png')
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -242,6 +243,7 @@ function createWindow() {
     minHeight: 640,
     show: true,
     title: 'Penplot',
+    icon: fs.existsSync(windowIcon) ? windowIcon : undefined,
     backgroundColor: '#111113',
     frame: isMac,
     ...(isMac ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 10 } } : {}),
