@@ -3,6 +3,8 @@
   "version": "0.3.0",
   "description": "Penplot desktop workbench (Electron + Python + MCP)",
   "author": "PenPlot contributors",
+  "homepage": "https://github.com/tsunehimatoi/penplot",
+  "license": "AGPL-3.0-or-later",
   "main": "main.cjs",
   "private": true,
   "scripts": {
