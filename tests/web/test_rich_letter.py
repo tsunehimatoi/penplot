@@ -176,3 +176,14 @@ $$\\int_0^1 x^2 dx = \\frac{1}{3}$$
     pages = flow_text_pages(el, paper, FakeRes(), {}, Settings(), warn)
     assert len(pages) >= 2  # automatically paginated across pages
     assert all(len(p) > 0 for p in pages)
+
+
+def test_bare_scripts_sup_sub():
+    from penplot.rich_text import TextRun, parse_inline
+
+    runs = parse_inline('E = mc^2 与 a^2 + b^{n+1} 和 H_2O, a_1 + b_2, snake_case_var')
+    sups = [r.text for r in runs if isinstance(r, TextRun) and r.sup]
+    subs = [r.text for r in runs if isinstance(r, TextRun) and r.sub]
+    assert sups == ['2', '2', 'n+1']
+    assert subs == ['2', '1', '2']
+    assert any(isinstance(r, TextRun) and 'snake_case_var' in r.text for r in runs)

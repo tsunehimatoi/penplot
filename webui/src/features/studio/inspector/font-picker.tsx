@@ -9,6 +9,7 @@ import type { FontSummary } from '@/api/studio'
 import { Popover, PopoverContent, PopoverTrigger, SearchField, Spinner } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { useFontCoverage, useFonts } from '../data'
+import { FontSampleImg } from './font-sample-cache'
 
 const RECENT_KEY = 'penplot.fonts.recent'
 const FAV_KEY = 'penplot.fonts.favorites'
@@ -113,10 +114,9 @@ export function FontPicker({ value, onChange, text, id }: { value: string | null
                       <span className="w-4 shrink-0">{sel ? <Check className="size-3.5 text-accent" strokeWidth={2.5} /> : null}</span>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-body text-label">{f.display_name}</span>
-                        <img
-                          src={api.url(`/fonts/${encodeURIComponent(f.id)}/sample.svg`, { text: sample, size_mm: 7 })}
+                        <FontSampleImg
+                          url={api.url(`/fonts/${encodeURIComponent(f.id)}/sample.svg`, { text: sample, size_mm: 7 })}
                           alt={`${f.display_name} 样张`}
-                          loading="lazy"
                           className="mt-0.5 h-5 max-w-full self-start object-contain object-left dark:invert"
                         />
                       </span>

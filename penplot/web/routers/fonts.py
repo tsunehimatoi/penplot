@@ -79,7 +79,7 @@ async def sample(font_id: str, request: Request, text: Optional[str] = None,
         else:
             svg = await run_in_threadpool(c.fonts.sample_svg, font_id, args['text'], size_mm, width_mm)
         c.fonts.sample_store(key, svg)
-    return Response(svg, media_type='image/svg+xml', headers={'Cache-Control': 'private, max-age=600'})
+    return Response(svg, media_type='image/svg+xml', headers={'Cache-Control': 'private, max-age=86400'})
 
 
 @router.post('', response_model=FontSummary, status_code=201,

@@ -150,7 +150,7 @@ _INLINE_TOKEN_RE = re.compile(
     r'|__(?=\S)(?:\\.|[^_])+?(?<=\S)__'    # __bold__
     r'|~~(?=\S)(?:\\.|[^~])+?(?<=\S)~~'    # ~~strike~~
     r'|\*(?=\S)(?:\\.|[^*])+?(?<=\S)\*'    # *italic*
-    r'|_(?=\S)(?:\\.|[^_])+?(?<=\S)_'      # _italic_
+    r'|(?<![A-Za-z0-9])_(?=\S)(?:\\.|[^_])+?(?<=\S)_(?![A-Za-z0-9])'      # _italic_
     r'|!\[[^\]]*\]\([^)]+\)'               # ![alt](url)
     r'|\[([^\]]+)\]\([^)]+\)'              # [text](url)
     r'|<br\s*/?>'                          # <br>
@@ -172,21 +172,51 @@ _BARE_LATEX_RE = re.compile(
 )
 
 
-def _split_bare_latex(text: str, **style) -> list[Inline]:
-    """Detect bare LaTeX expressions (without $...$) in plain text runs."""
-    if '\\' not in text:
+_BARE_SCRIPT_RE = re.compile(
+    r'(?<=[A-Za-z0-9)\]])'
+    r'(?:'
+    r'\^(?:\{([^{}]+)\}|([A-Za-z0-9]+))'
+    r'|_(?:\{([^{}]+)\}|([0-9]+|[A-Za-z](?![A-Za-z])))'
+    r')'
+)
+
+
+def _split_bare_scripts(text: str, **style) -> list[Inline]:
+    """Convert bare a^b / a^{bc} / a_1 / a_{ij} in plain prose into sup/sub TextRuns."""
+    if ('^' not in text and '_' not in text) or style.get('sup') or style.get('sub'):
         return [TextRun(text, **style)]
+    out: list[Inline] = []
+    pos = 0
+    for m in _BARE_SCRIPT_RE.finditer(text):
+        if m.start() > pos:
+            out.append(TextRun(text[pos:m.start()], **style))
+        sup_txt = m.group(1) or m.group(2)
+        sub_txt = m.group(3) or m.group(4)
+        if sup_txt is not None:
+            out.append(TextRun(sup_txt, **{**style, 'sup': True}))
+        elif sub_txt is not None:
+            out.append(TextRun(sub_txt, **{**style, 'sub': True}))
+        pos = m.end()
+    if pos < len(text):
+        out.append(TextRun(text[pos:], **style))
+    return out or [TextRun(text, **style)]
+
+
+def _split_bare_latex(text: str, **style) -> list[Inline]:
+    """Detect bare LaTeX expressions (without $...$) and bare ^/_ scripts in plain text runs."""
+    if '\\' not in text:
+        return _split_bare_scripts(text, **style)
     out: list[Inline] = []
     pos = 0
     for m in _BARE_LATEX_RE.finditer(text):
         if m.start() > pos:
-            out.append(TextRun(text[pos:m.start()], **style))
+            out.extend(_split_bare_scripts(text[pos:m.start()], **style))
         expr = m.group(0).strip()
         if expr:
             out.append(InlineMath(expr))
         pos = m.end()
     if pos < len(text):
-        out.append(TextRun(text[pos:], **style))
+        out.extend(_split_bare_scripts(text[pos:], **style))
     return out or [TextRun(text, **style)]
 
 
