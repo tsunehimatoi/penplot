@@ -10,6 +10,7 @@ from array import array
 from .gcode import GcodeAnalysis, GcodeBuilder, analyze_gcode, _java_float
 from .geometry import MOVE
 from .native_generated import try_generate
+from .packed_paths import PackedPaths
 
 
 class _StatisticsBuffer(list):
@@ -157,7 +158,7 @@ def generate_analyzed_gcode(paths, machine):
     No clone or second subpath materialization is needed by the writer.
     """
     # A native rejection must leave an iterator replayable by the fallback.
-    if not isinstance(paths, (list, tuple)):
+    if not isinstance(paths, (list, tuple, PackedPaths)):
         paths = list(paths)
     native = try_generate(paths, machine)
     if native is not None:

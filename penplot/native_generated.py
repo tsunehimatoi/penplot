@@ -10,6 +10,7 @@ import sys
 from array import array
 from functools import lru_cache
 from pathlib import Path
+from .packed_paths import PackedPaths
 
 
 class _Result(ct.Structure):
@@ -67,13 +68,7 @@ def try_generate(paths, machine):
         heights = list(map(float, heights))
         if any(not math.isfinite(v) or abs(v) > 1e9 for v in heights):
             return None
-        xy, ops, offsets = array('d'), array('B'), array('Q', [0])
-        for path in paths:
-            if len(path.coords) != 2 * len(path.ops):
-                return None
-            xy.extend(path.coords)
-            ops.extend(path.ops)
-            offsets.append(len(ops))
+        xy, ops, offsets = PackedPaths.from_paths(paths).buffers()
         writer = GrblWriter(machine)
         chunks = []
         for emit in (writer.start, writer.pen_up, writer.pen_down, writer.finish):

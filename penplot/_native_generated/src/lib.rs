@@ -140,3 +140,71 @@ pub unsafe extern "C" fn penplot_generated_free(result: *mut ResultData) {
         drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(result.text, result.len)));
     }
 }
+
+// Geometry ABI is independent of generation ABI; arithmetic deliberately uses
+// separate multiply/add operations (no mul_add or fast-math).
+#[no_mangle]
+pub extern "C" fn penplot_geometry_abi() -> u32 { 1 }
+
+#[no_mangle]
+pub unsafe extern "C" fn penplot_geometry_transform(
+    xy: *mut f64, point_count: usize, operations: *const f64, operation_count: usize,
+) {
+    let xy = slice::from_raw_parts_mut(xy, point_count * 2);
+    let operations = slice::from_raw_parts(operations, operation_count * 7);
+    for op in operations.chunks_exact(7) {
+        for p in xy.chunks_exact_mut(2) {
+            let (mut x, mut y) = (p[0], p[1]);
+            match op[0] as u32 {
+                0 => {
+                    p[0] = (op[1] * x + op[2] * y) + op[3];
+                    p[1] = (op[4] * x + op[5] * y) + op[6];
+                    continue;
+                }
+                1 => { x += op[1]; y += op[2]; }
+                2 => { x *= op[1]; y *= op[2]; }
+                3 => {
+                    // screen Y flip, then EBB or configurable axis mapping
+                    y = -y;
+                    if op[4] != 0.0 { p[0] = -y; p[1] = op[5] - x; continue; }
+                    if op[1] != 0.0 { std::mem::swap(&mut x, &mut y); }
+                    if op[2] != 0.0 { x = -x; }
+                    if op[3] != 0.0 { y = -y; }
+                }
+                _ => return,
+            }
+            p[0] = x; p[1] = y;
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn penplot_geometry_bbox(
+    xy: *const f64, point_count: usize, offsets: *const u64,
+    path_count: usize, output: *mut f64,
+) -> u32 {
+    let xy = slice::from_raw_parts(xy, point_count * 2);
+    let offsets = slice::from_raw_parts(offsets, path_count + 1);
+    if offsets[0] != 0 || offsets[path_count] != point_count as u64
+        || offsets.windows(2).any(|w| w[0] > w[1]) { return 2; }
+    let mut result = [f64::NAN; 4];
+    for range in offsets.windows(2) {
+        let (start, end) = (range[0] as usize * 2, range[1] as usize * 2);
+        if start == end { continue; }
+        let mut b = [xy[start], xy[start + 1], xy[start], xy[start + 1]];
+        for p in xy[start + 2..end].chunks_exact(2) {
+            // Python min/max retain the first equal value, including signed
+            // zero; a NaN in the first point remains until the path union.
+            if p[0] < b[0] { b[0] = p[0]; }
+            if p[1] < b[1] { b[1] = p[1]; }
+            if p[0] > b[2] { b[2] = p[0]; }
+            if p[1] > b[3] { b[3] = p[1]; }
+        }
+        for i in 0..4 {
+            if result[i].is_nan() || (i < 2 && b[i] < result[i])
+                || (i >= 2 && b[i] > result[i]) { result[i] = b[i]; }
+        }
+    }
+    slice::from_raw_parts_mut(output, 4).copy_from_slice(&result);
+    if result[0].is_nan() { 0 } else { 1 }
+}

@@ -22,6 +22,7 @@ from array import array
 from .gcode import optimize_paths, parse_gcode, split_paths
 from .generated_gcode import generate_analyzed_gcode
 from .geometry import Path, bbox_of, translate_all
+from .packed_paths import PackedPaths
 from .layout import (OriginSpec, FontsSet, LineAlign, PageInfo, ParagraphFormat, TextDocument,
                      check_bounds, export_transform_mm)
 
@@ -155,6 +156,11 @@ def _font_roles(pr, res):
 
 
 def flow_text_pages(el, paper, res, variables, settings, warn):
+    from .layout_cache import cached_flow
+    return cached_flow(_flow_text_pages, el, paper, res, variables, settings, warn)
+
+
+def _flow_text_pages(el, paper, res, variables, settings, warn):
     """-> list of path lists (page mm, y down), one per laid-out page."""
     pr = el.get('props') or {}
     text = substitute(pr.get('text', ''), variables)
@@ -300,7 +306,7 @@ def trace_params(pr):
 
 def _file_ident(path):
     st = os.stat(path)
-    return [os.path.basename(path), st.st_size, st.st_mtime_ns]
+    return [os.path.realpath(path), st.st_size, st.st_mtime_ns, st.st_ctime_ns]
 
 
 def trace_key(path, p, work_px):
@@ -702,6 +708,7 @@ def _jsonable(o):
 
 def _font_idents(pr, res):
     ids = [pr.get('font_id')] + [m.get('font_id') for m in pr.get('font_mix') or []]
+    ids += [fid for fid in (pr.get('font_roles') or {}).values() if fid]
     out = []
     for fid in ids:
         fid = fid or res.default_font
@@ -811,6 +818,11 @@ def _element_paths(el, paper, res, variables, mc, warn):
 
 
 def compose_pages(doc, papers, res, mc, variables=None, page_filter=None, progress=None):
+    from .layout_cache import cached_compose
+    return cached_compose(_compose_pages, doc, papers, res, mc, variables, page_filter, progress)
+
+
+def _compose_pages(doc, papers, res, mc, variables=None, page_filter=None, progress=None):
     """-> list of (source_page, paper, [paths page mm]). papers: resolved
     paper dict per doc page. flow_text overflow adds pages after its page."""
     variables = dict(variables or {})
@@ -884,12 +896,10 @@ def finish_page(index, source_page, paper, paths, warn, mc, origin, work_area, o
                 paths.extend(cp)
     if opts.get('optimize'):
         ordered = optimize_paths(split_paths(paths), mc.settings.nearDst)
+        ordered = PackedPaths.from_paths([p for p in ordered if p.ops])
     else:
-        ordered = []
-        for p in paths:
-            ordered.extend(p.subpaths())
-    ordered = [p for p in ordered if p.ops]
-    machine = [p.clone() for p in ordered]
+        ordered = PackedPaths.from_paths(paths, split=True)
+    machine = ordered.clone()
     export_transform_mm(machine, w, h, origin, machine_type=mc.type)
     g, a = generate_analyzed_gcode(machine, mc)
     rp = RenderedPage()
@@ -897,8 +907,8 @@ def finish_page(index, source_page, paper, paths, warn, mc, origin, work_area, o
     rp.width_mm, rp.height_mm = w, h
     rp.page_paths, rp.machine_paths = ordered, machine
     rp.gcode, rp.analysis = g, a
-    rp.bbox = bbox_of(ordered)
-    rp.machine_bbox = bbox_of(machine)
+    rp.bbox = ordered.bbox()
+    rp.machine_bbox = machine.bbox()
     rp.origin = origin
     clipped = bool(rp.bbox and (rp.bbox[0] < -0.5 or rp.bbox[1] < -0.5 or rp.bbox[2] > w + 0.5
                                 or rp.bbox[3] > h + 0.5))
@@ -954,6 +964,20 @@ MAGIC = 0x314C5050    # 'PPL1'
 def encode_paths(paths, flip_y=False):
     """u32 magic, u32 n, u32 offsets[n+1], f32 xy[] (little endian).
     One polyline per subpath."""
+    if isinstance(paths, PackedPaths) and paths._paths is None:
+        xy, ops, offsets = paths.buffers()
+        # Finished pages have one MOVE per stroke. Other packed callers retain
+        # the general encoder's splitting behavior below.
+        if all(b > a and ops[a] == 0 for a, b in zip(offsets, offsets[1:])) and ops.count(0) == len(paths):
+            flat = array('f', xy)
+            if flip_y:
+                for i in range(1, len(flat), 2):
+                    flat[i] = -flat[i]
+            oa = array('I', offsets)
+            if sys.byteorder != 'little':
+                flat.byteswap()
+                oa.byteswap()
+            return struct.pack('<II', MAGIC, len(paths)) + oa.tobytes() + flat.tobytes()
     offs = [0]
     flat = array('f')
     for p in paths:

@@ -182,7 +182,7 @@ class TextDocument:
         g = font.glyph(ch)
         if g is not None and g.ops:
             scale = line_height / font.size * self._rand(fs.randomFontSize) * self.text_size
-            p = Path(list(g.coords), list(g.ops))
+            p = Path(g.coords, g.ops)
             aff = Affine2D()
             aff.pre_scale(scale * self._rand(fs.randomXScale),
                           scale * self._rand(fs.randomYScale))
@@ -510,6 +510,9 @@ def export_transform_mm(paths, page_w_mm, page_h_mm, origin=None, machine_type=N
     """
     o = OriginSpec.coerce(origin)
     w, h = float(page_w_mm), float(page_h_mm)
+    from .native_geometry import try_export_mm
+    if try_export_mm(paths, w, h, o, machine_type, anchor_bbox):
+        return paths
     # anchor_bbox (page mm, before rotation): content bbox to anchor to when the
     # paths given are not the content themselves (e.g. a paper outline preview).
     anchor_bbox = getattr(o, 'anchor_bbox', None) or anchor_bbox

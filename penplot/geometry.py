@@ -425,6 +425,10 @@ def rdp(flat_pts, eps: float):
 
 def bbox_of(paths):
     """l_0.a(List): union bbox."""
+    from .native_geometry import try_bbox, UNSUPPORTED
+    native = try_bbox(paths)
+    if native is not UNSUPPORTED:
+        return native
     res = [float('nan')] * 4
     for p in paths:
         b = p.bbox()
@@ -442,6 +446,9 @@ def bbox_of(paths):
 
 
 def translate_all(paths, dx, dy):
+    from .native_geometry import try_transform
+    if try_transform(paths, [(1, dx, dy, 0, 0, 0, 0)]):
+        return paths
     for p in paths:
         for i in range(0, len(p.coords), 2):
             p.coords[i] += dx
@@ -450,6 +457,9 @@ def translate_all(paths, dx, dy):
 
 
 def scale_all(paths, sx, sy):
+    from .native_geometry import try_transform
+    if try_transform(paths, [(2, sx, sy, 0, 0, 0, 0)]):
+        return paths
     for p in paths:
         for i in range(0, len(p.coords), 2):
             p.coords[i] *= sx
@@ -459,6 +469,9 @@ def scale_all(paths, sx, sy):
 
 def rotate_all_around(paths, deg, cx, cy):
     aff = Affine2D().rotate_deg_around(deg, cx, cy)
+    from .native_geometry import try_transform
+    if try_transform(paths, [(0, *aff.get_matrix())]):
+        return paths
     for p in paths:
         p.transform(aff)
     return paths

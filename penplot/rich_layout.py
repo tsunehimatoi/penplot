@@ -14,7 +14,8 @@ from typing import Any, Optional
 
 from .font_resolver import FontResolver
 from .geometry import Affine2D, Path
-from .layout import FontsSet, LineAlign, PageInfo, ParagraphFormat, _NO_LINE_START
+from .layout import FontsSet, PageInfo, ParagraphFormat, _NO_LINE_START
+from .layout_cache import GlyphPathCache
 from .math_layout import render_handwritten_math
 from .rich_renderers import render_chart_paths, render_svg_paths
 from .rich_text import (
@@ -53,6 +54,7 @@ class RichTextDocument:
         self._font_resolver = FontResolver(font, font_mix, font_roles)
         self.missing_glyph = missing_glyph or 'box'
         self.missing: set[str] = set()
+        self._glyph_cache = GlyphPathCache()
 
         rs = rich_style or {}
         self.heading_scale = float(rs.get('heading_scale', 1.35) or 1.35)
@@ -95,8 +97,22 @@ class RichTextDocument:
             j_rot = self._rand(fs.randomRotate) if apply_jitter else 0.0
             j_y = (self.rng.uniform(-fs.randomY, fs.randomY) * line_h_mm) if (apply_jitter and fs.randomY) else 0.0
 
+            # Sampling and font selection always happen before lookup, so cache
+            # hits cannot change handwriting randomness or subsequent wrapping.
+            # Skip random variants: their near-unique keys only churn the cache.
+            cache_key = None
+            if not apply_jitter or (not fs.randomY and all(pair[0] == pair[1] for pair in
+                    (fs.randomFontSize, fs.randomXScale, fs.randomYScale, fs.randomRotate))):
+                cache_key = (id(font), ch, font.size, line_h_mm, eff_size, baseline,
+                             j_size, j_xs, j_ys, j_rot, italic, apply_jitter,
+                             fs.is_special_char(ch), fs.widthAdd, fs.simple)
+                cached = self._glyph_cache.get(cache_key)
+                if cached is not None:
+                    path, advance = cached
+                    return [path], advance
+
             sc = (line_h_mm / font.size) * j_size * eff_size
-            p = Path(list(g.coords), list(g.ops))
+            p = Path(g.coords, g.ops)
             aff = Affine2D()
             aff.pre_scale(sc * j_xs, sc * j_ys)
             p.transform(aff)
@@ -120,6 +136,8 @@ class RichTextDocument:
                     c[idx] = c[idx] - 0.22 * (c[idx + 1] - baseline)
             if fs.simple > 0 and apply_jitter:
                 p.rdp_simplify(fs.simple * 25.4 / 96.0)
+            if cache_key is not None:
+                self._glyph_cache.put(cache_key, p, adv)
             return [p], adv
 
         if ch == '\t':
