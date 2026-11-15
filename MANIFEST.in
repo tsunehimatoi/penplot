@@ -1,0 +1,7 @@
+include penplot/_native_generated/Cargo.toml
+include penplot/_native_generated/Cargo.lock
+include penplot/_native_generated/README.md
+recursive-include penplot/_native_generated/src *.rs
+exclude penplot/_native_generated/*.dll
+exclude penplot/_native_generated/*.so
+exclude penplot/_native_generated/*.dylib

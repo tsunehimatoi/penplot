@@ -33,7 +33,7 @@ Linux AppImage 需先赋予执行权限：`chmod +x Penplot-*.AppImage`。发布
 
 ## 本地开发
 
-需要 Python 3.12、Node.js 22。
+需要 Python 3.12、Node.js 22。构建原生计算核心或桌面包还需要 Rust/Cargo 和目标平台链接工具。
 
 ```bash
 git clone https://github.com/tsunehimatoi/penplot.git
@@ -46,6 +46,10 @@ npm --prefix webui ci
 npm --prefix desktop ci
 npm --prefix desktop run dev
 ```
+
+源码开发时运行 `python -m penplot._native_generated.build` 启用 Rust G-code 生成与运动统计。
+较大的多页文档按页并行处理：受支持的原生配置使用释放 GIL 的线程调用，其余配置使用页进程；小文档和不支持派生进程的回退环境保持串行。
+桌面打包会自动编译并包含原生库，最终用户无需安装 Rust。配置范围和基准开关见[原生核心说明](penplot/_native_generated/README.md)。
 
 当前平台打包：
 

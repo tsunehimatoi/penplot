@@ -921,8 +921,7 @@ def render_document(doc, papers, res, mc, origin=None, work_area=None, opts=None
     composed = compose_pages(doc, papers, res, mc, variables, page_filter, progress)
     if opts.get('multi_page') == 'first_only':
         composed = composed[:1]
-    out = []
-    n = max(1, len(composed))
+    jobs = []
     for i, (src, paper, paths, warn) in enumerate(composed):
         origin_i = origin
         pg = (doc.get('pages') or [])[src] if src < len(doc.get('pages') or []) else {}
@@ -943,10 +942,9 @@ def render_document(doc, papers, res, mc, origin=None, work_area=None, opts=None
             placement = opts.get('placement') or {}
             translate_all([frame], float(placement.get('dx_mm') or 0), float(placement.get('dy_mm') or 0))
             origin_i = {**OriginSpec.coerce(origin_i).__dict__, 'anchor_bbox': bbox_of([frame])}
-        out.append(finish_page(i, src, paper, paths, warn, mc, origin_i, work_area, opts))
-        if progress:
-            progress(0.6 + 0.4 * (i + 1) / n)
-    return out
+        jobs.append((i, src, paper, paths, warn, mc, origin_i, work_area, opts))
+    from .page_parallel import finish_pages
+    return finish_pages(jobs, progress)
 
 
 # ---------------------------------------------------------------- binary paths

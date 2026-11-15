@@ -37,6 +37,7 @@ include = ["penplot*"]
 
 [tool.setuptools.package-data]
 "penplot.web" = ["migrations/*.sql", "static/**/*"]
+"penplot._native_generated" = ["Cargo.toml", "Cargo.lock", "README.md", "src/*.rs", "*.dll", "*.so", "*.dylib"]
 
 # Seed profile + built-in papers/templates/samples live at the repo root
 # (configs/, seed/). A wheel installs them under <prefix>/share/penplot, where

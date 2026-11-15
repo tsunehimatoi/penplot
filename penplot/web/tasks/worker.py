@@ -44,7 +44,10 @@ def rss_mb():
         return 0.0
 
 
-def worker_main(conn):
+def worker_main(conn, page_workers=2):
+    from ...page_parallel import configure, watch_parent
+    watch_parent()
+    configure(page_workers)
     _sandbox()
     from .kinds import KINDS, error_dict
     while True:

@@ -11,6 +11,7 @@ import collections
 import itertools
 import logging
 import multiprocessing as mp
+from multiprocessing.util import Finalize
 import threading
 import time
 
@@ -75,29 +76,36 @@ class Task:
                 'finished_at': self.finished_at, 'slot': self.slot}
 
 
+def _close_process(proc, conn):
+    conn.close()
+    if proc.is_alive():
+        proc.terminate()
+    proc.join(2)
+    if proc.is_alive():
+        proc.kill()
+        proc.join()
+
+
 class _Worker:
     MAX_TASKS = 200            # recycle now and then (leaks, fragmentation)
     MAX_RSS_MB = 450.0         # a worker that grew this big is not reused
 
-    def __init__(self, mpctx):
+    def __init__(self, mpctx, page_workers=2):
         from .worker import worker_main
         self.conn, child = mpctx.Pipe(duplex=True)
-        self.proc = mpctx.Process(target=worker_main, args=(child,), daemon=True)
+        # finish_page uses bounded child processes. Daemon workers cannot spawn
+        # them; an explicit finalizer and parent sentinel replace daemon cleanup.
+        self.proc = mpctx.Process(target=worker_main, args=(child, page_workers), daemon=False)
         self.proc.start()
         child.close()
+        self._finalize = Finalize(self, _close_process, (self.proc, self.conn), exitpriority=10)
         self.served = 0
 
     def alive(self):
         return self.proc is not None and self.proc.is_alive()
 
     def close(self):
-        try:
-            self.conn.close()
-        except Exception:
-            pass
-        if self.proc is not None and self.proc.is_alive():
-            self.proc.terminate()
-            self.proc.join(2)
+        self._finalize()
 
 
 class TaskRunner:
@@ -112,9 +120,11 @@ class TaskRunner:
         self._mpctx = None
         self._local = []
         self._idle = []            # idle Worker objects (process mode)
+        self._stopped = False
 
     def start(self):
         import os
+        self._stopped = False
         for k in ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS'):
             os.environ.setdefault(k, '1')        # inherited by the forkserver and every child
         if self.mode == 'process':
@@ -129,13 +139,14 @@ class TaskRunner:
         """Start one idle worker at boot so the first render does not pay the
         process start-up; failures are harmless (a worker is made on demand)."""
         try:
-            w = _Worker(self._mpctx)
+            w = self._new_worker()
             self._give_back(w, 0.0)
         except Exception:
             log.debug('prewarm failed', exc_info=True)
 
     def stop(self):
         with self._lock:
+            self._stopped = True
             for t in list(self.running):
                 self._kill(t)
             self.queue.clear()
@@ -348,17 +359,31 @@ class TaskRunner:
                 if w.alive():
                     return w
                 w.close()
-        return _Worker(self._mpctx)
+        return self._new_worker()
+
+    def _new_worker(self):
+        import os
+        page_workers = max(1, min(2, (os.cpu_count() or 1) // max(1, self.workers)))
+        return _Worker(self._mpctx, page_workers)
 
     def _give_back(self, w, rss):
         if not w.alive() or w.served >= _Worker.MAX_TASKS or rss > _Worker.MAX_RSS_MB:
             w.close()
             return
+        discarded = w
         with self._lock:
-            if len(self._idle) < max(1, self.workers):
+            if not self._stopped and len(self._idle) < max(1, self.workers):
                 self._idle.append(w)
                 return
-        w.close()
+            if not self._stopped and self._idle:
+                coldest = min(self._idle, key=lambda worker: worker.served)
+                if w.served > coldest.served:
+                    # A boot prewarm can finish while the first real task runs.
+                    # Keep the worker with warmed page/native/font caches.
+                    self._idle.remove(coldest)
+                    self._idle.append(w)
+                    discarded = coldest
+        discarded.close()
 
     def _run_process(self, t):
         if t.cancel_flag:

@@ -9,6 +9,11 @@ venv/
 .mypy_cache/
 build/
 dist/
+# Locally compiled optional Rust core (source and Cargo.lock are tracked).
+penplot/_native_generated/*.dll
+penplot/_native_generated/*.so
+penplot/_native_generated/*.dylib
+penplot/_native_generated/target/
 
 # ---------------------------------------------------------------- fonts
 # Allowlist only. Vendor .gfont fonts and .psf files converted from proprietary

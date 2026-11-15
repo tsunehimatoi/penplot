@@ -9,6 +9,7 @@ from array import array
 
 from .gcode import GcodeAnalysis, GcodeBuilder, analyze_gcode, _java_float
 from .geometry import MOVE
+from .native_generated import try_generate
 
 
 class _StatisticsBuffer(list):
@@ -155,6 +156,12 @@ def generate_analyzed_gcode(paths, machine):
     ignoring leading LINEs and suppressing repeated unrounded coordinates.
     No clone or second subpath materialization is needed by the writer.
     """
+    # A native rejection must leave an iterator replayable by the fallback.
+    if not isinstance(paths, (list, tuple)):
+        paths = list(paths)
+    native = try_generate(paths, machine)
+    if native is not None:
+        return native
     builder = GcodeBuilder(machine)
     if (machine.type == 'Grbl' and machine.grbl.type in ('Servo', 'Laser', 'Stepper')
             and not machine.advanced.startGcode and not machine.advanced.endGcode):
