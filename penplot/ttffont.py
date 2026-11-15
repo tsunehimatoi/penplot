@@ -195,7 +195,8 @@ def font_display_name(tt, mode, fallback=''):
 def _load_cmap(src, face_index=0):
     """cmap of the exact face (kept for the old scripts)."""
     try:
-        return open_face(src, face_index).getBestCmap()
+        with open_face(src, face_index) as tt:
+            return tt.getBestCmap()
     except Exception as e:
         print('warning: cmap unavailable (%s)' % e, file=sys.stderr)
         return None
@@ -510,78 +511,78 @@ def convert_ttf(src, out_psf=None, chars=None, mode='skeleton', size_px=256,
     if not 16 <= size_px <= 1024:
         raise TtfError('bad_input', '栅格尺寸应在 16–1024 px 之间')
     face_index = int(face_index or 0)
-    tt = open_face(src, face_index)
-    cmap = tt.getBestCmap()
-    upem = float(tt['head'].unitsPerEm or 1000)
-    hmtx = tt['hmtx'] if 'hmtx' in tt else None
+    with open_face(src, face_index) as tt:
+        cmap = tt.getBestCmap()
+        upem = float(tt['head'].unitsPerEm or 1000)
+        hmtx = tt['hmtx'] if 'hmtx' in tt else None
 
-    if chars is None:
-        chars = default_charset(level2)
-    seen = set()
-    req = []
-    for c in chars:
-        if c not in seen and c not in '\r\n\t\f\v':
-            seen.add(c)
-            req.append(c)
-    have = [c for c in req if ord(c) in cmap]
-    missing = [c for c in req if ord(c) not in cmap]
-    if missing:
-        print('cmap filter: %d/%d chars not in font (skipped, no tofu)'
-              % (len(missing), len(req)), file=sys.stderr)
-    if not [c for c in have if not c.isspace()]:
-        raise TtfError('no_glyphs', '这个字体里没有所选的任何字符（缺 %d 个，例如「%s」）'
-                       % (len(missing), ''.join(missing[:10])),
-                       {'missing_count': len(missing), 'missing': ''.join(missing[:200])})
-    # out_psf=None: return the font only. (It used to write <font>-hand.psf into
-    # the current directory silently - a derivative of a possibly non-free font
-    # landing in a working tree is how it ends up published by accident.)
+        if chars is None:
+            chars = default_charset(level2)
+        seen = set()
+        req = []
+        for c in chars:
+            if c not in seen and c not in '\r\n\t\f\v':
+                seen.add(c)
+                req.append(c)
+        have = [c for c in req if ord(c) in cmap]
+        missing = [c for c in req if ord(c) not in cmap]
+        if missing:
+            print('cmap filter: %d/%d chars not in font (skipped, no tofu)'
+                  % (len(missing), len(req)), file=sys.stderr)
+        if not [c for c in have if not c.isspace()]:
+            raise TtfError('no_glyphs', '这个字体里没有所选的任何字符（缺 %d 个，例如「%s」）'
+                           % (len(missing), ''.join(missing[:10])),
+                           {'missing_count': len(missing), 'missing': ''.join(missing[:200])})
+        # out_psf=None: return the font only. (It used to write <font>-hand.psf into
+        # the current directory silently - a derivative of a possibly non-free font
+        # landing in a working tree is how it ends up published by accident.)
 
-    sf = StrokeFont()
-    fam, _sub = face_names(tt)
-    sf.family = fam or os.path.splitext(os.path.basename(src))[0]
-    sf.name = (name or '').strip() or font_display_name(tt, mode, sf.family)
-    if mode != 'skeleton' and not any(w in sf.name for w in ('轮廓', '描边', 'outline', 'Outline')):
-        sf.name += ' 空心轮廓'          # an outline font writes hollow glyphs: make that visible in the library
-    sf.author = 'penplot ttf-' + mode
-    sf.type_ordinal = 0 if mode == 'skeleton' else 1
-    sf.missing = missing
-    sf.requested = len(req)
+        sf = StrokeFont()
+        fam, _sub = face_names(tt)
+        sf.family = fam or os.path.splitext(os.path.basename(src))[0]
+        sf.name = (name or '').strip() or font_display_name(tt, mode, sf.family)
+        if mode != 'skeleton' and not any(w in sf.name for w in ('轮廓', '描边', 'outline', 'Outline')):
+            sf.name += ' 空心轮廓'          # an outline font writes hollow glyphs: make that visible in the library
+        sf.author = 'penplot ttf-' + mode
+        sf.type_ordinal = 0 if mode == 'skeleton' else 1
+        sf.missing = missing
+        sf.requested = len(req)
 
-    if mode == 'skeleton':
-        font = _load_pil_font(src, size_px, face_index)
-        unit = size_px / upem                # font units -> px
-        sf.size = round(size_px * EM_TO_SIZE, 3)
-    else:
-        font = None
-        unit = 1.0                           # outline stays in font units
-        sf.size = round(upem * EM_TO_SIZE, 3)
-        tol = max(0.2, float(simplify_tol or 0)) * upem / 400.0
-
-    def adv_of(ch):
-        g = cmap.get(ord(ch))
-        if hmtx is not None and g is not None:
-            try:
-                return hmtx[g][0] * unit
-            except KeyError:
-                pass
-        return font.getlength(ch) if font is not None else upem * 0.5
-
-    n = len(have)
-    for i, ch in enumerate(have):
-        if progress is not None and (i % 4 == 0):
-            progress(0.02 + 0.96 * i / max(1, n), '%d / %d 字' % (i, n))
-        code = ord(ch)
-        adv = adv_of(ch)
         if mode == 'skeleton':
-            p, adv = skeleton_glyph(font, ch, simplify_tol=simplify_tol, advance=adv)
+            font = _load_pil_font(src, size_px, face_index)
+            unit = size_px / upem                # font units -> px
+            sf.size = round(size_px * EM_TO_SIZE, 3)
         else:
-            p = outline_glyph(tt, cmap[code], tol)
-        sf.glyphs[code] = StrokeGlyph(code, p.coords if p else [], p.ops if p else [],
-                                      advance=round(float(adv), 4))   # survives write_psf's %.9g
-    if not any(g.ops for g in sf.glyphs.values()):
-        raise TtfError('no_glyphs', '没有转换出任何笔画（字体里可能只有空白字形）')
-    if progress is not None:
-        progress(0.99, '写入字体文件')
-    if out_psf:
-        write_psf(sf, out_psf)
-    return sf
+            font = None
+            unit = 1.0                           # outline stays in font units
+            sf.size = round(upem * EM_TO_SIZE, 3)
+            tol = max(0.2, float(simplify_tol or 0)) * upem / 400.0
+
+        def adv_of(ch):
+            g = cmap.get(ord(ch))
+            if hmtx is not None and g is not None:
+                try:
+                    return hmtx[g][0] * unit
+                except KeyError:
+                    pass
+            return font.getlength(ch) if font is not None else upem * 0.5
+
+        n = len(have)
+        for i, ch in enumerate(have):
+            if progress is not None and (i % 4 == 0):
+                progress(0.02 + 0.96 * i / max(1, n), '%d / %d 字' % (i, n))
+            code = ord(ch)
+            adv = adv_of(ch)
+            if mode == 'skeleton':
+                p, adv = skeleton_glyph(font, ch, simplify_tol=simplify_tol, advance=adv)
+            else:
+                p = outline_glyph(tt, cmap[code], tol)
+            sf.glyphs[code] = StrokeGlyph(code, p.coords if p else [], p.ops if p else [],
+                                          advance=round(float(adv), 4))   # survives write_psf's %.9g
+        if not any(g.ops for g in sf.glyphs.values()):
+            raise TtfError('no_glyphs', '没有转换出任何笔画（字体里可能只有空白字形）')
+        if progress is not None:
+            progress(0.99, '写入字体文件')
+        if out_psf:
+            write_psf(sf, out_psf)
+        return sf

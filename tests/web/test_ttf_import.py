@@ -237,7 +237,12 @@ def test_progress_and_cancel(client):
 
 def test_process_mode_child(tmp_path):
     """The real path: forkserver child, RLIMIT_AS, progress over the pipe."""
-    data = need(DEJAVU)
+    font_path = DEJAVU
+    if not os.path.exists(font_path):
+        # Also exercise Windows file-handle cleanup instead of skipping it.
+        matplotlib = pytest.importorskip('matplotlib')
+        font_path = os.path.join(matplotlib.get_data_path(), 'fonts', 'ttf', 'DejaVuSans.ttf')
+    data = need(font_path)
     app = make_app(tmp_path, task_mode='process')
     with TestClient(app, base_url='http://testserver') as c:
         t = run(c, data, 'DejaVuSans.ttf', charset='custom', chars='Hello')
