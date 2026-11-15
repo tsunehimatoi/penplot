@@ -1,0 +1,62 @@
+{
+  "name": "penplot-desktop",
+  "version": "0.3.0",
+  "description": "Penplot desktop workbench (Electron + Python + MCP)",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "org.penplot.desktop",
+    "productName": "Penplot",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../webui/dist",
+        "to": "webui/dist"
+      },
+      {
+        "from": "../configs",
+        "to": "configs"
+      },
+      {
+        "from": "../seed",
+        "to": "seed"
+      },
+      {
+        "from": "../fonts",
+        "to": "fonts"
+      },
+      {
+        "from": "../dist/penplot-backend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

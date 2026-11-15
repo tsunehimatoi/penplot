@@ -58,6 +58,10 @@ e2e/playwright-report/
 e2e/.run/
 e2e/.auth/
 
+# desktop (Electron)
+desktop/node_modules/
+desktop/dist-electron/
+
 # local state, secrets
 *.db
 *.db-wal

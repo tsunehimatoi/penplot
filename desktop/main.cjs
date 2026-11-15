@@ -13,6 +13,8 @@ let mainWindow = null
 let backendProc = null
 let backendPort = null
 let backendDataDir = null
+let viteProc = null
+let viteUrl = null
 let quitting = false
 
 function findFreePort() {
@@ -51,16 +53,16 @@ function resolvePython() {
   return process.platform === 'win32' ? 'python' : 'python3'
 }
 
-function waitForHealth(port, timeoutMs = 20000) {
+function waitForUrl(url, timeoutMs = 20000) {
   const start = Date.now()
   return new Promise((resolve, reject) => {
     const tick = () => {
       if (Date.now() - start > timeoutMs) {
-        return reject(new Error(`Penplot backend did not become healthy within ${timeoutMs}ms`))
+        return reject(new Error(`Timed out waiting for ${url} within ${timeoutMs}ms`))
       }
-      const req = http.get(`http://127.0.0.1:${port}/api/v1/system/health`, (res) => {
+      const req = http.get(url, (res) => {
         res.resume()
-        if (res.statusCode === 200) return resolve()
+        if (res.statusCode && res.statusCode < 500) return resolve()
         setTimeout(tick, 200)
       })
       req.on('error', () => setTimeout(tick, 200))
@@ -71,6 +73,57 @@ function waitForHealth(port, timeoutMs = 20000) {
     }
     tick()
   })
+}
+
+function waitForHealth(port, timeoutMs = 20000) {
+  return waitForUrl(`http://127.0.0.1:${port}/api/v1/system/health`, timeoutMs)
+}
+
+async function startViteDevServer() {
+  if (!IS_DEV) return null
+  if (process.env.PENPLOT_VITE_URL) {
+    viteUrl = process.env.PENPLOT_VITE_URL
+    return viteUrl
+  }
+  const webuiDir = path.join(REPO_ROOT, 'webui')
+  const port = await findFreePort()
+  viteUrl = `http://127.0.0.1:${port}`
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+  viteProc = spawn(npmCmd, ['run', 'dev', '--', '--port', String(port), '--strictPort'], {
+    cwd: webuiDir,
+    env: {
+      ...process.env,
+      PENPLOT_BACKEND: `http://127.0.0.1:${backendPort}`,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: process.platform === 'win32',
+    windowsHide: true,
+  })
+  viteProc.stdout.on('data', (chunk) => process.stdout.write(`[vite] ${chunk}`))
+  viteProc.stderr.on('data', (chunk) => process.stderr.write(`[vite] ${chunk}`))
+  viteProc.on('exit', (code, signal) => {
+    viteProc = null
+    if (!quitting) {
+      console.error(`[desktop] vite exited unexpectedly (code=${code}, signal=${signal})`)
+    }
+  })
+  await waitForUrl(viteUrl, 30000)
+  return viteUrl
+}
+
+function stopViteDevServer() {
+  if (!viteProc) return
+  const proc = viteProc
+  viteProc = null
+  try {
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true })
+    } else {
+      proc.kill('SIGTERM')
+    }
+  } catch {
+    // ignore
+  }
 }
 
 async function startBackend() {
@@ -234,8 +287,8 @@ function createWindow() {
     return { action: 'deny' }
   })
 
-  const targetUrl = IS_DEV && process.env.PENPLOT_VITE_URL
-    ? process.env.PENPLOT_VITE_URL
+  const targetUrl = IS_DEV && viteUrl
+    ? viteUrl
     : `http://127.0.0.1:${backendPort}`
   mainWindow.loadURL(targetUrl)
 
@@ -264,7 +317,13 @@ ipcMain.handle('penplot:open-external', async (_ev, url) => {
 ipcMain.handle('penplot:restart-backend', async () => {
   stopBackend()
   await startBackend()
-  if (mainWindow) mainWindow.loadURL(`http://127.0.0.1:${backendPort}`)
+  if (IS_DEV && !process.env.PENPLOT_VITE_URL) {
+    stopViteDevServer()
+    await startViteDevServer()
+  }
+  if (mainWindow) {
+    mainWindow.loadURL(IS_DEV && viteUrl ? viteUrl : `http://127.0.0.1:${backendPort}`)
+  }
   return { port: backendPort }
 })
 
@@ -327,6 +386,7 @@ app.whenReady().then(async () => {
   if (!gotLock) return
   try {
     await startBackend()
+    await startViteDevServer()
     buildMenu()
     createWindow()
   } catch (err) {
@@ -337,6 +397,7 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   quitting = true
+  stopViteDevServer()
   stopBackend()
 })
 
