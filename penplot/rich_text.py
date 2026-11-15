@@ -162,6 +162,34 @@ _INLINE_TOKEN_RE = re.compile(
 )
 
 
+_BARE_LATEX_RE = re.compile(
+    r'(?<![A-Za-z0-9_\\])'
+    r'(?:'
+    r'(?:[A-Za-z0-9()]+(?:\^|\_)\{[^{}]*\\[A-Za-z]+[^{}]*\}(?:\s*[+\-*/=<>]\s*[A-Za-z0-9()\\^{}_+\-*/=<> ]*)?)'
+    r'|(?:\([A-Za-z0-9]+\)|[A-Za-z0-9]+)?\\(?:frac|sqrt|lim|sum|prod|int|iint|oint|pi|phi|alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|Delta|Omega|infty|pm|mp|times|div|cdot|to|rightarrow|leftarrow|Rightarrow|leq|geq|neq|approx|partial|nabla|sin|cos|tan|log|ln|exp)(?![A-Za-z])'
+    r'(?:[A-Za-z0-9\s+\-*/=<>^_{}()\[\]\\.,]*[A-Za-z0-9)}\\]|[^{}\s]*)'
+    r')'
+)
+
+
+def _split_bare_latex(text: str, **style) -> list[Inline]:
+    """Detect bare LaTeX expressions (without $...$) in plain text runs."""
+    if '\\' not in text:
+        return [TextRun(text, **style)]
+    out: list[Inline] = []
+    pos = 0
+    for m in _BARE_LATEX_RE.finditer(text):
+        if m.start() > pos:
+            out.append(TextRun(text[pos:m.start()], **style))
+        expr = m.group(0).strip()
+        if expr:
+            out.append(InlineMath(expr))
+        pos = m.end()
+    if pos < len(text):
+        out.append(TextRun(text[pos:], **style))
+    return out or [TextRun(text, **style)]
+
+
 def parse_inline(text: str, *, bold=False, italic=False, underline=False,
                  strike=False, code=False, sup=False, sub=False) -> list[Inline]:
     """Parse inline Markdown, inline HTML tags, and $...$ / \\(...\\) math."""
@@ -173,8 +201,12 @@ def parse_inline(text: str, *, bold=False, italic=False, underline=False,
         if m.start() > pos:
             plain = text[pos:m.start()]
             if plain:
-                out.append(TextRun(plain, bold=bold, italic=italic, underline=underline,
-                                   strike=strike, code=code, sup=sup, sub=sub))
+                if code:
+                    out.append(TextRun(plain, bold=bold, italic=italic, underline=underline,
+                                       strike=strike, code=code, sup=sup, sub=sub))
+                else:
+                    out.extend(_split_bare_latex(plain, bold=bold, italic=italic, underline=underline,
+                                                 strike=strike, code=code, sup=sup, sub=sub))
         tok = m.group(0)
         low = tok.lower()
         if tok.startswith('\\(') and tok.endswith('\\)'):
@@ -218,8 +250,12 @@ def parse_inline(text: str, *, bold=False, italic=False, underline=False,
     if pos < len(text):
         tail = text[pos:]
         if tail:
-            out.append(TextRun(tail, bold=bold, italic=italic, underline=underline,
-                               strike=strike, code=code, sup=sup, sub=sub))
+            if code:
+                out.append(TextRun(tail, bold=bold, italic=italic, underline=underline,
+                                   strike=strike, code=code, sup=sup, sub=sub))
+            else:
+                out.extend(_split_bare_latex(tail, bold=bold, italic=italic, underline=underline,
+                                             strike=strike, code=code, sup=sup, sub=sub))
     return out
 
 
