@@ -62,15 +62,7 @@ export function usePortList(mode: Mode) {
   })
 }
 
-/** Best guess: CH340 (vid 1a86) by-id path, else first USB, else first. */
-export function preferredPort(ports: SerialPort[] | undefined, current?: string | null) {
-  if (!ports?.length) return undefined
-  const key = (p: SerialPort) => p.by_id ?? p.path
-  if (current && ports.some((p) => key(p) === current || p.path === current)) return current
-  const ch = ports.find((p) => p.vid === '1a86' || /1a86|ch340/i.test(`${p.by_id ?? ''} ${p.description}`))
-  const usb = ports.find((p) => /usb|acm/i.test(`${p.path} ${p.by_id ?? ''}`))
-  return key(ch ?? usb ?? ports.find((p) => p.path !== 'fake') ?? ports[0])
-}
+export { preferredPort } from '@/lib/serial-port'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 

@@ -157,7 +157,7 @@ export function ConnectStep({ mode, setReady }: StepProps) {
   const ports = usePortList(mode)
   const { data, update } = { data: useOnboarding((s) => s.s.data), update: useOnboarding((s) => s.update) }
   const [picked, setPort] = React.useState<string | undefined>(data.port)
-  const port = picked ?? preferredPort(ports.data, status?.port)
+  const port = preferredPort(ports.data, picked, status?.port)
   const { busy, run } = useAct()
   const act = machineActions(mode)
   const connected = !!status?.connected

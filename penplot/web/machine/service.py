@@ -80,6 +80,7 @@ class MachineService:
         self.profile = None
         self.port = None
         self.baud = 115200
+        self._last_connection = None
         self.fake = None
         self.connecting = False
         self.error = None
@@ -111,6 +112,8 @@ class MachineService:
 
     # ------------------------------------------------------------ lifecycle
     def load_profile(self, profile):
+        if (self.profile or {}).get('id') != profile.get('id') or self.conn_cfg != (profile['doc'].get('connection') or {}):
+            self._last_connection = None
         self.profile = profile
         doc = dict(profile['doc'])
         self.mc = machine_config_from_dict(doc)
@@ -319,9 +322,12 @@ class MachineService:
         base = st.split(':')[0]
         r = lambda v: [round(x, 3) for x in v] if v else None  # noqa
         buf = g('buf')
+        last = self._last_connection
         return {
-            'connected': conn, 'connecting': self.connecting, 'port': self.port or self.conn_cfg.get('port'),
-            'baud': self.baud, 'fake': self.fake is not None and conn,
+            'connected': conn, 'connecting': self.connecting,
+            'port': self.port if conn else (self.cfg.serial_port or (last[0] if last else self.conn_cfg.get('port'))),
+            'baud': self.baud if conn else (last[1] if last else self.conn_cfg.get('baud', 115200)),
+            'fake': self.fake is not None and conn,
             'firmware': (c.firmware_version if c else '') or '',
             'machine_type': self.mc.type if self.mc else None,
             'profile_id': (self.profile or {}).get('id'), 'profile_name': (self.profile or {}).get('name'),
@@ -428,7 +434,7 @@ class MachineService:
                 if not cc.get('auto_connect', True) and not self.cfg.serial_port:
                     continue
                 port = self._resolve_port(None)
-                if port == 'fake' or os.path.exists(port):
+                if port == 'fake' or self._port_exists(port):
                     try:
                         await self.connect(None, None, None, auto=True)
                         delay = 2.0
@@ -445,7 +451,30 @@ class MachineService:
     # ------------------------------------------------------------ connect
     def _resolve_port(self, port):
         from ..profiles import DEFAULT_CONNECTION
-        return port or self.cfg.serial_port or self.conn_cfg.get('port') or DEFAULT_CONNECTION['port']
+        # Explicit requests and launch overrides must never silently open another device.
+        if port or self.cfg.serial_port:
+            return port or self.cfg.serial_port
+        configured = self.conn_cfg.get('port') or DEFAULT_CONNECTION['port']
+        last = self._last_connection
+        for candidate in (last[0] if last else None, configured):
+            if candidate and self._port_exists(candidate):
+                return candidate
+        # Match onboarding's device discovery for connection buttons without a port.
+        ports = self.ports()
+        ch340 = next((p for p in ports if p['vid'] == '1a86' or any(
+            token in ('%s %s' % (p['by_id'] or '', p['description'])).lower()
+            for token in ('1a86', 'ch340'))), None)
+        usb = next((p for p in ports if any(
+            token in ('%s %s' % (p['path'], p['by_id'] or '')).lower()
+            for token in ('usb', 'acm'))), None)
+        selected = ch340 or usb or next(iter(ports), None)
+        return (selected['by_id'] or selected['path']) if selected else configured
+
+    def _port_exists(self, port):
+        # Windows COM names are devices, not filesystem paths.
+        return bool(port) and (os.path.exists(port) or any(
+            port.casefold() in (p['path'].casefold(), (p['by_id'] or '').casefold())
+            for p in self.ports()))
 
     def ports(self):
         out = []
@@ -493,7 +522,8 @@ class MachineService:
 
     def _connect_blocking(self, port, baud, reset):
         port = self._resolve_port(port)
-        baud = int(baud or self.conn_cfg.get('baud') or 115200)
+        last = self._last_connection
+        baud = int(baud or (last[1] if last and last[0] == port else None) or self.conn_cfg.get('baud') or 115200)
         if reset is None:
             reset = bool(self.conn_cfg.get('reset_on_connect', False))
         self._close()
@@ -509,7 +539,7 @@ class MachineService:
                 fake = FakeGrbl(time_scale=self.cfg.fake_time_scale, faults=os.environ.get('PENPLOT_FAKE_FAULTS'))
             ser = fake
         else:
-            if not os.path.exists(port):
+            if not self._port_exists(port):
                 self.error = 'not_found: %s' % port
                 raise ApiError(503, 'port_not_found', '串口不存在：%s' % port)
             self._take_lock()
@@ -540,6 +570,7 @@ class MachineService:
             self.error = 'no_response'
             raise ApiError(503, 'no_response', '机器无响应（波特率/固件？）')
         self.error = None
+        self._last_connection = (port, baud)
         self._invalidate_origin()
         if st and st.startswith('Alarm'):
             self.last_alarm = _alarm_info('ALARM', None)
@@ -547,6 +578,8 @@ class MachineService:
         log.info('connected %s @ %d firmware=%s state=%s', port, baud, ctrl.firmware_version, st)
 
     def _take_lock(self):
+        if os.name == 'nt':
+            return
         import fcntl
         path = os.environ.get('PENPLOT_SERIAL_LOCK', SERIAL_LOCK)
         try:

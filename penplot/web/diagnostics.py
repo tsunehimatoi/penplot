@@ -71,14 +71,14 @@ class Diagnostics:
         m = c.machine
         checks = []
         t0 = time.time()
-        port = m.port or m._resolve_port(None)
+        port = m.port if m.connected else m._resolve_port(None)
         if port == 'fake':
             checks.append(_chk('serial_present', '串口设备', 'ok', 'FakeGrbl 模拟器'))
-        elif os.path.exists(port):
+        elif m._port_exists(port):
             checks.append(_chk('serial_present', '串口设备', 'ok', port))
         else:
             checks.append(_chk('serial_present', '串口设备', 'fail', '%s 不存在' % port,
-                               '检查 USB 线和写字机电源；ls /dev/serial/by-id/ 看看设备名'))
+                               '检查 USB 线和写字机电源，在连接面板刷新串口列表'))
         if m.connected:
             checks.append(_chk('serial_open', '串口独占', 'ok', '本服务已独占打开 %s' % m.port))
         else:

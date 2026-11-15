@@ -9,9 +9,10 @@ import { useLive } from '@/api/store'
 import { Badge, Button, Card, CardHeader, IconButton, Select, Skeleton, StatusPill } from '@/components/ui'
 import { useLiveStatus } from '@/app/use-live-status'
 import { toast } from '@/lib/toast'
+import { preferredPort } from '@/lib/serial-port'
 import { useMachineGate } from './gate'
 
-const BAUDS = [9600, 19200, 38400, 57600, 115200, 250000]
+const BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 250000]
 
 const QUALITY: Record<string, { label: string; tone: 'green' | 'orange' | 'red' | 'gray' }> = {
   good: { label: '良好', tone: 'green' },
@@ -37,13 +38,19 @@ export function LinkQualityBadge() {
 }
 
 export function ConnectionCard({ profile }: { profile: Profile | null }) {
+  const connectionKey = JSON.stringify([profile?.id, profile?.doc.connection?.port, profile?.doc.connection?.baud])
+  return <ConnectionCardBody key={connectionKey} profile={profile} />
+}
+
+function ConnectionCardBody({ profile }: { profile: Profile | null }) {
   const { machine, view } = useLiveStatus()
   const blocked = useMachineGate().leaseBlocked
   const connected = !!machine?.connected
   const ports = usePorts()
   const profPort = profile?.doc.connection?.port
   const [port, setPort] = React.useState<string | undefined>(undefined)
-  const [baud, setBaud] = React.useState<number>(profile?.doc.connection?.baud ?? 115200)
+  const [baudOverride, setBaud] = React.useState<number | undefined>(undefined)
+  const baud = baudOverride ?? (machine?.connected ? machine.baud : undefined) ?? profile?.doc.connection?.baud ?? 115200
   const [busy, setBusy] = React.useState<'connect' | 'disconnect' | null>(null)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -52,16 +59,10 @@ export function ConnectionCard({ profile }: { profile: Profile | null }) {
       value: p.by_id ?? p.path,
       label: `${shortPort(p.by_id ?? p.path)}${p.busy_pid ? `（被进程 ${p.busy_pid} 占用）` : ''}`,
     }))
-    // real devices first; hide the dozens of legacy ttyS* when something better exists
-    const real = list.filter((o) => !/\/ttyS\d+$/.test(o.value))
-    const shown = real.length ? real : list.slice(0, 8)
-    for (const extra of [profPort, machine?.port, 'fake']) {
-      if (extra && !shown.some((o) => o.value === extra)) shown.unshift({ value: extra, label: extra === 'fake' ? '模拟器（FakeGrbl）' : shortPort(extra) })
-    }
-    return shown
-  }, [ports.data, profPort, machine?.port])
+    return list
+  }, [ports.data])
 
-  const selected = port ?? machine?.port ?? profPort ?? options[0]?.value
+  const selected = preferredPort(ports.data, port, machine?.profile_id === profile?.id ? machine?.port : undefined, profPort)
 
   const connect = async () => {
     setBusy('connect')
