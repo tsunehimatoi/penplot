@@ -6,7 +6,7 @@ import zipfile
 
 from fastapi.testclient import TestClient
 
-from conftest import H, PW, REPO, gcode_file, job_wait, make_app
+from conftest import H, REPO, gcode_file, job_wait, make_app
 
 
 def test_import_original_settings_files(client):
@@ -34,7 +34,6 @@ def test_import_original_settings_files(client):
 def test_marlin_profile_runs_jobs(tmp_path):
     app = make_app(tmp_path)
     with TestClient(app) as c:
-        c.post('/api/v1/auth/setup', json={'password': PW}, headers=H)
         doc = json.load(open(os.path.join(REPO, 'configs', 'grbl-zpen.json')))
         doc['settings'].pop('zeroZAtStart', None)      # this test checks the XY-only start zero
         doc['type'] = 'Marlin'

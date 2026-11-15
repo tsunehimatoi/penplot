@@ -6,7 +6,7 @@ import sys
 
 from fastapi.testclient import TestClient
 
-from conftest import H, PW, REPO, job_wait, make_app, wait_for
+from conftest import H, REPO, job_wait, make_app, wait_for
 
 TEXT = '你好世界 Hello parity 测试排版，第二句话。'
 
@@ -258,7 +258,6 @@ def test_fonts_endpoints(client):
 def test_process_task_mode_render_and_cancel(tmp_path):
     app = make_app(tmp_path, task_mode='process')
     with TestClient(app) as c:
-        c.post('/api/v1/auth/setup', json={'password': PW}, headers=H)
         r = c.post('/api/v1/render/text?wait=30', json={'text': 'abc', 'font_id': 'penplot-sans'}, headers=H)
         assert r.status_code == 200, r.text
         tasks = app.state.ctx.tasks
@@ -297,7 +296,6 @@ def test_trace_image_in_rlimited_child(tmp_path, monkeypatch):
         monkeypatch.delenv(k, raising=False)
     app = make_app(tmp_path, task_mode='process')
     with TestClient(app) as c:
-        c.post('/api/v1/auth/setup', json={'password': PW}, headers=H)
         im = Image.new('L', (300, 200), 255)
         ImageDraw.Draw(im).ellipse([50, 30, 250, 170], outline=0, width=8)
         b = _io.BytesIO()

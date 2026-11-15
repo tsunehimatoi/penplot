@@ -2,7 +2,7 @@ import time
 
 from fastapi.testclient import TestClient
 
-from conftest import H, PW, gcode_file, job_wait, make_app, square_gcode, wait_for
+from conftest import H, gcode_file, job_wait, make_app, square_gcode, wait_for
 
 
 def _job(c, text=None, start=True, **kw):
@@ -239,13 +239,11 @@ def test_queue_frame_patch_delete_batch(client, app):
 def test_crash_recovery_marks_failed(tmp_path):
     app = make_app(tmp_path)
     with TestClient(app) as c:
-        c.post('/api/v1/auth/setup', json={'password': PW}, headers=H)
         f = gcode_file(c, square_gcode(3))
         j = c.post('/api/v1/jobs', json={'source': {'file_id': f['file']['id']}}, headers=H).json()
         app.state.ctx.db.execute("UPDATE jobs SET status='running', acked_line=7 WHERE id=?", (j['id'],))
     app2 = make_app(tmp_path)
     with TestClient(app2) as c:
-        c.post('/api/v1/auth/login', json={'password': PW}, headers=H)
         j2 = c.get('/api/v1/jobs/' + j['id']).json()
         assert j2['status'] == 'failed' and j2['reason'] == 'process_crash' and j2['can_retry_from'] == 1
 

@@ -3,7 +3,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import H, PW, gcode_file, make_app, square_gcode, wait_for
+from conftest import H, gcode_file, make_app, square_gcode, wait_for
 
 from penplot.web.teletype.tty import TtyFilter, normalize
 

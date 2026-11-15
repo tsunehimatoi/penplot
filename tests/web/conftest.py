@@ -15,7 +15,6 @@ from penplot.web.app import create_app  # noqa: E402
 from penplot.web.config import Config  # noqa: E402
 
 H = {'X-Penplot': '1'}
-PW = 'correct horse battery'
 
 
 def make_app(tmp_path, dev=True, task_mode='thread', time_scale=0.02, **env):

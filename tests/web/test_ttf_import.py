@@ -240,11 +240,11 @@ def test_process_mode_child(tmp_path):
     data = need(DEJAVU)
     app = make_app(tmp_path, task_mode='process')
     with TestClient(app, base_url='http://testserver') as c:
-        assert c.post('/api/v1/auth/setup', json={'password': 'correct horse battery'}, headers=H).status_code == 200
         t = run(c, data, 'DejaVuSans.ttf', charset='custom', chars='Hello')
         assert t['state'] == 'done', t
         assert t['result']['font']['display_name'] == 'DejaVu Sans 手写'
-        assert not leftovers(c)
+        # Upload cleanup runs in a separate thread after the task completes.
+        wait_for(lambda: not leftovers(c))
 
 
 # ---------------------------------------------------------------- units

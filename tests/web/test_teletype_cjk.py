@@ -3,7 +3,7 @@ custom library fonts, glyph fallback, status fields (state == WS events)."""
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import H, PW, make_app, wait_for
+from conftest import H, make_app, wait_for
 
 from penplot.web.teletype.glyphs import MONO, FontGlyphs, Glyphs, char_width
 from penplot.web.teletype.paper import Paper, geometry, layout_preview

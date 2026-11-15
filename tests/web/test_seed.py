@@ -5,7 +5,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import H, PW, REPO, make_app
+from conftest import H, REPO, make_app
 
 SEED = os.path.join(REPO, 'seed')
 pytestmark = pytest.mark.skipif(not os.path.exists(os.path.join(SEED, 'templates', 'index.json')),
@@ -21,7 +21,6 @@ def seeded(tmp_path):
         if fn.endswith(('.gfont', '.psf')) and not os.path.exists(dst):
             os.symlink(os.path.join(REPO, 'fonts', fn), dst)
     with TestClient(app) as c:
-        c.post('/api/v1/auth/setup', json={'password': PW}, headers=H)
         yield c
 
 
