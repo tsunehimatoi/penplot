@@ -246,8 +246,50 @@ function Editor() {
     return onImport(run)
   }, [])
 
+  const [navW, setNavW] = React.useState<number>(() => {
+    const v = Number(localStorage.getItem('penplot.studio.navW'))
+    return Number.isFinite(v) && v >= 160 && v <= 420 ? v : 216
+  })
+  const [inspW, setInspW] = React.useState<number>(() => {
+    const v = Number(localStorage.getItem('penplot.studio.inspW'))
+    return Number.isFinite(v) && v >= 260 && v <= 640 ? v : 300
+  })
+  const [resizing, setResizing] = React.useState<'nav' | 'insp' | null>(null)
+
+  const startResize = (side: 'nav' | 'insp', e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = side === 'nav' ? navW : inspW
+    setResizing(side)
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX
+      if (side === 'nav') {
+        const w = Math.round(Math.min(420, Math.max(160, startW + dx)))
+        setNavW(w)
+      } else {
+        const w = Math.round(Math.min(640, Math.max(260, startW - dx)))
+        setInspW(w)
+      }
+    }
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      setResizing(null)
+      const dx = ev.clientX - startX
+      if (side === 'nav') {
+        const w = Math.round(Math.min(420, Math.max(160, startW + dx)))
+        try { localStorage.setItem('penplot.studio.navW', String(w)) } catch { /* ignore */ }
+      } else {
+        const w = Math.round(Math.min(640, Math.max(260, startW - dx)))
+        try { localStorage.setItem('penplot.studio.inspW', String(w)) } catch { /* ignore */ }
+      }
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
   const openImport = (acc?: string) => {
-    setAccept(acc ?? '.svg,.dxf,.png,.jpg,.jpeg,.webp,.gcode,.nc,.gco,.txt,.json,.pdf')
+    setAccept(acc ?? '.svg,.dxf,.png,.jpg,.jpeg,.webp,.gcode,.nc,.gco,.txt,.md,.markdown,.docx,.html,.htm,.json,.pdf')
     setTimeout(() => fileRef.current?.click(), 0)
   }
   const onFiles = async (files: File[]) => {
@@ -351,10 +393,27 @@ function Editor() {
       <div className="absolute inset-0 flex flex-col">
         <div className="flex min-h-0 flex-1">
           {!compact ? (
-            <div className={cn('mat-sidebar hairline-r relative shrink-0 overflow-hidden transition-[width] duration-[var(--dur-slow)] ease-spring', navOpen ? 'w-[var(--navigator-w)]' : 'w-0')} inert={!navOpen}>
-              <div className="absolute inset-y-0 left-0 w-[var(--navigator-w)]">
+            <div
+              className={cn('mat-sidebar hairline-r relative shrink-0 overflow-hidden', resizing !== 'nav' && 'transition-[width] duration-[var(--dur-slow)] ease-spring')}
+              style={{ width: navOpen ? navW : 0 }}
+              inert={!navOpen}
+            >
+              <div className="absolute inset-y-0 left-0" style={{ width: navW }}>
                 <Navigator />
               </div>
+              {navOpen ? (
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="调整页面栏宽度"
+                  onPointerDown={(e) => startResize('nav', e)}
+                  onDoubleClick={() => {
+                    setNavW(216)
+                    try { localStorage.removeItem('penplot.studio.navW') } catch { /* ignore */ }
+                  }}
+                  className="absolute inset-y-0 right-0 z-20 w-1.5 cursor-col-resize hover:bg-accent/35 active:bg-accent/50"
+                />
+              ) : null}
             </div>
           ) : null}
           <div className="relative min-w-0 flex-1">
@@ -381,7 +440,22 @@ function Editor() {
             </p>
           </div>
           {!compact && inspectorOpen && canEdit ? (
-            <aside className="hairline-l w-[var(--inspector-w)] shrink-0 overflow-y-auto overscroll-contain bg-bg-elevated" aria-label="检查器">
+            <aside
+              className="hairline-l relative shrink-0 overflow-y-auto overscroll-contain bg-bg-elevated"
+              style={{ width: inspW }}
+              aria-label="检查器"
+            >
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="调整检查器宽度"
+                onPointerDown={(e) => startResize('insp', e)}
+                onDoubleClick={() => {
+                  setInspW(300)
+                  try { localStorage.removeItem('penplot.studio.inspW') } catch { /* ignore */ }
+                }}
+                className="absolute inset-y-0 left-0 z-20 w-1.5 cursor-col-resize hover:bg-accent/35 active:bg-accent/50"
+              />
               {inspector}
             </aside>
           ) : null}

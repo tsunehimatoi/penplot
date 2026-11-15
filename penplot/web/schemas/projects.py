@@ -94,8 +94,18 @@ class TextProps(OpenModel):
     missing_glyph: Literal['box', 'skip'] = 'box'
 
 
+class RichStyle(OpenModel):
+    heading_scale: float = Field(1.35, ge=1.0, le=3.0)
+    chart_lines: int = Field(8, ge=3, le=30)
+    math_scale: float = Field(1.0, ge=0.4, le=3.0)
+    table_header_repeat: bool = True
+    code_box: bool = True
+
+
 class FlowTextProps(OpenModel):
     text: str = ''
+    format: Literal['plain', 'markdown', 'html'] = 'plain'
+    rich_style: Optional[RichStyle] = None
     font_id: Optional[str] = None
     font_mix: Optional[list[FontMixEntry]] = None
     text_size: float = Field(1.0, gt=0, le=10, description='glyph scale relative to the ruled line height')

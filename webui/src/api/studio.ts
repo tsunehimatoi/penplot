@@ -46,6 +46,8 @@ export type VectorImportResult = S['VectorImportResult']
 export type ImageImportResult = S['ImageImportResult']
 export type GcodeImportResult = S['GcodeImportResult']
 export type TextImportResult = S['TextImportResult']
+export type RichImportResult = S['RichImportResult']
+export type RichStyle = S['RichStyle']
 export type AppSettings = S['AppSettings']
 export type JobCreate = S['JobCreate']
 export type Job = S['Job']
@@ -257,7 +259,7 @@ export async function downloadProjectJson(projectId: string, name: string) {
 
 // ------------------------------------------------------------------ imports
 
-export type ImportKind = 'svg' | 'dxf' | 'image' | 'gcode' | 'text'
+export type ImportKind = 'svg' | 'dxf' | 'image' | 'gcode' | 'text' | 'document'
 
 export function importKindFor(name: string): ImportKind | null {
   const n = name.toLowerCase()
@@ -265,6 +267,7 @@ export function importKindFor(name: string): ImportKind | null {
   if (n.endsWith('.dxf')) return 'dxf'
   if (/\.(png|jpe?g|webp)$/.test(n)) return 'image'
   if (/\.(gcode|nc|gco)$/.test(n)) return 'gcode'
+  if (/\.(md|markdown|html?|docx)$/.test(n)) return 'document'
   if (n.endsWith('.txt')) return 'text'
   return null
 }
@@ -274,6 +277,7 @@ export type ImportResult =
   | { kind: 'image'; name: string; data: ImageImportResult }
   | { kind: 'gcode'; name: string; data: GcodeImportResult }
   | { kind: 'text'; name: string; data: TextImportResult }
+  | { kind: 'document'; name: string; data: RichImportResult }
 
 export async function importFile(file: File): Promise<ImportResult> {
   const kind = importKindFor(file.name)

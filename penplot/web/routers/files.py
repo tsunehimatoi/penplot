@@ -7,8 +7,8 @@ from fastapi.responses import FileResponse
 from ..errors import ApiError
 from ..backgrounds import BackgroundImports
 from ..schemas import (BackgroundImportResult, BackgroundPageRequest, FileInfo, FilePatch, GcodeImportResult,
-                       ImageImportResult, TableImportResult, TaskRef, TextImportResult, TraceRequest, TraceResult,
-                       VectorImportResult)
+                       ImageImportResult, RichImportResult, TableImportResult, TaskRef, TextImportResult,
+                       TraceRequest, TraceResult, VectorImportResult)
 from ._util import attachment, wait_or_202
 
 router = APIRouter(tags=['files'])
@@ -90,6 +90,14 @@ async def import_text(request: Request, file: UploadFile = File(...)):
     if len(data) > 5 * MB:
         raise ApiError(413, 'too_large', '文本文件超过 5 MB')
     return request.app.state.ctx.imports.text(data)
+
+
+@router.post('/import/document', response_model=RichImportResult, tags=['imports'])
+async def import_document(request: Request, file: UploadFile = File(...)):
+    data = await file.read(20 * MB + 1)
+    if len(data) > 20 * MB:
+        raise ApiError(413, 'too_large', '文档文件超过 20 MB')
+    return request.app.state.ctx.imports.rich_document(data, file.filename or 'document.md')
 
 
 @router.post('/import/table', response_model=TableImportResult, status_code=201, tags=['imports'])

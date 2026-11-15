@@ -82,7 +82,7 @@ registerImportHandler({
   description: '跨页自动排版',
   icon: ScrollText,
   priority: 40,
-  accept: ['.txt'],
+  accept: ['.txt', '.md', '.markdown', '.docx', '.html', '.htm'],
   run: (files, { navigate, pathname }) => {
     enqueueImport({ files: files.slice(0, 1), as: 'letter' })
     goStudio(pathname, navigate)

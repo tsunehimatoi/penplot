@@ -60,6 +60,13 @@ class TextImportResult(Model):
     chars: int
 
 
+class RichImportResult(Model):
+    format: Literal['markdown', 'html', 'plain']
+    content: str
+    title: Optional[str] = None
+    warnings: list[str] = []
+
+
 class SvgTextRun(Model):
     """A run of SVG <text> characters sharing font-family and font-size."""
     text_index: int = Field(description='index of the <text> element (document order)')

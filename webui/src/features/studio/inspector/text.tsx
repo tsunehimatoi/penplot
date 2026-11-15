@@ -3,12 +3,13 @@ import * as React from 'react'
 import type { FlowTextElement, Jitter, TextElement } from '@/api/studio'
 import { Button, NumberField, Segmented, Textarea } from '@/components/ui'
 import { cn } from '@/lib/cn'
-import { JITTER_PRESETS, NO_JITTER } from '../model'
+import { JITTER_PRESETS, NO_JITTER, DEFAULT_RICH_STYLE } from '../model'
 import { studio, useStudio } from '../store'
 import { useElementRender } from '../canvas/element-view'
 import { Help } from '../ext'
 import { FontPicker, pushRecentFont, useBestFont } from './font-picker'
 import { Note, Num, RangeRow, Row, Section, SegRow, SliderRow, SwitchRow } from './controls'
+import { RichFlowEditor } from './rich-editor'
 
 const ALIGN = [
   { value: 'L' as const, icon: AlignLeft, ariaLabel: '左对齐' },
@@ -30,15 +31,19 @@ export function TextContent({ el, autoFocus }: { el: TextElement | FlowTextEleme
   const { r } = useElementRender(el)
   return (
     <Section title={el.type === 'flow_text' ? '正文' : '内容'}>
-      <Textarea
-        ref={ref}
-        value={el.props.text}
-        onChange={(e) => studio.setProps(el.id, { text: e.currentTarget.value }, 'text')}
-        rows={el.type === 'flow_text' ? 8 : 4}
-        className="font-[inherit] text-body"
-        placeholder={el.type === 'flow_text' ? '尊敬的…（直接输入，自动换行分页）' : '输入文字，可使用 {{变量}}'}
-        aria-label="文字内容"
-      />
+      {el.type === 'flow_text' ? (
+        <RichFlowEditor el={el} textareaRef={ref} />
+      ) : (
+        <Textarea
+          ref={ref}
+          value={el.props.text}
+          onChange={(e) => studio.setProps(el.id, { text: e.currentTarget.value }, 'text')}
+          rows={4}
+          className="font-[inherit] text-body"
+          placeholder="输入文字，可使用 {{变量}}"
+          aria-label="文字内容"
+        />
+      )}
       {r?.missing?.length ? <MissingGlyphs el={el} missing={r.missing} /> : null}
       {r?.overflow ? <Note tone="orange" icon={<TriangleAlert />}>文字超出文本框高度，多余的行未绘制。</Note> : null}
     </Section>
@@ -118,6 +123,28 @@ export function TextStyle({ el }: { el: TextElement | FlowTextElement }) {
           <Num label="缩进量" value={el.props.paragraph.spe_value} onChange={(v) => set({ paragraph: { ...el.props.paragraph, spe_value: v } })} unit="mm" step={1} min={0} max={80} />
           <Num label="段左" value={el.props.paragraph.left} onChange={(v) => set({ paragraph: { ...el.props.paragraph, left: v } })} unit="mm" step={1} min={0} max={80} />
           <Num label="段右" value={el.props.paragraph.right} onChange={(v) => set({ paragraph: { ...el.props.paragraph, right: v } })} unit="mm" step={1} min={0} max={80} />
+          {(el.props.format === 'markdown' || el.props.format === 'html') && (
+            <details className="group px-1 pt-1 [&_summary::-webkit-details-marker]:hidden" open>
+              <summary className="flex cursor-default list-none items-center gap-1 py-1 text-footnote font-medium text-accent">
+                <span className="transition-transform group-open:rotate-90">›</span> 富文本排版
+              </summary>
+              <div className="-mx-1 flex flex-col gap-1.5 pt-1">
+                {(() => {
+                  const rs = { ...DEFAULT_RICH_STYLE, ...(el.props.rich_style ?? {}) }
+                  const setRs = (patch: Partial<typeof DEFAULT_RICH_STYLE>) => set({ rich_style: { ...rs, ...patch } })
+                  return (
+                    <>
+                      <Num label="标题倍率" value={rs.heading_scale} onChange={(v) => setRs({ heading_scale: v })} unit="×" step={0.05} min={1} max={2.5} />
+                      <Num label="图表行数" value={rs.chart_lines} onChange={(v) => setRs({ chart_lines: Math.round(v) })} unit="行" step={1} min={3} max={30} />
+                      <Num label="公式缩放" value={rs.math_scale} onChange={(v) => setRs({ math_scale: v })} unit="×" step={0.05} min={0.4} max={2.5} />
+                      <SwitchRow label="跨页表头" checked={rs.table_header_repeat} onChange={(v) => setRs({ table_header_repeat: v })} />
+                      <SwitchRow label="代码边框" checked={rs.code_box} onChange={(v) => setRs({ code_box: v })} />
+                    </>
+                  )
+                })()}
+              </div>
+            </details>
+          )}
         </>
       )}
       <SegRow label="缺字时" value={p.missing_glyph} onChange={(v) => set({ missing_glyph: v })} options={[{ value: 'box', label: '画方框' }, { value: 'skip', label: '跳过' }]} />

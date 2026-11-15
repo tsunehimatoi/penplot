@@ -340,6 +340,13 @@ class Imports:
         text, enc = decode_text(data)
         return {'text': text, 'encoding': enc, 'chars': len(text)}
 
+    def rich_document(self, data, filename):
+        from ..importers.rich_doc import import_rich_document
+        try:
+            return import_rich_document(data, filename)
+        except ValueError as e:
+            raise ApiError(400, 'bad_document', str(e))
+
     async def table(self, staged, name):
         low = name.lower()
         if low.endswith('.xlsx') and not self.ctx.features.get('office'):

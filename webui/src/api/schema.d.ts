@@ -2626,6 +2626,26 @@ export interface components {
              */
             props: components["schemas"]["FlowTextProps"];
         };
+        /** RichStyle */
+        RichStyle: {
+            /** @default 1.35 */
+            heading_scale?: number;
+            /** @default 8 */
+            chart_lines?: number;
+            /** @default 1 */
+            math_scale?: number;
+            /** @default true */
+            table_header_repeat?: boolean;
+            /** @default true */
+            code_box?: boolean;
+        };
+        /** RichImportResult */
+        RichImportResult: {
+            format: "markdown" | "html" | "plain";
+            content: string;
+            title?: string | null;
+            warnings: string[];
+        };
         /** FlowTextProps */
         FlowTextProps: {
             /**
@@ -2633,6 +2653,9 @@ export interface components {
              * @default
              */
             text: string;
+            /** @default plain */
+            format?: "plain" | "markdown" | "html";
+            rich_style?: components["schemas"]["RichStyle"] | null;
             /** Font Id */
             font_id?: string | null;
             /** Font Mix */

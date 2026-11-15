@@ -174,13 +174,21 @@ export function makeText(x: number, y: number, z: number, fontId: string | null,
   } as Element
 }
 
-export function makeFlow(fontId: string | null, text = ''): Element {
+export const DEFAULT_RICH_STYLE = {
+  heading_scale: 1.35,
+  chart_lines: 8,
+  math_scale: 1.0,
+  table_header_repeat: true,
+  code_box: true,
+}
+
+export function makeFlow(fontId: string | null, text = '', format: 'plain' | 'markdown' | 'html' = 'markdown'): Element {
   return {
     ...base('flow_text', 0, 0, 0),
     type: 'flow_text',
     name: '正文',
     props: {
-      text, font_id: fontId, font_mix: null, text_size: 1, char_space: 0, align: 'L',
+      text, format, rich_style: { ...DEFAULT_RICH_STYLE }, font_id: fontId, font_mix: null, text_size: 1, char_space: 0, align: 'L',
       paragraph: { spe_type: 1, spe_value: 8, left: 0, right: 0 }, line_num: null, jitter: { ...NO_JITTER },
       seed: Math.floor(Math.random() * 10000), missing_glyph: 'box',
     },

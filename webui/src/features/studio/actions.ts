@@ -140,11 +140,16 @@ export async function addFiles(files: File[], as: 'element' | 'letter' = 'elemen
         if (r.data.analysis.warnings?.length) toast.warning(`${f.name}：${r.data.analysis.warnings.length} 条警告`, { description: r.data.analysis.warnings.slice(0, 3).join('；') })
       } else if (r.kind === 'text') {
         if (as === 'letter') {
-          setLetterText(r.data.text)
+          setLetterText(r.data.text, 'plain')
           continue
         }
         el = makeText(0, 0, z, defaultFontId(), r.data.text)
         if (el.type === 'text') el.props.box = { w: Math.min(120, maxW), h: Math.min(120, Math.max(20, (r.data.text.split('\n').length + 1) * 10.4)) }
+      } else if (r.kind === 'document') {
+        setLetterText(r.data.content, r.data.format)
+        if (r.data.warnings?.length) toast.warning(`${f.name}`, { description: r.data.warnings.join('；') })
+        else toast.success(`已导入信笺正文：${f.name}`)
+        continue
       }
       if (el) {
         z++
@@ -170,13 +175,17 @@ export async function addFiles(files: File[], as: 'element' | 'letter' = 'elemen
   toast.success(made.length > 1 ? `已添加 ${made.length} 个元素` : `已添加 ${elementName(made[0])}`)
 }
 
-export function setLetterText(text: string) {
+export function setLetterText(text: string, format?: 'plain' | 'markdown' | 'html') {
   const s = useStudio.getState()
   s.edit((doc) => {
     const page = doc.pages[s.view.page] ?? doc.pages[0]
     const flow = page.elements.find((e) => e.type === 'flow_text')
-    if (flow && flow.type === 'flow_text') flow.props.text = text
-    else page.elements = normalizeZ([{ ...makeFlow(defaultFontId(), text), z: -1 }, ...page.elements])
+    if (flow && flow.type === 'flow_text') {
+      flow.props.text = text
+      if (format) flow.props.format = format
+    } else {
+      page.elements = normalizeZ([{ ...makeFlow(defaultFontId(), text, format ?? 'markdown'), z: -1 }, ...page.elements])
+    }
   })
 }
 

@@ -150,14 +150,30 @@ def flow_text_pages(el, paper, res, variables, settings, warn):
     page = page_info(paper, pr.get('line_num'))
     mix = _font_mix(pr, res)
     font = mix[0][0] if mix else res.font(pr.get('font_id'))
+    para = pr.get('paragraph') or {}
+    fmt = ParagraphFormat(int(para.get('spe_type', 0)), float(para.get('spe_value', 0.0)),
+                          float(para.get('left', 0.0)), float(para.get('right', 0.0)))
+    rich_fmt = pr.get('format') or 'plain'
+    if rich_fmt in ('markdown', 'html'):
+        from .rich_layout import RichTextDocument
+        rdoc = RichTextDocument(
+            page, font, _fonts_set(pr.get('jitter')), settings=settings,
+            rng=random.Random(_seed(pr, el.get('id'))),
+            text_size=float(pr.get('text_size', 1.0)),
+            char_space=float(pr.get('char_space', 0.0)), font_mix=mix,
+            missing_glyph=pr.get('missing_glyph', 'box'),
+            rich_style=pr.get('rich_style'),
+        )
+        out = rdoc.layout_and_render(text, fmt_name=rich_fmt, para_fmt=fmt,
+                                     align=pr.get('align', 'L'))
+        warn['missing'] |= rdoc.missing
+        return out or [[]]
+
     doc = TextDocument(page, font, _fonts_set(pr.get('jitter')), settings=settings,
                        rng=random.Random(_seed(pr, el.get('id'))),
                        text_size=float(pr.get('text_size', 1.0)),
                        char_space=float(pr.get('char_space', 0.0)), font_mix=mix)
     doc.missing_glyph = pr.get('missing_glyph', 'box')
-    para = pr.get('paragraph') or {}
-    fmt = ParagraphFormat(int(para.get('spe_type', 0)), float(para.get('spe_value', 0.0)),
-                          float(para.get('left', 0.0)), float(para.get('right', 0.0)))
     align = ALIGN.get(pr.get('align', 'L'), LineAlign.LEFT)
     pages = doc.layout(text, fmt)
     k = 25.4 / settings.dpi
