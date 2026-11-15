@@ -13,15 +13,16 @@ import {
 import { useCoarsePointer, useReducedMotion } from '@/lib/media'
 import { isMac } from '@/lib/platform'
 import {
-  align, contentBox, copySelection, deleteSelection, duplicateSelection, elementAABB, insertShape, insertText, lastKeys, paste, selectAll,
+  align, originBox, copySelection, deleteSelection, duplicateSelection, elementAABB, inkAABB, insertShape, insertText, lastKeys, paste, selectAll,
   toggleHidden, toggleLock, zOrder,
 } from '../actions'
 import {
   aabb, boxTargets, contains, corners, frameBox, intersects, localBox, paperTargets, rot, scaleOf, snapBox, toFrame,
   travelD, union, type Box, type Pt, type SnapLine,
 } from '../geometry'
-import { machineAxes, makeShape, maxZ, originPoint, paperDims, sortedByZ, workAreaRect } from '../model'
+import { elementOnPage, machineAxes, makeShape, maxZ, originPoint, paperDims, sortedByZ, workAreaRect } from '../model'
 import { outputIndex, pagePolylines, useRender } from '../render-engine'
+import { usePagination } from '../pagination'
 import { currentPage, studio, useStudio } from '../store'
 import { ElementView, useElementRender } from './element-view'
 import { Guides, HANDLES, handlePoint, OriginOverlay, RULER, Rulers, SelectionFrame, sx, sy, type Handle, type Viewport } from './overlays'
@@ -67,6 +68,14 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
       fitRequest: s.fitRequest, animate: s.animate, bgAlign: s.bgAlign, bgCalib: s.bgCalib, bgTouch: s.bgTouch, readOnly: s.readOnly,
     })),
   )
+  const pagination = usePagination(st.doc)
+  const pageNumber = pagination.findIndex((p) => p.page === st.view.page && p.sub === st.view.sub) + 1
+  const pageCount = pagination.filter((p) => p.page === st.view.page).length
+  React.useEffect(() => {
+    if (pageCount && st.view.sub >= pageCount) {
+      useStudio.getState().setView({ page: st.view.page, sub: pageCount - 1 })
+    }
+  }, [pageCount, st.view.page, st.view.sub])
   const page = st.doc?.pages[st.view.page] ?? null
   const { w: pw, h: ph } = paperDims(paper)
   const v: Viewport = { zoom: st.zoom.zoom, panX: st.zoom.panX, panY: st.zoom.panY, width: size.width, height: size.height }
@@ -114,11 +123,11 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
   }, [pw, ph])
 
   // ---------------------------------------------------------------- derived geometry
-  const els = React.useMemo(() => (page ? sortedByZ(page.elements) : []), [page])
-  const cbox = page && st.view.sub === 0 ? contentBox(page.elements, paper) : null
+  const els = React.useMemo(() => (page ? sortedByZ(page.elements.filter((e) => elementOnPage(e, st.view.sub))) : []), [page, st.view.sub])
+  const cbox = page ? originBox(page.elements, paper, st.view.sub) : null
   const work = workArea ? workAreaRect(origin, pw, ph, workArea.w_mm, workArea.h_mm, cbox) : null
   const paperBox: Box = { x: 0, y: 0, w: pw, h: ph }
-  const sel = st.view.sub === 0 && !st.bgAlign ? els.filter((e) => st.selection.includes(e.id)) : []
+  const sel = !st.bgAlign ? els.filter((e) => st.selection.includes(e.id)) : []
   const bg = page?.background ?? null
   const align = st.bgAlign && !!bg
 
@@ -286,7 +295,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
           studio.get().checkpoint()
         }
         const boxes = els.filter((x) => !x.hidden).map((x) => ({ box: elementAABB(x, paper), label: '元素角' }))
-        if (cbox) boxes.push({ box: cbox, label: '内容角' })
+        if (cbox) boxes.push({ box: cbox, label: els.some((el) => el.type === 'flow_text' && !el.hidden) ? '信笺元素角' : '内容角' })
         const sn = snapOn(e) ? snapOrigin(p, originSnapPoints(paper, boxes, bg), originSnapLines(paper), 8 / z.zoom) : { p, label: null }
         applyOriginOffsets(origin, offsetsAt(origin, pw, ph, sn.p, cbox), true)
         setOriginLabel(sn.label)
@@ -495,11 +504,12 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
     for (const el of els) {
       if (el.hidden) continue
       const box = elementAABB(el, paper)
-      m.set(el.id, { box, outPaper: !contains(paperBox, box), outWork: !!work && !contains(work, box, 1) })
+      const ink = inkAABB(el, paper, st.view.sub)
+      m.set(el.id, { box, outPaper: !contains(paperBox, ink), outWork: !!work && !contains(work, ink, 1) })
     }
     return m
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [els, paper, work?.x, work?.y, work?.w, work?.h, useRender((s) => s.els)])
+  }, [els, paper, st.view.sub, work?.x, work?.y, work?.w, work?.h, useRender((s) => s.els)])
 
   // ---------------------------------------------------------------- page render overlays
   const pageRender = useRender((s) => s.page)
@@ -594,7 +604,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
           data-studio-canvas
           role="application"
           aria-roledescription="排版画布"
-          aria-label={`第 ${st.view.page + 1} 页，${els.length} 个元素`}
+          aria-label={`第 ${pageNumber || 1} 页，${els.length} 个元素`}
           className="relative h-full w-full touch-none select-none overflow-hidden bg-canvas-desk outline-none"
         >
           <svg
@@ -653,11 +663,11 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
                 vectorEffect="non-scaling-stroke"
                 className="pointer-events-none"
               />
-              {flowEl && st.view.sub === 0 && !flowEl.hidden ? <Ruling paper={paper} el={flowEl} /> : null}
+              {flowEl && !flowEl.hidden ? <Ruling paper={paper} el={flowEl} /> : null}
               {/* elements */}
               <g opacity={align ? 0.35 : undefined} pointerEvents={align ? 'none' : undefined}>
               {els.map((el) =>
-                st.view.sub > 0 && el.type !== 'flow_text' ? null : (
+                !elementOnPage(el, st.view.sub) ? null : (
                   <ElementView
                     key={el.id}
                     el={el}
@@ -695,7 +705,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
               </text>
             ) : null}
             <text x={sx(v, pw)} y={sy(v, 0) - 8} textAnchor="end" fontSize={12} fill="rgb(var(--secondary-label) / var(--secondary-label-a))" className="pointer-events-none select-none">
-              {paper.name} · {pw}×{ph} mm{st.view.sub > 0 ? ` · 第 ${st.view.page + 1} 页续 ${st.view.sub}（自动）` : ''}
+              {paper.name} · {pw}×{ph} mm · 第 {pageNumber || 1} 页 / 共 {pagination.length} 页
             </text>
             {(st.overlays.origin || st.overlays.axes) && !align ? (
               <OriginOverlay
@@ -706,7 +716,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
                 content={cbox}
                 showAxes={st.overlays.axes}
                 showMarker={st.overlays.origin}
-                draggable={!st.readOnly && st.view.sub === 0}
+                draggable={!st.readOnly}
                 touch={touch}
                 dragging={gesture.current?.kind === 'origin' ? { snap: originLabel, where: parkText(origin, pw, ph, cbox, true) } : null}
               />
@@ -728,7 +738,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
             <Guides v={v} lines={guides} />
             {st.overlays.rulers && !touch ? <Rulers v={v} highlight={selBox} /> : null}
           </svg>
-          {st.animate && pageRender.result && outIdx != null ? <StrokeAnimation rid={pageRender.result.rid} index={outIdx} v={v} origin={originPoint(origin, pw, ph, cbox)} /> : null}
+          {st.animate && pageRender.result && outIdx != null ? <StrokeAnimation key={`${pageRender.result.rid}/${outIdx}`} rid={pageRender.result.rid} index={outIdx} v={v} origin={originPoint(origin, pw, ph, cbox)} /> : null}
         </div>
       </ContextMenuTrigger>
       <CanvasMenu />

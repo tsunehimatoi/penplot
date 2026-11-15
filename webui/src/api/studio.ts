@@ -2,6 +2,7 @@
  * Studio (创作台) API layer: types for the composition model + render / import / job helpers.
  * Shapes: docs/design/03-backend.md §3.3–3.5, §4.3/4.4/4.6 and 04-contract-notes.md §6–9.
  */
+import { decodePaths, type Polylines } from './paths'
 import { api, ApiError, isApiError } from './client'
 import type { components } from './schema'
 import { useLive } from './store'
@@ -189,22 +190,7 @@ export function renderProject(projectId: string, body: Partial<RenderRequest> & 
   return postAndWait<RenderResult>(`/projects/${projectId}/render`, req, opts)
 }
 
-/** Polylines decoded from the `PPL1` binary (04 §6). Each entry is a flat [x0,y0,x1,y1,…] array in mm. */
-export type Polylines = Float32Array[]
-
-export function decodePaths(buf: ArrayBuffer): Polylines {
-  const dv = new DataView(buf)
-  if (buf.byteLength < 8 || dv.getUint32(0, true) !== 0x314c5050) throw new Error('bad paths magic')
-  const n = dv.getUint32(4, true)
-  const offs = new Uint32Array(n + 1)
-  for (let i = 0; i <= n; i++) offs[i] = dv.getUint32(8 + i * 4, true)
-  const base = 8 + (n + 1) * 4
-  const total = offs[n]
-  const xy = new Float32Array(buf.slice(base, base + total * 8))
-  const out: Polylines = []
-  for (let k = 0; k < n; k++) out.push(xy.subarray(offs[k] * 2, offs[k + 1] * 2))
-  return out
-}
+export { decodePaths, type Polylines } from './paths'
 
 export async function fetchPaths(rid: string, index: number, space: 'page' | 'machine' = 'page', signal?: AbortSignal): Promise<Polylines> {
   const res = await api.get<Response>(`/render/${rid}/pages/${index}/paths`, { query: { space }, raw: true, signal, headers: { Accept: 'application/octet-stream' } })

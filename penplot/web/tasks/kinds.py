@@ -185,6 +185,33 @@ def export_render(args, progress):
     """png / pdf / svg of render pages -> file at args['dst']."""
     from ...compose import decode_paths
     fmt = args['format']
+    if fmt == 'png':
+        import tempfile
+        import zipfile
+        from ...export.png import write_png
+        from ..backgrounds import composite_png
+
+        def render_png(page, dst):
+            with open(page['bin'], 'rb') as f:
+                paths = decode_paths(f.read())
+            background = page.get('background') or args.get('background')
+            if background:
+                composite_png(dst, paths, page['w'], page['h'], int(args.get('dpi', 150)), background)
+            else:
+                write_png(dst, paths, page['w'], page['h'], dpi=int(args.get('dpi', 150)))
+
+        if len(args['pages']) == 1:
+            render_png(args['pages'][0], args['dst'])
+        else:
+            # Decode/rasterize one page at a time: long letters must not retain all page images.
+            with tempfile.TemporaryDirectory(prefix='penplot-png-') as tmp:
+                with zipfile.ZipFile(args['dst'], 'w', zipfile.ZIP_STORED) as archive:
+                    for i, page in enumerate(args['pages']):
+                        dst = os.path.join(tmp, 'page.png')
+                        render_png(page, dst)
+                        archive.write(dst, 'page-%d.png' % (page.get('index', i) + 1))
+                        progress((i + 1) / len(args['pages']))
+        return {'dst': args['dst']}
     pages = []
     for p in args['pages']:
         with open(p['bin'], 'rb') as f:
@@ -192,13 +219,6 @@ def export_render(args, progress):
     if fmt == 'pdf':
         from ...export.pdf import write_pdf
         write_pdf(args['dst'], pages)
-    elif fmt == 'png' and args.get('background'):
-        from ..backgrounds import composite_png
-        composite_png(args['dst'], pages[0][0], pages[0][1], pages[0][2], int(args.get('dpi', 150)),
-                      args['background'])
-    elif fmt == 'png':
-        from ...export.png import write_png
-        write_png(args['dst'], pages[0][0], pages[0][1], pages[0][2], dpi=int(args.get('dpi', 150)))
     return {'dst': args['dst']}
 
 

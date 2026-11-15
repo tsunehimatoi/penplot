@@ -18,7 +18,7 @@ import {
 import { uid } from '@/lib/id'
 import { onLinkRestored } from '@/api/net'
 import { cacheGetMany, cachePutMany } from './el-cache'
-import { polylinesBBox, polylinesToD } from './geometry'
+import { fetchPathPreview } from './path-conversion'
 import { IDENTITY } from './model'
 
 export const CLIENT_ID = uid('ui').slice(0, 10)
@@ -193,7 +193,7 @@ async function renderBatch(pid: string, batch: RenderItem[]): Promise<void> {
       id: `s${i}`,
       paper: it.paper,
       origin: null,
-      elements: [{ ...it.el, transform: { ...IDENTITY }, z: 0, hidden: false, locked: false } as Element],
+      elements: [{ ...it.el, transform: { ...IDENTITY }, page_offset: 0, z: 0, hidden: false, locked: false } as Element],
     })),
   }
   let res: RenderResult
@@ -228,15 +228,14 @@ async function renderBatch(pid: string, batch: RenderItem[]): Promise<void> {
     batch.map(async (it, i) => {
       const pages = res.pages.filter((p) => p.source_page === i)
       try {
-        const polys: Polylines[] = await Promise.all(pages.map((p) => fetchPaths(res.rid, p.index)))
-        const ds = polys.map((pl) => ({ d: polylinesToD(pl), bbox: polylinesBBox(pl) }))
+        const ds = await Promise.all(pages.map((p) => fetchPathPreview(res.rid, p.index)))
         const w = pages[0]?.warnings
         out[it.key] = {
           status: 'ok',
           d: ds[0]?.d ?? '',
           bbox: ds[0]?.bbox ?? null,
           pages: it.el.type === 'flow_text' ? ds : undefined,
-          strokes: polys.reduce((n, p) => n + p.length, 0),
+          strokes: ds.reduce((n, p) => n + p.strokes, 0),
           missing: w?.missing_glyphs ?? [],
           overflow: !!w?.overflow,
           at: Date.now(),

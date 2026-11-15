@@ -5,10 +5,11 @@ import { importFile, type Element, type PaperBase, type PaperSpec } from '@/api/
 import { toast } from '@/lib/toast'
 import { aabb, corners, localBox, type Box } from './geometry'
 import {
-  clone, elementName, makeFlow, makeGcode, makeImage, makeShape, makeText, makeVector, maxZ, newId, newPage, normalizeZ,
+  elementOnPage, clone, elementName, makeFlow, makeGcode, makeImage, makeShape, makeText, makeVector, maxZ, newId, newPage, normalizeZ,
   pagePaperRef, paperDims, resolvePaper, sortedByZ,
 } from './model'
 import { useRender } from './render-engine'
+import { resolveElementRender } from './element-render'
 import { currentPage, selectedElements, studio, useStudio } from './store'
 
 export function papersCache(): PaperSpec[] | undefined {
@@ -38,24 +39,27 @@ export function elementAABB(el: Element, paper: PaperBase): Box {
 }
 
 /** AABB of the element's ink (rendered paths) on the page; falls back to the layout box before the first render. */
-export function inkAABB(el: Element, paper: PaperBase): Box {
-  const rb = findRendered(el)
-  if (!rb || el.type === 'flow_text') return elementAABB(el, paper)
+export function inkAABB(el: Element, paper: PaperBase, sub = 0): Box {
+  const key = lastKeys.get(el.id)
+  const { r } = resolveElementRender(el.id, key ? useRender.getState().els[key] : undefined)
+  const rb = el.type === 'flow_text' ? r?.pages?.[sub]?.bbox : r?.bbox
+  if (!rb) return elementAABB(el, paper)
   return aabb(corners(el.transform, { x: rb[0], y: rb[1], w: Math.max(0, rb[2] - rb[0]), h: Math.max(0, rb[3] - rb[1]) }))
 }
 
-/** Drawing bounding box of a page (page mm) = what the backend anchors a 'content' origin to. */
-export function contentBox(elements: Element[], paper: PaperBase): Box | null {
+/** Ink bounds of the physical page, matching the backend's content-anchored origin. */
+export function contentBox(elements: Element[], paper: PaperBase, sub = 0): Box | null {
   const els = useRender.getState().els
   const boxes = elements
-    .filter((e) => !e.hidden)
+    .filter((e) => !e.hidden && elementOnPage(e, sub))
     .filter((e) => {
-      // rendered without any ink (e.g. an empty text) → not part of the drawing
       const k = lastKeys.get(e.id)
-      const r = k ? els[k] : undefined
-      return !(r?.status === 'ok' && !r.bbox && !r.pages?.some((p) => p.bbox))
+      const { r } = resolveElementRender(e.id, k ? els[k] : undefined)
+      // Empty content on this physical page must not affect its origin.
+      const bbox = e.type === 'flow_text' ? r?.pages?.[sub]?.bbox : r?.bbox
+      return r?.status !== 'ok' || !!bbox
     })
-    .map((e) => inkAABB(e, paper))
+    .map((e) => inkAABB(e, paper, sub))
   if (!boxes.length) return null
   let x0 = Infinity
   let y0 = Infinity
@@ -68,6 +72,16 @@ export function contentBox(elements: Element[], paper: PaperBase): Box | null {
     y1 = Math.max(y1, b.y + b.h)
   }
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+}
+
+/** A letter starts at its component frame, regardless of the first glyph's bearings or paragraph indent. */
+export function letterFrame(elements: Element[], paper: PaperBase): Box | null {
+  const letter = elements.find((el) => el.type === 'flow_text' && !el.hidden)
+  return letter ? elementAABB(letter, paper) : null
+}
+
+export function originBox(elements: Element[], paper: PaperBase, sub = 0): Box | null {
+  return letterFrame(elements, paper) ?? contentBox(elements, paper, sub)
 }
 
 function findRendered(el: Element) {
@@ -282,7 +296,7 @@ export function zOrder(dir: 'up' | 'down' | 'top' | 'bottom') {
   const page = currentPage(s)
   if (!page || !s.selection.length) return
   const sel = new Set(s.selection)
-  let list = sortedByZ(page.elements)
+  let list = sortedByZ(page.elements).filter((e) => elementOnPage(e, s.view.sub))
   if (dir === 'top') list = [...list.filter((e) => !sel.has(e.id)), ...list.filter((e) => sel.has(e.id))]
   else if (dir === 'bottom') list = [...list.filter((e) => sel.has(e.id)), ...list.filter((e) => !sel.has(e.id))]
   else if (dir === 'up') {
@@ -290,7 +304,8 @@ export function zOrder(dir: 'up' | 'down' | 'top' | 'bottom') {
   } else {
     for (let i = 1; i < list.length; i++) if (sel.has(list[i].id) && !sel.has(list[i - 1].id)) [list[i], list[i - 1]] = [list[i - 1], list[i]]
   }
-  const order = new Map(list.map((e, i) => [e.id, i]))
+  let next = 0
+  const order = new Map(sortedByZ(page.elements).map((e, i) => [elementOnPage(e, s.view.sub) ? list[next++].id : e.id, i]))
   s.edit((doc) => {
     const p = doc.pages[s.view.page]
     p.elements = p.elements.map((e) => ({ ...e, z: order.get(e.id) ?? e.z }))
@@ -302,12 +317,13 @@ export function moveToIndex(id: string, index: number) {
   const s = useStudio.getState()
   const page = currentPage(s)
   if (!page) return
-  const list = sortedByZ(page.elements)
+  const list = sortedByZ(page.elements).filter((e) => elementOnPage(e, s.view.sub))
   const from = list.findIndex((e) => e.id === id)
   if (from < 0) return
   const [it] = list.splice(from, 1)
   list.splice(Math.max(0, Math.min(list.length, index)), 0, it)
-  const order = new Map(list.map((e, i) => [e.id, i]))
+  let next = 0
+  const order = new Map(sortedByZ(page.elements).map((e, i) => [elementOnPage(e, s.view.sub) ? list[next++].id : e.id, i]))
   s.edit((doc) => {
     const p = doc.pages[s.view.page]
     p.elements = p.elements.map((e) => ({ ...e, z: order.get(e.id) ?? e.z }))
@@ -409,7 +425,7 @@ export function duplicatePage(i: number) {
   const s = useStudio.getState()
   if (!s.doc) return
   const src = s.doc.pages[i]
-  const copy = { ...clone(src), id: newId('p'), elements: src.elements.filter((e) => e.type !== 'flow_text').map((e) => ({ ...clone(e), id: newId() })) }
+  const copy = { ...clone(src), id: newId('p'), elements: src.elements.map((e) => ({ ...clone(e), id: newId() })) }
   s.edit((doc) => {
     doc.pages.splice(i + 1, 0, copy)
   })
@@ -439,5 +455,5 @@ export function movePage(from: number, to: number) {
 export function selectAll() {
   const s = useStudio.getState()
   const page = currentPage(s)
-  if (page) useStudio.setState({ selection: page.elements.filter((e) => !e.locked).map((e) => e.id) })
+  if (page) useStudio.setState({ selection: page.elements.filter((e) => !e.locked && elementOnPage(e, s.view.sub)).map((e) => e.id) })
 }

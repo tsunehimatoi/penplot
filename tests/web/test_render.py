@@ -126,6 +126,74 @@ def test_flow_text_adds_pages_and_missing_glyphs(client):
     assert j['batch_id'] and len(client.get('/api/v1/batches/' + j['batch_id']).json()['jobs']) == 3
 
 
+def test_letter_origin_follows_component_frame_on_every_page(client):
+    import pytest
+    p = _project(client, [{'id': 'letter', 'type': 'flow_text',
+                          'transform': {'x': 3, 'y': 4},
+                          'props': {'text': '\n'.join('LINE %02d' % i for i in range(45)),
+                                    'font_id': 'penplot-sans', 'seed': 1,
+                                    'paragraph': {'spe_type': 1, 'spe_value': 8}}}],
+                 paper={'spec': {'name': 'letter', 'width_mm': 210, 'height_mm': 297,
+                                 'margins': {'l': 20, 'r': 20, 't': 15, 'b': 15},
+                                 'ruling': {'line_num': 20}}},
+                 print={'origin': {'anchor': 'content', 'corner': 0}})
+    res = client.post('/api/v1/projects/%s/render' % p['id'], json={}, headers=H).json()
+    assert len(res['pages']) >= 3
+    for pg in res['pages']:
+        x0, y0, x1, y1 = pg['bbox']
+        assert pg['machine_bbox'] == pytest.approx([x0 - 23, 19 - y1, x1 - 23, 19 - y0], abs=0.002)
+        placement = client.get('/api/v1/render/%s/pages/%d/placement' % (res['rid'], pg['index'])).json()
+        assert placement['origin_spec']['anchor_bbox'] == [23, 19, 193, 286]
+        assert placement['paper'][0] == [-23, 19]
+
+
+def test_components_stay_on_letter_continuations(client):
+    p = _project(client, [
+        {'id': 'letter', 'type': 'flow_text', 'props': {'text': '\n'.join('LINE %02d' % i for i in range(45)), 'font_id': 'penplot-sans', 'seed': 1}},
+        {'id': 'annotation', 'type': 'shape', 'page_offset': 2, 'transform': {'x': 5, 'y': 5}, 'props': {'kind': 'rect', 'w': 10, 'h': 10}},
+    ])
+    saved = client.get('/api/v1/projects/' + p['id']).json()
+    assert saved['doc']['pages'][0]['elements'][1]['page_offset'] == 2
+    url = '/api/v1/projects/%s/render' % p['id']
+    res = client.post(url, json={}, headers=H).json()
+    assert len(res['pages']) == 3
+    assert res['pages'][0]['bbox'][0] > 5
+    assert res['pages'][1]['bbox'][0] > 5
+    assert res['pages'][2]['bbox'][0:2] == [5, 5]
+    # A continuation with a component survives even when the letter becomes shorter.
+    doc = saved['doc']
+    doc['pages'][0]['elements'][0]['props']['text'] = 'Short letter'
+    res = client.post(url, json={'doc': doc}, headers=H).json()
+    assert len(res['pages']) == 3
+    assert res['pages'][1]['bbox'] is None
+    assert res['pages'][2]['bbox'] == [5, 5, 15, 15]
+    doc['pages'][0]['elements'].pop()
+    res = client.post(url, json={'doc': doc}, headers=H).json()
+    assert len(res['pages']) == 1
+
+
+def test_letter_png_exports_every_selected_page(client):
+    import zipfile
+    p = _project(client, [{'id': 'letter', 'type': 'flow_text', 'props': {
+        'text': '\n'.join('LINE %02d' % i for i in range(45)), 'font_id': 'penplot-sans', 'seed': 1}}])
+    res = client.post('/api/v1/projects/%s/render' % p['id'], json={}, headers=H).json()
+    assert len(res['pages']) == 3
+    url = '/api/v1/render/%s/export' % res['rid']
+    for selected, expected in [('all', ['page-1.png', 'page-2.png', 'page-3.png']),
+                               ([2, 0], ['page-3.png', 'page-1.png'])]:
+        r = client.post(url, json={'format': 'png', 'pages': selected, 'dpi': 36}, headers=H)
+        assert r.status_code == 200, r.text[:200]
+        assert r.headers['content-type'].startswith('application/zip')
+        with zipfile.ZipFile(io.BytesIO(r.content)) as archive:
+            assert archive.namelist() == expected
+            assert all(archive.read(name).startswith(b'\x89PNG') for name in expected)
+            assert archive.read(expected[0]) != archive.read(expected[-1])
+    r = client.post(url, json={'format': 'png', 'pages': [2], 'dpi': 36}, headers=H)
+    assert r.status_code == 200 and r.headers['content-type'].startswith('image/png')
+    assert r.content.startswith(b'\x89PNG')
+    assert client.post(url, json={'format': 'png', 'pages': []}, headers=H).status_code == 400
+
+
 def test_missing_font_falls_back_and_paper_errors(client):
     p = _project(client, [{'id': 'x', 'type': 'text', 'props': {'text': 'a', 'font_id': 'nope'}}])
     r = client.post('/api/v1/projects/%s/render' % p['id'], json={}, headers=H)

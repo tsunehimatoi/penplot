@@ -42,7 +42,7 @@ export function FontPicker({ value, onChange, text, id }: { value: string | null
   const [q, setQ] = React.useState('')
   const [favs, setFavs] = React.useState(() => readList(FAV_KEY))
   const missing = React.useMemo(() => new Map((cov.data ?? []).map((f) => [f.id, f.missing ?? []])), [cov.data])
-  const sample = sampleOf(text)
+  const sample = React.useMemo(() => sampleOf(text), [text])
   const all = (fonts.data ?? []).filter((f) => !f.hidden || f.id === value)
   const byId = new Map(all.map((f) => [f.id, f]))
   const cur = byId.get(value ?? '')

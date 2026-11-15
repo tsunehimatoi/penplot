@@ -6,44 +6,40 @@ import type { DocPage, Element, ElementType, PaperBase } from '@/api/studio'
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger, IconButton, Segmented,
 } from '@/components/ui'
+import { useInView } from '@/lib/use-in-view'
 import { cn } from '@/lib/cn'
 import { confirm } from '@/lib/confirm'
-import { addPage, deletePage, duplicatePage, lastKeys, moveToIndex, movePage, papersCache, toggleHidden, toggleLock } from '../actions'
+import { addPage, deletePage, duplicatePage, moveToIndex, movePage, papersCache, toggleHidden, toggleLock } from '../actions'
 import { patchBackground } from '../background'
 import { svgTransform } from '../geometry'
-import { elementName, pagePaperRef, paperDims, resolvePaper, sortedByZ } from '../model'
-import { useRender } from '../render-engine'
+import { elementOnPage, elementName, pagePaperRef, paperDims, resolvePaper, sortedByZ } from '../model'
+import { usePagination } from '../pagination'
+import { useElementRender } from '../element-render'
 import { studio, useStudio } from '../store'
 
 export const TYPE_ICON: Record<ElementType, typeof Type> = { text: Type, flow_text: ScrollText, image: ImageIcon, svg: PenTool, dxf: PenTool, shape: Shapes, gcode: FileCode2 }
 
 function ThumbEl({ el, sub }: { el: Element; sub: number }) {
-  const key = lastKeys.get(el.id)
-  const r = useRender((s) => (key ? s.els[key] : undefined))
-  const d = el.type === 'flow_text' ? r?.pages?.[sub]?.d : sub === 0 ? r?.d : undefined
+  const { r } = useElementRender(el)
+  const d = el.type === 'flow_text' ? r?.pages?.[sub]?.d : elementOnPage(el, sub) ? r?.d : undefined
   if (!d || el.hidden) return null
   return <path d={d} transform={svgTransform(el.transform)} fill="none" stroke="rgb(var(--ink))" strokeWidth={0.8} vectorEffect="non-scaling-stroke" />
 }
 
-export function PageThumb({ page, paper, sub = 0, size = 72 }: { page: DocPage; paper: PaperBase; sub?: number; size?: number }) {
+export const PageThumb = React.memo(function PageThumb({ page, paper, sub = 0, size = 72 }: { page: DocPage; paper: PaperBase; sub?: number; size?: number }) {
+  const { ref, visible } = useInView<SVGSVGElement>()
   const { w, h } = paperDims(paper)
   const k = size / Math.max(w, h)
   return (
-    <svg width={w * k} height={h * k} viewBox={`0 0 ${w} ${h}`} className="block bg-canvas-paper shadow-paper" aria-hidden>
-      {sortedByZ(page.elements).map((e) => (sub > 0 && e.type !== 'flow_text' ? null : <ThumbEl key={e.id} el={e} sub={sub} />))}
+    <svg ref={ref} width={w * k} height={h * k} viewBox={`0 0 ${w} ${h}`} className="block bg-canvas-paper shadow-paper" aria-hidden>
+      {visible && sortedByZ(page.elements).map((e) => (!elementOnPage(e, sub) ? null : <ThumbEl key={e.id} el={e} sub={sub} />))}
     </svg>
   )
-}
-
-/** Auto (overflow) page count per project page, from the flow_text element render. */
-export function useAutoPages(page: DocPage | undefined) {
-  const flow = page?.elements.find((e) => e.type === 'flow_text')
-  const key = flow ? lastKeys.get(flow.id) : undefined
-  return useRender((s) => (key ? Math.max(0, (s.els[key]?.pages?.length ?? 1) - 1) : 0))
-}
+})
 
 export function PagesList({ horizontal = false }: { horizontal?: boolean }) {
   const { doc, view } = useStudio(useShallow((s) => ({ doc: s.doc, view: s.view })))
+  const pagination = usePagination(doc)
   const [dragFrom, setDragFrom] = React.useState<number | null>(null)
   if (!doc) return null
   const papers = papersCache()
@@ -54,6 +50,8 @@ export function PagesList({ horizontal = false }: { horizontal?: boolean }) {
           key={p.id}
           page={p}
           index={i}
+          firstNumber={pagination.findIndex((v) => v.page === i) + 1}
+          count={pagination.filter((v) => v.page === i).length}
           paper={resolvePaper(pagePaperRef(doc, p), papers)}
           active={view.page === i}
           activeSub={view.page === i ? view.sub : -1}
@@ -83,10 +81,12 @@ export function PagesList({ horizontal = false }: { horizontal?: boolean }) {
 }
 
 function PageItem({
-  page, index, paper, active, activeSub, horizontal, canDelete, onDragStart, onDrop,
+  page, index, firstNumber, count, paper, active, activeSub, horizontal, canDelete, onDragStart, onDrop,
 }: {
   page: DocPage
   index: number
+  firstNumber: number
+  count: number
   paper: PaperBase
   active: boolean
   activeSub: number
@@ -95,10 +95,10 @@ function PageItem({
   onDragStart: () => void
   onDrop: () => void
 }) {
-  const autos = useAutoPages(page)
   const go = (sub: number) => useStudio.getState().setView({ page: index, sub })
-  const thumb = (sub: number, isActive: boolean, label: string, auto?: boolean) => (
+  const thumb = (sub: number, isActive: boolean, label: string) => (
     <button
+      key={sub}
       type="button"
       role="option"
       aria-selected={isActive}
@@ -111,8 +111,7 @@ function PageItem({
       </span>
       {horizontal ? null : (
         <span className="flex items-center gap-1 text-caption tabular-nums text-secondary-label">
-          {index + 1}
-          {auto ? <span className="rounded-xs bg-fill px-1">自动</span> : null}
+          {firstNumber + sub}
         </span>
       )}
     </button>
@@ -137,25 +136,24 @@ function PageItem({
             onDrop()
           }}
         >
-          {thumb(0, active && activeSub === 0, `第 ${index + 1} 页`)}
-          {Array.from({ length: autos }, (_, k) => thumb(k + 1, active && activeSub === k + 1, `第 ${index + 1} 页 续 ${k + 1}（自动）`, true))}
+          {Array.from({ length: count }, (_, sub) => thumb(sub, active && activeSub === sub, `第 ${firstNumber + sub} 页`))}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onSelect={() => addPage(index)}>在后面插入空白页</ContextMenuItem>
+        <ContextMenuItem onSelect={() => addPage(index)}>{count > 1 ? '在信笺后插入空白页' : '在后面插入空白页'}</ContextMenuItem>
         <ContextMenuItem onSelect={() => duplicatePage(index)}>
-          <Copy className="size-4" /> 复制页面
+          <Copy className="size-4" /> {count > 1 ? `复制信笺（共 ${count} 页）` : '复制页面'}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
           disabled={!canDelete}
           className="text-red"
           onSelect={async () => {
-            if (page.elements.length && !(await confirm({ title: `删除第 ${index + 1} 页？`, description: `页面上的 ${page.elements.length} 个元素也会被删除（可撤销）。`, confirmLabel: '删除', destructive: true }))) return
+            if (page.elements.length && !(await confirm({ title: `删除第 ${firstNumber} 页${count > 1 ? `及其后 ${count - 1} 页信笺` : ''}？`, description: `页面上的 ${page.elements.length} 个元素也会被删除（可撤销）。`, confirmLabel: '删除', destructive: true }))) return
             deletePage(index)
           }}
         >
-          <Trash2 className="size-4" /> 删除页面
+          <Trash2 className="size-4" /> {count > 1 ? `删除信笺（共 ${count} 页）` : '删除页面'}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -169,7 +167,7 @@ export function LayersList() {
   const [renaming, setRenaming] = React.useState<string | null>(null)
   const page = doc?.pages[view.page]
   if (!page) return null
-  const list = sortedByZ(page.elements).reverse() // top first
+  const list = sortedByZ(page.elements.filter((e) => elementOnPage(e, view.sub))).reverse() // top first
   const bgRow = page.background ? <BackgroundRow bg={page.background} /> : null
   if (!list.length)
     return (

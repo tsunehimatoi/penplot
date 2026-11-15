@@ -90,9 +90,9 @@ export function snapOrigin(p: Pt, pts: SnapPoint[], lines: ReturnType<typeof ori
 }
 
 /** Write offsets: the page's own origin if it has one, else the project print origin. `live` = no history entry. */
-export function applyOriginOffsets(effective: OriginSpec, offs: { offset_x_mm: number; offset_y_mm: number }, live: boolean) {
+export function applyOriginOffsets(effective: OriginSpec, offs: { offset_x_mm: number; offset_y_mm: number }, live: boolean, pageIndex?: number) {
   const s = useStudio.getState()
-  const pi = s.view.page
+  const pi = pageIndex ?? s.view.page
   s.edit((d) => {
     const page = d.pages[pi]
     if (page?.origin) page.origin = { ...page.origin, ...offs }
@@ -129,6 +129,7 @@ export function useSvgOriginDrag(opts: {
   /** snap tolerance in screen px */
   tolPx?: number
   disabled?: boolean
+  pageIndex?: number
 }) {
   const [drag, setDrag] = React.useState<{ label: string | null } | null>(null)
   const st = React.useRef<{ moved: boolean } | null>(null)
@@ -156,7 +157,7 @@ export function useSvgOriginDrag(opts: {
         useStudio.getState().checkpoint()
       }
       const sn = e.altKey ? { p: r.p, label: null } : snapOrigin(r.p, opts.snap, opts.lines, (opts.tolPx ?? 10) * r.k)
-      applyOriginOffsets(opts.origin, offsetsAt(opts.origin, opts.w, opts.h, sn.p, opts.content), true)
+      applyOriginOffsets(opts.origin, offsetsAt(opts.origin, opts.w, opts.h, sn.p, opts.content), true, opts.pageIndex)
       setDrag({ label: sn.label })
     },
     onPointerUp: () => {

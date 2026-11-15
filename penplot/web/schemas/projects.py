@@ -179,6 +179,7 @@ class GcodeProps(OpenModel):
 
 class ElementBase(Model):
     id: str
+    page_offset: int = Field(0, ge=0, le=9999, description='Physical page offset within the source page; flow_text spans pages and ignores this field')
     name: Optional[str] = None
     transform: Transform = Transform()
     z: int = 0

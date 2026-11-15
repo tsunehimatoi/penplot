@@ -4,9 +4,9 @@ import * as React from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Element, OriginSpec, PaperBase } from '@/api/studio'
 import { Segmented } from '@/components/ui'
-import { elementAABB } from '../actions'
+import { originBox, inkAABB } from '../actions'
 import { contains } from '../geometry'
-import { elementName, originAnchor, paperDims, TYPE_LABEL, workAreaRect } from '../model'
+import { elementOnPage, elementName, originAnchor, paperDims, TYPE_LABEL, workAreaRect } from '../model'
 import { useRender } from '../render-engine'
 import { currentPage, useStudio } from '../store'
 import { ArrangeSection } from './arrange'
@@ -33,7 +33,7 @@ type Group = 'main' | 'style' | 'arrange'
 export function Inspector(props: InspectorProps) {
   const { selection, doc, view } = useStudio(useShallow((s) => ({ selection: s.selection, doc: s.doc, view: s.view })))
   const page = currentPage({ doc, view })
-  const els = page && view.sub === 0 ? page.elements.filter((e) => selection.includes(e.id)) : []
+  const els = page ? page.elements.filter((e) => selection.includes(e.id) && elementOnPage(e, view.sub)) : []
   const [group, setGroup] = React.useState<Group>('main')
   const single = els.length === 1 ? els[0] : null
   React.useEffect(() => setGroup('main'), [single?.id])
@@ -94,13 +94,15 @@ function ElementGroups({ el, group, paper }: { el: Element; group: Group; paper:
 
 function Warnings({ els, paper, origin, workArea }: { els: Element[]; paper: PaperBase; origin: OriginSpec; workArea: InspectorProps['workArea'] }) {
   useRender((s) => s.els)
+  const sub = useStudio((s) => s.view.sub)
+  const page = useStudio((s) => s.doc?.pages[s.view.page])
   const { w, h } = paperDims(paper)
-  const work = workArea ? workAreaRect(origin, w, h, workArea.w_mm, workArea.h_mm) : null
+  const work = workArea ? workAreaRect(origin, w, h, workArea.w_mm, workArea.h_mm, page ? originBox(page.elements, paper, sub) : null) : null
   let outPaper = 0
   let outWork = 0
   for (const e of els) {
     if (e.hidden) continue
-    const b = elementAABB(e, paper)
+    const b = inkAABB(e, paper, sub)
     if (!contains({ x: 0, y: 0, w, h }, b)) outPaper++
     if (work && !contains(work, b, 1)) outWork++
   }
@@ -124,10 +126,11 @@ function DocumentInspector({ paper, origin, originOverridden, profileName, onOpe
   const doc = useStudio((s) => s.doc)!
   const view = useStudio((s) => s.view)
   const page = doc.pages[view.page]
-  const flow = doc.pages.flatMap((p) => p.elements).find((e) => e.type === 'flow_text')
+  const flow = page?.elements.find((e) => e.type === 'flow_text')
   const pageRender = useRender((s) => s.page)
   const out = pageRender.result?.pages.filter((p) => p.source_page === view.page) ?? []
-  const warn = out.find((p) => p.out_of_work_area || p.warnings.clipped)
+  const current = out[view.sub]
+  const warn = current && (current.out_of_work_area || current.warnings.clipped) ? current : null
   const [group, setGroup] = React.useState<'paper' | 'origin' | 'data'>('paper')
   return (
     <div className="flex flex-col">
@@ -144,7 +147,7 @@ function DocumentInspector({ paper, origin, originOverridden, profileName, onOpe
       </div>
       <div className="px-3 pt-3">
         <Note tone="blue" icon={<Crosshair />}>
-          开始前：把笔（抬起状态）停在{originAnchor(origin) === 'content' ? '要写内容的' : '纸张'}<b className="font-semibold">{['左上', '右上', '左下', '右下'][origin.corner]}角</b>（原点）。写字机没有回零开关，每次开工都以笔所在的位置为起点。 <Help topic="原点" />
+          开始前：把笔（抬起状态）停在{originAnchor(origin) === 'content' ? (flow && !flow.hidden ? '信笺元素的' : '要写内容的') : '纸张'}<b className="font-semibold">{['左上', '右上', '左下', '右下'][origin.corner]}角</b>（原点）。写字机没有回零开关，每次开工都以笔所在的位置为起点。 <Help topic="原点" />
         </Note>
       </div>
       {warn ? (
@@ -160,7 +163,7 @@ function DocumentInspector({ paper, origin, originOverridden, profileName, onOpe
             <PaperCard paper={paper} onOpen={onOpenPaper} pageOverride={!!page?.paper} />
           </div>
           <BackgroundSection />
-          {flow ? <LetterSection onSelectFlow={() => useStudio.setState({ selection: [flow.id], view: { page: doc.pages.findIndex((p) => p.elements.includes(flow)), sub: 0 } })} /> : null}
+          {flow ? <LetterSection onSelectFlow={() => useStudio.getState().select([flow.id])} /> : null}
         </>
       ) : null}
       {group === 'origin' ? <OriginSection origin={origin} overridden={originOverridden} paper={paper} profileName={profileName} onOpenPosition={onOpenPosition} /> : null}

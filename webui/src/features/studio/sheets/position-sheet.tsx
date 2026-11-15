@@ -15,7 +15,7 @@ import type { OriginSpec, PaperBase } from '@/api/studio'
 import { Button, Dialog, DialogContent, DialogTitle, NumberField, Segmented } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { useIsCompact } from '@/lib/media'
-import { contentBox } from '../actions'
+import { contentBox, originBox } from '../actions'
 import { Help } from '../ext'
 import type { Box } from '../geometry'
 import { hasTravel, machineAxes, originAnchor, originPoint, pageToMachine, paperDims, workAreaRect } from '../model'
@@ -41,15 +41,18 @@ export function PositionSheet({ open, onOpenChange, paper, origin, workArea: wa 
   const drag = React.useRef<{ x: number; y: number; dx: number; dy: number; k: number } | null>(null)
   const page = currentPage({ doc, view })
   const { w: pw, h: ph } = paperDims(paper)
-  const design: Box | null = page ? contentBox(page.elements, paper) : null
+  const design: Box | null = page ? contentBox(page.elements, paper, view.sub) : null
   const job: Box | null = design ? { ...design, x: design.x + placement.dx, y: design.y + placement.dy } : null
+  const anchorFrame = page ? originBox(page.elements, paper, view.sub) : null
+  const anchor = anchorFrame ? { ...anchorFrame, x: anchorFrame.x + placement.dx, y: anchorFrame.y + placement.dy } : null
+  const anchorName = page?.elements.some((el) => el.type === 'flow_text' && !el.hidden) ? '信笺元素' : '内容'
   const anchored = originAnchor(origin) === 'content'
-  const work = workArea ? workAreaRect(origin, pw, ph, workArea.w_mm, workArea.h_mm, job) : null
-  const o = originPoint(origin, pw, ph, job)
+  const work = workArea ? workAreaRect(origin, pw, ph, workArea.w_mm, workArea.h_mm, anchor) : null
+  const o = originPoint(origin, pw, ph, anchor)
   const bg = page?.background ?? null
   const readOnly = useStudio((s) => s.readOnly)
   const odrag = useSvgOriginDrag({
-    svg: svgRef, origin, w: pw, h: ph, content: job,
+    svg: svgRef, origin, w: pw, h: ph, content: anchor,
     snap: originSnapPoints(paper, job ? [{ box: job, label: '内容角' }] : [], bg), lines: originSnapLines(paper), disabled: readOnly || !open,
   })
 
@@ -85,8 +88,8 @@ export function PositionSheet({ open, onOpenChange, paper, origin, workArea: wa 
   const machineBBox = (): number[] | null => {
     if (server?.bbox) return server.bbox
     if (!job) return null
-    const a = pageToMachine(origin, pw, ph, { x: job.x, y: job.y }, job)
-    const b = pageToMachine(origin, pw, ph, { x: job.x + job.w, y: job.y + job.h }, job)
+    const a = pageToMachine(origin, pw, ph, { x: job.x, y: job.y }, anchor)
+    const b = pageToMachine(origin, pw, ph, { x: job.x + job.w, y: job.y + job.h }, anchor)
     return [Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)]
   }
   const frame = async () => {
@@ -122,7 +125,7 @@ export function PositionSheet({ open, onOpenChange, paper, origin, workArea: wa 
           <div className="hairline-b flex shrink-0 items-center gap-2 px-5 py-3 pr-12">
             <DialogTitle>位置预览</DialogTitle>
             <Help topic="原点" />
-            <span className="truncate text-footnote text-secondary-label">{anchored ? '笔停在要写内容的角上，纸张相对它的位置' : '纸张、原点和要写的范围'}</span>
+            <span className="truncate text-footnote text-secondary-label">{anchored ? `笔停在${anchorName}的角上，纸张相对它的位置` : '纸张、原点和要写的范围'}</span>
           </div>
           <div className={cn('flex min-h-0 flex-1', compact && 'flex-col overflow-y-auto')}>
             <div className="relative min-h-[300px] min-w-0 flex-1 bg-canvas-desk p-3">
@@ -179,7 +182,7 @@ export function PositionSheet({ open, onOpenChange, paper, origin, workArea: wa 
                   </text>
                   <circle r={sw * 6} fill="rgb(var(--bg))" stroke="rgb(var(--axis-origin))" strokeWidth={sw * 2} />
                   <text x={(origin.corner === 1 || origin.corner === 3 ? -1 : 1) * sw * 12} y={(origin.corner === 2 || origin.corner === 3 ? -1 : 1) * sw * 22} textAnchor={origin.corner === 1 || origin.corner === 3 ? 'end' : 'start'} fontSize={sw * 12} fill="rgb(var(--axis-origin))" fontWeight={600}>
-                    {odrag.dragging ? `把笔停在这里，抬笔${odrag.label ? ` · 吸附 ${odrag.label}` : ''}` : anchored ? '原点 · 开始前笔停在这里（内容的角）' : '原点 · 开始前笔停在这里（纸张的角）'}
+                    {odrag.dragging ? `把笔停在这里，抬笔${odrag.label ? ` · 吸附 ${odrag.label}` : ''}` : anchored ? `原点 · 开始前笔停在这里（${anchorName}的角）` : '原点 · 开始前笔停在这里（纸张的角）'}
                   </text>
                 </g>
                 {!readOnly ? (
@@ -216,7 +219,7 @@ export function PositionSheet({ open, onOpenChange, paper, origin, workArea: wa 
               )}
               <div className="flex flex-col gap-2 rounded-lg bg-blue/10 p-3">
                 <div className="text-headline text-label">把笔停在这里，抬笔</div>
-                <p className="text-footnote tabular-nums text-secondary-label">{parkText(origin, pw, ph, job, true)}</p>
+                <p className="text-footnote tabular-nums text-secondary-label">{parkText(origin, pw, ph, anchor, true)}</p>
                 <div className="grid grid-cols-2 gap-2">
                   <label className="flex items-center gap-1 text-footnote text-secondary-label">
                     偏移 X
@@ -227,11 +230,11 @@ export function PositionSheet({ open, onOpenChange, paper, origin, workArea: wa 
                     <NumberField value={origin.offset_y_mm} onChange={(v) => applyOriginOffsets(origin, { offset_x_mm: origin.offset_x_mm, offset_y_mm: v }, false)} unit="mm" step={0.5} stepper={false} disabled={readOnly} className="min-w-0 flex-1" aria-label="原点偏移 Y" />
                   </label>
                 </div>
-                <p className="text-caption text-tertiary-label">偏移自{anchored ? '内容' : '纸张'}的{['左上', '右上', '左下', '右下'][origin.corner]}角向内量；拖动左图的原点也可以。</p>
+                <p className="text-caption text-tertiary-label">偏移自{anchored ? anchorName : '纸张'}的{['左上', '右上', '左下', '右下'][origin.corner]}角向内量；拖动左图的原点也可以。</p>
               </div>
               {job ? (
                 <p className="rounded-lg bg-fill/60 p-3 text-footnote text-secondary-label">
-                  开始前：把笔（抬起状态）停在{anchored ? `要写内容的${['左上', '右上', '左下', '右下'][origin.corner]}角` : `纸张${['左上', '右上', '左下', '右下'][origin.corner]}角`}
+                  开始前：把笔（抬起状态）停在{anchored ? `${anchorName}的${['左上', '右上', '左下', '右下'][origin.corner]}角` : `纸张${['左上', '右上', '左下', '右下'][origin.corner]}角`}
                   {origin.offset_x_mm || origin.offset_y_mm ? `（向内偏移 ${origin.offset_x_mm}, ${origin.offset_y_mm} mm）` : ''}。
                   {anchored ? '纸张不用对准机器，只要笔停的位置对。' : null}
                 </p>

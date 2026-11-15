@@ -720,6 +720,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/import/document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Document */
+        post: operations["import_document_api_v1_import_document_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/import/table": {
         parameters: {
             query?: never;
@@ -2147,6 +2164,11 @@ export interface components {
              */
             dpi: number;
         };
+        /** Body_import_document_api_v1_import_document_post */
+        Body_import_document_api_v1_import_document_post: {
+            /** File */
+            file: string;
+        };
         /** Body_import_dxf_api_v1_import_dxf_post */
         Body_import_dxf_api_v1_import_dxf_post: {
             /** File */
@@ -2396,6 +2418,12 @@ export interface components {
         DxfElement: {
             /** Id */
             id: string;
+            /**
+             * Page Offset
+             * @description Physical page offset within the source page; flow_text spans pages and ignores this field
+             * @default 0
+             */
+            page_offset: number;
             /** Name */
             name?: string | null;
             /**
@@ -2541,6 +2569,12 @@ export interface components {
         FlowTextElement: {
             /** Id */
             id: string;
+            /**
+             * Page Offset
+             * @description Physical page offset within the source page; flow_text spans pages and ignores this field
+             * @default 0
+             */
+            page_offset: number;
             /** Name */
             name?: string | null;
             /**
@@ -2582,6 +2616,7 @@ export interface components {
             /**
              * @default {
              *       "text": "",
+             *       "format": "plain",
              *       "text_size": 1,
              *       "char_space": 0,
              *       "align": "L",
@@ -2626,28 +2661,6 @@ export interface components {
              */
             props: components["schemas"]["FlowTextProps"];
         };
-        /** RichStyle */
-        RichStyle: {
-            /** @default 1.35 */
-            heading_scale?: number;
-            /** @default 8 */
-            chart_lines?: number;
-            /** @default 1 */
-            math_scale?: number;
-            /** @default true */
-            table_header_repeat?: boolean;
-            /** @default false */
-            table_hlines?: boolean;
-            /** @default true */
-            code_box?: boolean;
-        };
-        /** RichImportResult */
-        RichImportResult: {
-            format: "markdown" | "html" | "plain";
-            content: string;
-            title?: string | null;
-            warnings: string[];
-        };
         /** FlowTextProps */
         FlowTextProps: {
             /**
@@ -2655,14 +2668,17 @@ export interface components {
              * @default
              */
             text: string;
-            /** @default plain */
-            format?: "plain" | "markdown" | "html";
+            /**
+             * Format
+             * @default plain
+             * @enum {string}
+             */
+            format: "plain" | "markdown" | "html";
             rich_style?: components["schemas"]["RichStyle"] | null;
             /** Font Id */
             font_id?: string | null;
             /** Font Mix */
             font_mix?: components["schemas"]["FontMixEntry"][] | null;
-            /** Font Roles */
             font_roles?: components["schemas"]["FontRoles"] | null;
             /**
              * Text Size
@@ -2853,6 +2869,13 @@ export interface components {
              */
             weight: number;
         };
+        /** FontPatch */
+        FontPatch: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Hidden */
+            hidden?: boolean | null;
+        };
         /** FontRoles */
         FontRoles: {
             /** En */
@@ -2863,13 +2886,6 @@ export interface components {
             symbol?: string | null;
             /** Fallback */
             fallback?: string | null;
-        };
-        /** FontPatch */
-        FontPatch: {
-            /** Display Name */
-            display_name?: string | null;
-            /** Hidden */
-            hidden?: boolean | null;
         };
         /** FontSummary */
         FontSummary: {
@@ -2957,6 +2973,12 @@ export interface components {
         GcodeElement: {
             /** Id */
             id: string;
+            /**
+             * Page Offset
+             * @description Physical page offset within the source page; flow_text spans pages and ignores this field
+             * @default 0
+             */
+            page_offset: number;
             /** Name */
             name?: string | null;
             /**
@@ -3111,6 +3133,12 @@ export interface components {
         ImageElement: {
             /** Id */
             id: string;
+            /**
+             * Page Offset
+             * @description Physical page offset within the source page; flow_text spans pages and ignores this field
+             * @default 0
+             */
+            page_offset: number;
             /** Name */
             name?: string | null;
             /**
@@ -4867,6 +4895,58 @@ export interface components {
              */
             force: boolean;
         };
+        /** RichImportResult */
+        RichImportResult: {
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "markdown" | "html" | "plain";
+            /** Content */
+            content: string;
+            /** Title */
+            title?: string | null;
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: string[];
+        };
+        /** RichStyle */
+        RichStyle: {
+            /**
+             * Heading Scale
+             * @default 1.35
+             */
+            heading_scale: number;
+            /**
+             * Chart Lines
+             * @default 8
+             */
+            chart_lines: number;
+            /**
+             * Math Scale
+             * @default 1
+             */
+            math_scale: number;
+            /**
+             * Table Header Repeat
+             * @default true
+             */
+            table_header_repeat: boolean;
+            /**
+             * Table Hlines
+             * @default false
+             */
+            table_hlines: boolean;
+            /**
+             * Code Box
+             * @default true
+             */
+            code_box: boolean;
+        } & {
+            [key: string]: unknown;
+        };
         /** Ruling */
         Ruling: {
             /**
@@ -4900,6 +4980,12 @@ export interface components {
         ShapeElement: {
             /** Id */
             id: string;
+            /**
+             * Page Offset
+             * @description Physical page offset within the source page; flow_text spans pages and ignores this field
+             * @default 0
+             */
+            page_offset: number;
             /** Name */
             name?: string | null;
             /**
@@ -5036,6 +5122,12 @@ export interface components {
         SvgElement: {
             /** Id */
             id: string;
+            /**
+             * Page Offset
+             * @description Physical page offset within the source page; flow_text spans pages and ignores this field
+             * @default 0
+             */
+            page_offset: number;
             /** Name */
             name?: string | null;
             /**
@@ -5618,6 +5710,12 @@ export interface components {
         TextElement: {
             /** Id */
             id: string;
+            /**
+             * Page Offset
+             * @description Physical page offset within the source page; flow_text spans pages and ignores this field
+             * @default 0
+             */
+            page_offset: number;
             /** Name */
             name?: string | null;
             /**
@@ -5718,7 +5816,6 @@ export interface components {
             font_id?: string | null;
             /** Font Mix */
             font_mix?: components["schemas"]["FontMixEntry"][] | null;
-            /** Font Roles */
             font_roles?: components["schemas"]["FontRoles"] | null;
             /**
              * Size Mm
@@ -6438,6 +6535,7 @@ export type BatchInfo = components['schemas']['BatchInfo'];
 export type BatchRequest = components['schemas']['BatchRequest'];
 export type BatchResult = components['schemas']['BatchResult'];
 export type BodyImportBackgroundApiV1ImportBackgroundPost = components['schemas']['Body_import_background_api_v1_import_background_post'];
+export type BodyImportDocumentApiV1ImportDocumentPost = components['schemas']['Body_import_document_api_v1_import_document_post'];
 export type BodyImportDxfApiV1ImportDxfPost = components['schemas']['Body_import_dxf_api_v1_import_dxf_post'];
 export type BodyImportGcodeApiV1ImportGcodePost = components['schemas']['Body_import_gcode_api_v1_import_gcode_post'];
 export type BodyImportImageApiV1ImportImagePost = components['schemas']['Body_import_image_api_v1_import_image_post'];
@@ -6472,6 +6570,7 @@ export type FontDetail = components['schemas']['FontDetail'];
 export type FontHeader = components['schemas']['FontHeader'];
 export type FontMixEntry = components['schemas']['FontMixEntry'];
 export type FontPatch = components['schemas']['FontPatch'];
+export type FontRoles = components['schemas']['FontRoles'];
 export type FontSummary = components['schemas']['FontSummary'];
 export type FrameRequest = components['schemas']['FrameRequest'];
 export type GcodeAnalysis = components['schemas']['GcodeAnalysis'];
@@ -6547,6 +6646,8 @@ export type RenderResult = components['schemas']['RenderResult'];
 export type RenderSave = components['schemas']['RenderSave'];
 export type RenderTextRequest = components['schemas']['RenderTextRequest'];
 export type RestartRequest = components['schemas']['RestartRequest'];
+export type RichImportResult = components['schemas']['RichImportResult'];
+export type RichStyle = components['schemas']['RichStyle'];
 export type Ruling = components['schemas']['Ruling'];
 export type SaveAsTemplate = components['schemas']['SaveAsTemplate'];
 export type ShapeElement = components['schemas']['ShapeElement'];
@@ -8739,6 +8840,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TextImportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    import_document_api_v1_import_document_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_document_api_v1_import_document_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RichImportResult"];
                 };
             };
             /** @description Validation Error */

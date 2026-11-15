@@ -2,23 +2,8 @@ import * as React from 'react'
 import { api } from '@/api/client'
 import type { Element, PaperBase } from '@/api/studio'
 import { type Box, localBox, svgTransform } from '../geometry'
-import { lastKeys } from '../actions'
-import { useRender, type ElRender } from '../render-engine'
-
-/** Last successful render per element id, shown (dimmed) while a new version renders — avoids flicker while typing. */
-const lastGood = new Map<string, ElRender>()
-
-export function useElementRender(el: Element): { r: ElRender | undefined; stale: boolean } {
-  const key = lastKeys.get(el.id)
-  const r = useRender((s) => (key ? s.els[key] : undefined))
-  if (r?.status === 'ok') {
-    lastGood.set(el.id, r)
-    return { r, stale: false }
-  }
-  const prev = lastGood.get(el.id)
-  if (prev && r?.status !== 'error') return { r: prev, stale: true }
-  return { r, stale: false }
-}
+import { useElementRender } from '../element-render'
+export { useElementRender } from '../element-render'
 
 export const ElementView = React.memo(function ElementView({
   el, paper, zoom, sub, dim, showSource, outPaper, outWork, hovered,
@@ -65,8 +50,8 @@ export const ElementView = React.memo(function ElementView({
           style={{ pointerEvents: 'none' }}
         />
       ) : null}
-      {!d && (!r || r.status === 'pending') && sub === 0 ? <Placeholder box={lb} label={r?.progress ? `渲染中 ${Math.round(r.progress * 100)}%` : '渲染中…'} /> : null}
-      {r?.status === 'error' && sub === 0 ? <Placeholder box={lb} label={r.error ?? '渲染失败'} error /> : null}
+      {!d && (!r || r.status === 'pending') ? <Placeholder box={lb} label={r?.progress ? `渲染中 ${Math.round(r.progress * 100)}%` : '渲染中…'} /> : null}
+      {r?.status === 'error' ? <Placeholder box={lb} label={r.error ?? '渲染失败'} error /> : null}
       {outPaper || outWork ? (
         <rect
           x={lb.x}
@@ -90,8 +75,8 @@ export const ElementView = React.memo(function ElementView({
         width={Math.max(lb.w, 2 / zoom)}
         height={Math.max(lb.h, 2 / zoom)}
         fill="transparent"
-        data-el-id={el.locked || sub > 0 ? undefined : el.id}
-        style={{ pointerEvents: el.locked || sub > 0 ? 'none' : 'all', cursor: 'move' }}
+        data-el-id={el.locked ? undefined : el.id}
+        style={{ pointerEvents: el.locked ? 'none' : 'all', cursor: 'move' }}
       />
     </g>
   )

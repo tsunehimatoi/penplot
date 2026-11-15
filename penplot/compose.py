@@ -21,7 +21,7 @@ from array import array
 
 from .gcode import analyze_gcode, generate_gcode, optimize_paths, parse_gcode, split_paths
 from .geometry import Path, bbox_of, translate_all
-from .layout import (FontsSet, LineAlign, PageInfo, ParagraphFormat, TextDocument,
+from .layout import (OriginSpec, FontsSet, LineAlign, PageInfo, ParagraphFormat, TextDocument,
                      check_bounds, export_transform_mm)
 
 ALIGN = {'L': LineAlign.LEFT, 'C': LineAlign.CENTER, 'R': LineAlign.RIGHT, 'D': LineAlign.DISPERSE}
@@ -846,7 +846,10 @@ def compose_pages(doc, papers, res, mc, variables=None, page_filter=None, progre
                     ps = _element_paths(el, paper, res, variables, mc, warn)
                 finally:
                     res.progress = None
-                base.extend(apply_transform(ps, el.get('transform')))
+                target = int(el.get('page_offset') or 0)
+                while len(extra) < target:
+                    extra.append([])
+                (base if target == 0 else extra[target - 1]).extend(apply_transform(ps, el.get('transform')))
             if progress:
                 progress((pi + (ei + 1) / max(1, len(els))) / max(1, len(pages)) * 0.6)
         for k, paths in enumerate([base] + extra):
@@ -925,6 +928,21 @@ def render_document(doc, papers, res, mc, origin=None, work_area=None, opts=None
         pg = (doc.get('pages') or [])[src] if src < len(doc.get('pages') or []) else {}
         if pg.get('origin'):
             origin_i = pg['origin']
+        # Letter origins follow the component frame, not per-page glyph ink bounds.
+        # Keep the derived box in render metadata so placement/export uses the same origin.
+        letter = next((el for el in pg.get('elements', [])
+                       if el.get('type') == 'flow_text' and not el.get('hidden')), None)
+        if letter and OriginSpec.coerce(origin_i).anchor == 'content':
+            w, h = paper_dims(paper)
+            m = paper.get('margins') or {}
+            frame = Path()
+            frame.rect(m.get('l', 0), m.get('t', 0),
+                       max(1, w - m.get('l', 0) - m.get('r', 0)),
+                       max(1, h - m.get('t', 0) - m.get('b', 0)))
+            apply_transform([frame], letter.get('transform'))
+            placement = opts.get('placement') or {}
+            translate_all([frame], float(placement.get('dx_mm') or 0), float(placement.get('dy_mm') or 0))
+            origin_i = {**OriginSpec.coerce(origin_i).__dict__, 'anchor_bbox': bbox_of([frame])}
         out.append(finish_page(i, src, paper, paths, warn, mc, origin_i, work_area, opts))
         if progress:
             progress(0.6 + 0.4 * (i + 1) / n)

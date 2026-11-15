@@ -4,7 +4,7 @@
  */
 import { create } from 'zustand'
 import type { DocPage, Element, Project, ProjectDoc } from '@/api/studio'
-import { clone, normalizeZ } from './model'
+import { elementOnPage, clone, normalizeZ } from './model'
 
 export type Tool = 'select' | 'hand' | 'text' | 'rect' | 'ellipse' | 'line'
 export type SaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'conflict' | 'offline'
@@ -46,7 +46,7 @@ export interface PageView {
 interface Hist {
   doc: ProjectDoc
   selection: string[]
-  page: number
+  view: PageView
 }
 
 export interface StudioState {
@@ -213,7 +213,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       doc: out,
       version: get().version + 1,
       saveState: 'dirty',
-      past: record ? [...past.slice(-MAX_HISTORY + 1), { doc, selection, page: view.page }] : past,
+      past: record ? [...past.slice(-MAX_HISTORY + 1), { doc, selection, view }] : past,
       future: opts.record === false ? get().future : [],
       lastCoalesce: opts.coalesce ? { key: opts.coalesce, at: now } : null,
     })
@@ -221,7 +221,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   checkpoint: () => {
     const { doc, past, selection, view } = get()
     if (!doc) return
-    set({ past: [...past.slice(-MAX_HISTORY + 1), { doc, selection, page: view.page }], future: [], lastCoalesce: null })
+    set({ past: [...past.slice(-MAX_HISTORY + 1), { doc, selection, view }], future: [], lastCoalesce: null })
   },
   undo: () => {
     const { past, doc, future, selection, view } = get()
@@ -230,11 +230,11 @@ export const useStudio = create<StudioState>((set, get) => ({
     set({
       doc: prev.doc,
       past: past.slice(0, -1),
-      future: [{ doc, selection, page: view.page }, ...future].slice(0, MAX_HISTORY),
+      future: [{ doc, selection, view }, ...future].slice(0, MAX_HISTORY),
       version: get().version + 1,
       saveState: 'dirty',
       selection: prev.selection,
-      view: { page: Math.min(prev.page, prev.doc.pages.length - 1), sub: 0 },
+      view: { ...prev.view, page: Math.min(prev.view.page, prev.doc.pages.length - 1) },
       lastCoalesce: null,
     })
   },
@@ -245,11 +245,11 @@ export const useStudio = create<StudioState>((set, get) => ({
     set({
       doc: next.doc,
       future: future.slice(1),
-      past: [...past, { doc, selection, page: view.page }],
+      past: [...past, { doc, selection, view }],
       version: get().version + 1,
       saveState: 'dirty',
       selection: next.selection,
-      view: { page: Math.min(next.page, next.doc.pages.length - 1), sub: 0 },
+      view: { ...next.view, page: Math.min(next.view.page, next.doc.pages.length - 1) },
       lastCoalesce: null,
     })
   },
@@ -257,7 +257,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   setView: (v) =>
     set({
       view: v,
-      selection: v.page === get().view.page && v.sub === 0 ? get().selection : [],
+      selection: v.page === get().view.page ? get().selection.filter((id) => get().doc?.pages[v.page]?.elements.some((e) => e.id === id && elementOnPage(e, v.sub))) : [],
       ...(v.page !== get().view.page ? { bgCalib: null } : {}),
     }),
   select: (ids) => set({ selection: ids }),
@@ -297,7 +297,7 @@ export function currentPage(s: Pick<StudioState, 'doc' | 'view'>): DocPage | nul
 export function selectedElements(s: Pick<StudioState, 'doc' | 'view' | 'selection'>): Element[] {
   const p = currentPage(s)
   if (!p) return []
-  return p.elements.filter((e) => s.selection.includes(e.id))
+  return p.elements.filter((e) => s.selection.includes(e.id) && elementOnPage(e, s.view.sub))
 }
 
 export const studio = {
@@ -334,12 +334,13 @@ export const studio = {
   addElements(els: Element[], pageIndex?: number) {
     const st = useStudio.getState()
     const pi = pageIndex ?? st.view.page
+    const sub = pageIndex == null ? st.view.sub : 0
     st.edit((doc) => {
       const page = doc.pages[pi]
       if (!page) return
-      page.elements = normalizeZ([...page.elements, ...els])
+      page.elements = normalizeZ([...page.elements, ...els.map((el) => ({ ...el, page_offset: el.type === 'flow_text' ? 0 : sub }))])
     })
-    useStudio.setState({ selection: els.map((e) => e.id), view: { page: pi, sub: 0 } })
+    useStudio.setState({ selection: els.map((e) => e.id), view: { page: pi, sub } })
   },
   deleteElements(ids: string[]) {
     if (!ids.length) return

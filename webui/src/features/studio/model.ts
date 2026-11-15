@@ -27,6 +27,11 @@ export const TYPE_LABEL: Record<ElementType, string> = {
 }
 export const SHAPE_LABEL: Record<string, string> = { rect: '矩形', ellipse: '椭圆', line: '直线', polygon: '多边形', grid: '格线' }
 
+/** Flow bodies span pages; other components belong to one physical page. Old documents default to page 0. */
+export function elementOnPage(el: Element, sub: number): boolean {
+  return el.type === 'flow_text' || (el.page_offset ?? 0) === sub
+}
+
 export function elementName(el: Element): string {
   if (el.name) return el.name
   if (el.type === 'text') return (el.props.text || '文本框').replace(/\s+/g, ' ').slice(0, 16) || '文本框'
@@ -160,7 +165,7 @@ export function newId(prefix = 'e') {
 }
 
 const base = (type: ElementType, x: number, y: number, z: number) => ({
-  id: newId(), type, transform: { ...IDENTITY, x, y }, z, locked: false, hidden: false, pen: 1, name: null,
+  id: newId(), type, page_offset: 0, transform: { ...IDENTITY, x, y }, z, locked: false, hidden: false, pen: 1, name: null,
 })
 
 export function makeText(x: number, y: number, z: number, fontId: string | null, text = '双击编辑文字'): Element {

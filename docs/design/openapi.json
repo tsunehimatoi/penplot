@@ -3130,6 +3130,58 @@
     }
    }
   },
+  "/api/v1/import/document": {
+   "post": {
+    "tags": [
+     "files",
+     "imports"
+    ],
+    "summary": "Import Document",
+    "operationId": "import_document_api_v1_import_document_post",
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_import_document_api_v1_import_document_post"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RichImportResult"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorBody"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorBody"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/import/table": {
    "post": {
     "tags": [
@@ -7623,6 +7675,20 @@
     ],
     "title": "Body_import_background_api_v1_import_background_post"
    },
+   "Body_import_document_api_v1_import_document_post": {
+    "properties": {
+     "file": {
+      "type": "string",
+      "contentMediaType": "application/octet-stream",
+      "title": "File"
+     }
+    },
+    "type": "object",
+    "required": [
+     "file"
+    ],
+    "title": "Body_import_document_api_v1_import_document_post"
+   },
    "Body_import_dxf_api_v1_import_dxf_post": {
     "properties": {
      "file": {
@@ -8154,6 +8220,14 @@
       "type": "string",
       "title": "Id"
      },
+     "page_offset": {
+      "type": "integer",
+      "maximum": 9999.0,
+      "minimum": 0.0,
+      "title": "Page Offset",
+      "description": "Physical page offset within the source page; flow_text spans pages and ignores this field",
+      "default": 0
+     },
      "name": {
       "anyOf": [
        {
@@ -8482,6 +8556,14 @@
       "type": "string",
       "title": "Id"
      },
+     "page_offset": {
+      "type": "integer",
+      "maximum": 9999.0,
+      "minimum": 0.0,
+      "title": "Page Offset",
+      "description": "Physical page offset within the source page; flow_text spans pages and ignores this field",
+      "default": 0
+     },
      "name": {
       "anyOf": [
        {
@@ -8534,6 +8616,7 @@
       "$ref": "#/components/schemas/FlowTextProps",
       "default": {
        "text": "",
+       "format": "plain",
        "text_size": 1.0,
        "char_space": 0.0,
        "align": "L",
@@ -8590,6 +8673,26 @@
       "title": "Text",
       "default": ""
      },
+     "format": {
+      "type": "string",
+      "enum": [
+       "plain",
+       "markdown",
+       "html"
+      ],
+      "title": "Format",
+      "default": "plain"
+     },
+     "rich_style": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/RichStyle"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "font_id": {
       "anyOf": [
        {
@@ -8614,6 +8717,16 @@
        }
       ],
       "title": "Font Mix"
+     },
+     "font_roles": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FontRoles"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "text_size": {
       "type": "number",
@@ -8962,6 +9075,56 @@
     "type": "object",
     "title": "FontPatch"
    },
+   "FontRoles": {
+    "properties": {
+     "en": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "En"
+     },
+     "zh": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Zh"
+     },
+     "symbol": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Symbol"
+     },
+     "fallback": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fallback"
+     }
+    },
+    "type": "object",
+    "title": "FontRoles"
+   },
    "FontSummary": {
     "properties": {
      "id": {
@@ -9146,6 +9309,14 @@
      "id": {
       "type": "string",
       "title": "Id"
+     },
+     "page_offset": {
+      "type": "integer",
+      "maximum": 9999.0,
+      "minimum": 0.0,
+      "title": "Page Offset",
+      "description": "Physical page offset within the source page; flow_text spans pages and ignores this field",
+      "default": 0
      },
      "name": {
       "anyOf": [
@@ -9450,6 +9621,14 @@
      "id": {
       "type": "string",
       "title": "Id"
+     },
+     "page_offset": {
+      "type": "integer",
+      "maximum": 9999.0,
+      "minimum": 0.0,
+      "title": "Page Offset",
+      "description": "Physical page offset within the source page; flow_text spans pages and ignores this field",
+      "default": 0
      },
      "name": {
       "anyOf": [
@@ -13217,6 +13396,91 @@
     "type": "object",
     "title": "RestartRequest"
    },
+   "RichImportResult": {
+    "properties": {
+     "format": {
+      "type": "string",
+      "enum": [
+       "markdown",
+       "html",
+       "plain"
+      ],
+      "title": "Format"
+     },
+     "content": {
+      "type": "string",
+      "title": "Content"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "warnings": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Warnings",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "format",
+     "content"
+    ],
+    "title": "RichImportResult"
+   },
+   "RichStyle": {
+    "properties": {
+     "heading_scale": {
+      "type": "number",
+      "maximum": 3.0,
+      "minimum": 1.0,
+      "title": "Heading Scale",
+      "default": 1.35
+     },
+     "chart_lines": {
+      "type": "integer",
+      "maximum": 30.0,
+      "minimum": 3.0,
+      "title": "Chart Lines",
+      "default": 8
+     },
+     "math_scale": {
+      "type": "number",
+      "maximum": 3.0,
+      "minimum": 0.4,
+      "title": "Math Scale",
+      "default": 1.0
+     },
+     "table_header_repeat": {
+      "type": "boolean",
+      "title": "Table Header Repeat",
+      "default": true
+     },
+     "table_hlines": {
+      "type": "boolean",
+      "title": "Table Hlines",
+      "default": false
+     },
+     "code_box": {
+      "type": "boolean",
+      "title": "Code Box",
+      "default": true
+     }
+    },
+    "additionalProperties": true,
+    "type": "object",
+    "title": "RichStyle"
+   },
    "Ruling": {
     "properties": {
      "line_num": {
@@ -13268,6 +13532,14 @@
      "id": {
       "type": "string",
       "title": "Id"
+     },
+     "page_offset": {
+      "type": "integer",
+      "maximum": 9999.0,
+      "minimum": 0.0,
+      "title": "Page Offset",
+      "description": "Physical page offset within the source page; flow_text spans pages and ignores this field",
+      "default": 0
      },
      "name": {
       "anyOf": [
@@ -13514,6 +13786,14 @@
      "id": {
       "type": "string",
       "title": "Id"
+     },
+     "page_offset": {
+      "type": "integer",
+      "maximum": 9999.0,
+      "minimum": 0.0,
+      "title": "Page Offset",
+      "description": "Physical page offset within the source page; flow_text spans pages and ignores this field",
+      "default": 0
      },
      "name": {
       "anyOf": [
@@ -14851,6 +15131,14 @@
       "type": "string",
       "title": "Id"
      },
+     "page_offset": {
+      "type": "integer",
+      "maximum": 9999.0,
+      "minimum": 0.0,
+      "title": "Page Offset",
+      "description": "Physical page offset within the source page; flow_text spans pages and ignores this field",
+      "default": 0
+     },
      "name": {
       "anyOf": [
        {
@@ -15001,6 +15289,16 @@
        }
       ],
       "title": "Font Mix"
+     },
+     "font_roles": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FontRoles"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "size_mm": {
       "type": "number",

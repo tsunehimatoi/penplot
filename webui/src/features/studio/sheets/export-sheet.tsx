@@ -21,7 +21,7 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
   const [withBg, setWithBg] = React.useState(true)
   const project = useStudio((s) => s.project)
   const view = useStudio((s) => s.view)
-  const hasBg = useStudio((s) => !!s.doc?.pages[s.view.page]?.background?.visible)
+  const hasBg = useStudio((s) => range === 'all' ? !!s.doc?.pages.some((p) => p.background?.visible) : !!s.doc?.pages[s.view.page]?.background?.visible)
   if (!project) return null
 
   const run = async () => {
@@ -32,9 +32,10 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
         await downloadProjectJson(project.id, project.name)
       } else {
         const r = await renderForOutput()
-        const idx = outputIndex(r, view.page, view.sub) ?? 0
-        const pages = range === 'all' ? ('all' as const) : [idx]
-        const body: RenderExport = { format: fmt, pages: fmt === 'png' && range === 'all' ? [0] : pages, dpi: Number(dpi), space, background: fmt === 'png' && hasBg && withBg }
+        const idx = outputIndex(r, view.page, view.sub)
+        if (range === 'current' && idx == null) throw new Error('当前页已因重新排版发生变化，请重新选择页面')
+        const pages = range === 'all' ? ('all' as const) : [idx!]
+        const body: RenderExport = { format: fmt, pages, dpi: Number(dpi), space, background: fmt === 'png' && hasBg && withBg }
         await exportRender(r.rid, body, `${project.name}.${fmt}`)
       }
       toast.success('已导出')
@@ -87,7 +88,7 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
                   : fmt === 'pdf'
                     ? '矢量 PDF，每页一页。'
                     : fmt === 'png'
-                      ? 'PNG 只导出一页（全部页时导出第 1 页）。'
+                      ? '每页导出一张 PNG，多页打包为 ZIP。'
                       : '路径矢量；多页打包为 .zip。'}
               </p>
             </>

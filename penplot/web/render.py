@@ -342,6 +342,8 @@ class RenderService:
     def export(self, rid, body):
         r = self.get(rid)
         idx = [p['index'] for p in r['pages']] if body.pages == 'all' else list(body.pages)
+        if not idx:
+            raise ApiError(400, 'bad_pages', '请选择要导出的页面')
         for i in idx:
             self._page(rid, i)
         base = (r.get('name') or rid).replace('/', '_')
@@ -363,31 +365,36 @@ class RenderService:
                     z.writestr('page-%d.svg' % (i + 1), self.preview_svg(rid, i, body.space))
                 z.writestr('render.json', json.dumps(r, ensure_ascii=False, indent=1))
             return buf.getvalue(), '%s.zip' % base, 'application/zip'
-        pages = []
-        for i in idx:
-            _r, p = self._page(rid, i)
-            paths = decode_paths(self.paths_bin(rid, i, 'page'))
-            pages.append((paths, p['width_mm'], p['height_mm']))
         if body.format == 'pdf':
             from ..export.pdf import pdf_bytes
+            pages = []
+            for i in idx:
+                _r, p = self._page(rid, i)
+                paths = decode_paths(self.paths_bin(rid, i, 'page'))
+                pages.append((paths, p['width_mm'], p['height_mm']))
             return pdf_bytes(pages, base), '%s.pdf' % base, 'application/pdf'
         if body.format == 'png':
             if not self.ctx.features.get('png'):
                 raise ApiError(501, 'feature_unavailable', 'PNG 导出需要 pillow', {'feature': 'png'})
-            _paths, w, h = pages[0]
-            px = w * h * (body.dpi / 25.4) ** 2
-            if px > 40e6:
-                raise ApiError(400, 'too_large', 'PNG 太大（%.0f 万像素）：降低 dpi' % (px / 1e4))
-            dst = os.path.join(self.cfg.upload_dir, 'exp-%s.png' % secrets.token_hex(6))
-            t = self.ctx.tasks.submit('export_render', {'format': 'png', 'dst': dst, 'dpi': body.dpi, 'pages': [
-                {'bin': os.path.join(self._dir(rid), 'page-%d.page.bin' % idx[0]), 'w': w, 'h': h}],
-                'background': self._png_background(rid, idx[0]) if body.background else None})
+            pages = []
+            for i in idx:
+                _r, p = self._page(rid, i)
+                w, h = p['width_mm'], p['height_mm']
+                px = w * h * (body.dpi / 25.4) ** 2
+                if px > 40e6:
+                    raise ApiError(400, 'too_large', 'PNG 太大（%.0f 万像素）：降低 dpi' % (px / 1e4))
+                pages.append({'bin': os.path.join(self._dir(rid), 'page-%d.page.bin' % i),
+                              'w': w, 'h': h, 'index': i,
+                              'background': self._png_background(rid, i) if body.background else None})
+            multi = len(pages) > 1
+            dst = os.path.join(self.cfg.upload_dir, 'exp-%s.%s' % (secrets.token_hex(6), 'zip' if multi else 'png'))
+            t = self.ctx.tasks.submit('export_render', {'format': 'png', 'dst': dst, 'dpi': body.dpi, 'pages': pages})
             if not t.done_ev.wait(120) or t.state != 'done':
                 raise ApiError(500, 'export_failed', 'PNG 导出失败：%s' % ((t.error or {}).get('message') or '超时'))
             with open(dst, 'rb') as f:
                 data = f.read()
             os.unlink(dst)
-            return data, '%s-p%d.png' % (base, idx[0] + 1), 'image/png'
+            return (data, '%s.zip' % base, 'application/zip') if multi else (data, '%s-p%d.png' % (base, idx[0] + 1), 'image/png')
         raise ApiError(400, 'bad_format', '不支持的格式')
 
     def _png_background(self, rid, index):

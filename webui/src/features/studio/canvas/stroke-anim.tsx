@@ -49,12 +49,12 @@ export function StrokeAnimation({ rid, index, v, origin }: { rid: string; index:
   React.useEffect(() => {
     let alive = true
     pagePolylines(rid, index)
-      .then((l) => alive && setPrep(prepare(l, origin)))
+      .then((l) => alive && setPrep(prepare(l, { x: origin.x, y: origin.y })))
       .catch(() => {})
     return () => {
       alive = false
     }
-  }, [rid, index, origin])
+  }, [rid, index, origin.x, origin.y])
 
   // playback clock: ~10 s for the whole page at 1×
   React.useEffect(() => {

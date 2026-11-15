@@ -18,11 +18,13 @@ import { useIsCompact } from '@/lib/media'
 import { toast } from '@/lib/toast'
 import { useProfiles } from '../data'
 import { errText, Help } from '../ext'
-import { hasTravel, originAnchor, originPoint, paperDims, workAreaRect, type ContentBox } from '../model'
+import { hasTravel, mergeOrigin, pagePaperRef, profileOrigin, resolvePaper, originAnchor, originPoint, paperDims, workAreaRect, type ContentBox } from '../model'
 import type { PageBackground } from '../background'
 import { BackgroundImage } from '../canvas/background-layer'
 import { originSnapLines, originSnapPoints, parkText as parkWhere, useSvgOriginDrag } from '../origin-drag'
 import { createJobs, profileDefault, renderForOutput, runFrame, type FrameMode, type OverrideKey } from '../print'
+import { letterFrame, papersCache } from '../actions'
+import { outputIndex } from '../render-engine'
 import { useStudio } from '../store'
 import type { OriginSpec } from '@/api/studio'
 
@@ -45,7 +47,7 @@ function parseRange(s: string, max: number): number[] {
   return [...out].sort((x, y) => x - y)
 }
 
-export function PrintSheet({ open, onOpenChange, paper, origin, onOpenPosition }: { open: boolean; onOpenChange: (o: boolean) => void; paper: PaperBase; origin: OriginSpec; onOpenPosition: () => void }) {
+export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: fallbackOrigin, onOpenPosition }: { open: boolean; onOpenChange: (o: boolean) => void; paper: PaperBase; origin: OriginSpec; onOpenPosition: () => void }) {
   const compact = useIsCompact()
   const navigate = useNavigate()
   const profiles = useProfiles()
@@ -134,8 +136,9 @@ export function PrintSheet({ open, onOpenChange, paper, origin, onOpenPosition }
 
   if (!doc || !project) return null
   const outs = result?.pages ?? []
+  const currentIndex = outputIndex(result, view.page, view.sub)
   const selected =
-    range === 'all' ? outs.map((p) => p.index) : range === 'current' ? outs.filter((p) => p.source_page === view.page).map((p) => p.index) : parseRange(custom, outs.length)
+    range === 'all' ? outs.map((p) => p.index) : range === 'current' ? (currentIndex == null ? [] : [currentIndex]) : parseRange(custom, outs.length)
   const selPages = outs.filter((p) => selected.includes(p.index))
   const copies = Math.max(1, pr.copies ?? 1)
   const perCopy = selPages.reduce((n, p) => n + p.est_s, 0)
@@ -143,14 +146,19 @@ export function PrintSheet({ open, onOpenChange, paper, origin, onOpenPosition }
   const missing = [...new Set(selPages.flatMap((p) => p.warnings.missing_glyphs))]
   const clipped = selPages.some((p) => p.warnings.clipped)
   const first = selPages[0]
+  const previewPageIndex = first?.source_page ?? view.page
+  const previewPage = doc.pages[previewPageIndex]
+  const paper = previewPage ? resolvePaper(pagePaperRef(doc, previewPage), papersCache()) : fallbackPaper
+  const origin = mergeOrigin(profile ? profileOrigin(profile.doc as never) : fallbackOrigin, doc.print?.origin, previewPage?.origin)
   const bbox = first?.bbox
   const { w: pw, h: ph } = paperDims(paper)
   const wa = hasTravel(profile?.doc.work_area) ? profile!.doc.work_area! : null
   // travel is only a verdict when the profile has a travel area (0×0 = not configured, never blocks)
   const outWork = !!wa && selPages.some((p) => p.out_of_work_area)
-  const cbox: ContentBox = bbox ? { x: bbox[0], y: bbox[1], w: bbox[2] - bbox[0], h: bbox[3] - bbox[1] } : null
+  const frame = previewPage ? letterFrame(previewPage.elements, paper) : null
+  const cbox: ContentBox = frame ? { ...frame, x: frame.x + placement.dx, y: frame.y + placement.dy } : bbox ? { x: bbox[0], y: bbox[1], w: bbox[2] - bbox[0], h: bbox[3] - bbox[1] } : null
   const cornerName = ['左上', '右上', '左下', '右下'][origin.corner]
-  const parkLine = originAnchor(origin) === 'content' ? `开始前：把笔（抬起状态）停在要写内容的${cornerName}角` : `开始前：把笔（抬起状态）停在纸张${cornerName}角`
+  const parkLine = originAnchor(origin) === 'content' ? `开始前：把笔（抬起状态）停在${frame ? '信笺元素' : '要写内容'}的${cornerName}角` : `开始前：把笔（抬起状态）停在纸张${cornerName}角`
   const overriddenKeys = (Object.keys(pr) as (keyof PrintOverrides)[]).filter((k) => k !== 'origin' && pr[k] != null)
   const connected = !!machine?.connected
   const busyMachine = !!machine?.busy
@@ -226,7 +234,7 @@ export function PrintSheet({ open, onOpenChange, paper, origin, onOpenPosition }
           <div className={cn('flex min-h-0 flex-1', compact ? 'flex-col overflow-y-auto' : '')}>
             {/* summary */}
             <aside className={cn('flex shrink-0 flex-col gap-3 p-4', compact ? '' : 'hairline-r w-[320px] overflow-y-auto')}>
-              <FitPreview paper={paper} bbox={bbox ?? null} work={wa ? workAreaRect(origin, pw, ph, wa.w_mm, wa.h_mm, cbox) : null} outWork={outWork} origin={origin} content={cbox} bg={doc.pages[view.page]?.background ?? null} />
+              <FitPreview paper={paper} bbox={bbox ?? null} work={wa ? workAreaRect(origin, pw, ph, wa.w_mm, wa.h_mm, cbox) : null} outWork={outWork} origin={origin} content={cbox} bg={previewPage?.background ?? null} pageIndex={previewPageIndex} />
               <p className="-mt-1 flex items-start gap-1.5 text-footnote text-secondary-label">
                 <span className="mt-1 size-2 shrink-0 rounded-full bg-axis-origin" aria-hidden />
                 <span>
@@ -412,7 +420,7 @@ export function PrintSheet({ open, onOpenChange, paper, origin, onOpenPosition }
           </div>
           {/* footer */}
           <div className={cn('hairline-t flex shrink-0 flex-wrap items-center gap-2 px-5 py-3 pb-safe', compact && 'pr-24')}>
-            <Button size="md" variant="gray" icon={<Download />} className={compact ? 'order-2' : undefined} disabled={!result} onClick={() => result && void exportRender(result.rid, { format: 'gcode', pages: selected.length ? selected : 'all', dpi: 96, space: 'page', background: false }, `${project.name}.gcode`).catch((e) => toast.error('导出失败', { description: errText(e) }))}>
+            <Button size="md" variant="gray" icon={<Download />} className={compact ? 'order-2' : undefined} disabled={!result || !selected.length} onClick={() => result && selected.length > 0 && void exportRender(result.rid, { format: 'gcode', pages: selected, dpi: 96, space: 'page', background: false }, `${project.name}.gcode`).catch((e) => toast.error('导出失败', { description: errText(e) }))}>
               {compact ? '导出' : '导出 G 代码'}
             </Button>
             <div className={cn('min-w-2 flex-1', compact && 'hidden')} />
@@ -447,13 +455,13 @@ function Verdict({ ok, label, detail, warn }: { ok: boolean; label: string; deta
 }
 
 /** Paper + reference background + travel area + drawing bbox thumbnail; the origin dot can be dragged. */
-function FitPreview({ paper, bbox, work, outWork, origin, content, bg }: { paper: PaperBase; bbox: number[] | null; work: { x: number; y: number; w: number; h: number } | null; outWork: boolean; origin: OriginSpec; content: ContentBox; bg: PageBackground | null }) {
+function FitPreview({ paper, bbox, work, outWork, origin, content, bg, pageIndex }: { pageIndex: number; paper: PaperBase; bbox: number[] | null; work: { x: number; y: number; w: number; h: number } | null; outWork: boolean; origin: OriginSpec; content: ContentBox; bg: PageBackground | null }) {
   const { w, h } = paperDims(paper)
   const originAt = originPoint(origin, w, h, content)
   const svgRef = React.useRef<SVGSVGElement>(null)
   const readOnly = useStudio((s) => s.readOnly)
   const boxes = content ? [{ box: content, label: '内容角' }] : []
-  const drag = useSvgOriginDrag({ svg: svgRef, origin, w, h, content, snap: originSnapPoints(paper, boxes, bg), lines: originSnapLines(paper), disabled: readOnly })
+  const drag = useSvgOriginDrag({ svg: svgRef, origin, w, h, content, snap: originSnapPoints(paper, boxes, bg), lines: originSnapLines(paper), disabled: readOnly, pageIndex })
   const x0 = Math.min(0, work?.x ?? 0) - 4
   const y0 = Math.min(0, work?.y ?? 0) - 4
   const x1 = Math.max(w, work ? work.x + work.w : w) + 4

@@ -7,8 +7,9 @@ import { useShortcut } from '@/lib/shortcuts'
 import {
   copySelection, currentPaper, deleteSelection, duplicateSelection, elementAABB, nudge, paste, selectAll, toggleLock, zOrder,
 } from './actions'
+import { usePagination } from './pagination'
 import { MM_100 } from './canvas/canvas'
-import { elementName, sortedByZ, TYPE_LABEL } from './model'
+import { elementOnPage, elementName, sortedByZ, TYPE_LABEL } from './model'
 import { saveNow } from './project-io'
 import { patchBackground, toggleBackgrounds } from './background'
 import { currentPage, useStudio } from './store'
@@ -39,6 +40,7 @@ export function announce(msg: string) {
 }
 
 export function StudioShortcuts({ cmd }: { cmd: StudioCommands }) {
+  const pagination = usePagination(useStudio((s) => s.doc))
   const st = useStudio
   const hasSel = () => st.getState().selection.length > 0 && !layerOpen()
   const free = () => !layerOpen()
@@ -89,8 +91,9 @@ export function StudioShortcuts({ cmd }: { cmd: StudioCommands }) {
         if (dy) return false
         const doc = s.doc
         if (!doc) return false
-        const n = Math.max(0, Math.min(doc.pages.length - 1, s.view.page + dx))
-        if (n !== s.view.page) s.setView({ page: n, sub: 0 })
+        const index = pagination.findIndex((p) => p.page === s.view.page && p.sub === s.view.sub)
+        const next = pagination[Math.max(0, Math.min(pagination.length - 1, index + dx))]
+        if (next) s.setView(next)
         return
       }
       nudge(dx * 0.1, dy * 0.1)
@@ -119,7 +122,7 @@ export function StudioShortcuts({ cmd }: { cmd: StudioCommands }) {
       const s = st.getState()
       const page = currentPage(s)
       if (!page) return false
-      const list = sortedByZ(page.elements).filter((e) => !e.locked)
+      const list = sortedByZ(page.elements).filter((e) => !e.locked && elementOnPage(e, s.view.sub))
       if (!list.length) return false
       const i = list.findIndex((e) => e.id === s.selection[0])
       const next = list[(i + 1) % list.length]
@@ -136,7 +139,7 @@ export function StudioShortcuts({ cmd }: { cmd: StudioCommands }) {
       const s = st.getState()
       const page = currentPage(s)
       if (!page) return false
-      const list = sortedByZ(page.elements).filter((e) => !e.locked)
+      const list = sortedByZ(page.elements).filter((e) => !e.locked && elementOnPage(e, s.view.sub))
       if (!list.length) return false
       const i = list.findIndex((e) => e.id === s.selection[0])
       const next = list[(i - 1 + list.length) % list.length]

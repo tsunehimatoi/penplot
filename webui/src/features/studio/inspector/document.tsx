@@ -217,7 +217,7 @@ export function VariablesSection() {
 export function LetterSection({ onSelectFlow }: { onSelectFlow: () => void }) {
   return (
     <Section title="信笺">
-      <p className="px-1 text-footnote text-secondary-label">正文在版心内按纸张行数自动分页，超出的内容生成「自动」页。</p>
+      <p className="px-1 text-footnote text-secondary-label">正文在版心内按纸张行数连续分页，每页均可选中正文进行编辑，修改会同步到整篇信笺。</p>
       <Button size="sm" variant="gray" icon={<FileText />} className="mx-1" onClick={onSelectFlow}>
         编辑正文…
       </Button>

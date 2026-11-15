@@ -458,7 +458,7 @@ class OriginSpec:
 
     def __init__(self, corner=0, revxy=False, x_rev=False, y_rev=False,
                  offset_x_mm=0.0, offset_y_mm=0.0, rotation=0, set_zero_at_start=None,
-                 anchor='paper', **_):
+                 anchor='paper', anchor_bbox=None, **_):
         self.corner = int(corner or 0)
         # 'paper': origin = that corner of the paper (+offset).
         # 'content': origin = that corner of the drawing's bounding box (+offset).
@@ -466,6 +466,8 @@ class OriginSpec:
         #   the paper corner: the operator parks the pen at the top-left of the
         #   area to be written, and that point is (0,0).
         self.anchor = 'content' if anchor == 'content' else 'paper'
+        if anchor_bbox is not None:
+            self.anchor_bbox = tuple(anchor_bbox)
         self.revxy = bool(revxy)
         self.x_rev = bool(x_rev)
         self.y_rev = bool(y_rev)
@@ -490,7 +492,7 @@ class OriginSpec:
             return cls(**v)
         return cls(**{k: getattr(v, k) for k in ('corner', 'revxy', 'x_rev', 'y_rev',
                                                  'offset_x_mm', 'offset_y_mm', 'rotation',
-                                                 'set_zero_at_start', 'anchor') if hasattr(v, k)})
+                                                 'set_zero_at_start', 'anchor', 'anchor_bbox') if hasattr(v, k)})
 
 
 def export_transform_mm(paths, page_w_mm, page_h_mm, origin=None, machine_type=None, anchor_bbox=None):
@@ -510,6 +512,7 @@ def export_transform_mm(paths, page_w_mm, page_h_mm, origin=None, machine_type=N
     w, h = float(page_w_mm), float(page_h_mm)
     # anchor_bbox (page mm, before rotation): content bbox to anchor to when the
     # paths given are not the content themselves (e.g. a paper outline preview).
+    anchor_bbox = getattr(o, 'anchor_bbox', None) or anchor_bbox
     probe = None
     if o.anchor == 'content' and anchor_bbox is not None:
         x0, y0, x1, y1 = anchor_bbox
