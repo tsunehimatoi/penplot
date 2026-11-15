@@ -532,6 +532,9 @@ class Projects:
                     ids.add(pr['font_id'])
                 for m in pr.get('font_mix') or []:
                     ids.add(m.get('font_id'))
+                for fid in (pr.get('font_roles') or {}).values():
+                    if fid:
+                        ids.add(fid)
         return ids
 
     def export_bundle(self, pid, as_zip=False):

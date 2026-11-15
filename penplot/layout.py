@@ -7,6 +7,7 @@ Pipeline: text + gfont stroke font -> per-char Path entities in pixel coords
 """
 import random
 
+from .font_resolver import FontResolver
 from .geometry import Path, Affine2D, bbox_of, translate_all, scale_all, rotate_all_around
 from .settings import AxesSettings
 
@@ -140,7 +141,7 @@ class TextDocument:
 
     def __init__(self, page: PageInfo, font, fonts_set: FontsSet = None,
                  settings=None, rng=None, text_size=1.0, char_space=0.0,
-                 font_mix=None):
+                 font_mix=None, font_roles=None):
         self.page = page
         self.font = font
         self.fs = fonts_set or FontsSet()
@@ -152,6 +153,8 @@ class TextDocument:
         # selection with automatic substitution when a glyph is missing
         # (the original's fontPath[]/fontChance[] feature)
         self.font_mix = font_mix
+        self.font_roles = font_roles
+        self._font_resolver = FontResolver(font, font_mix, font_roles)
         # B16: chars without a glyph in any font are collected here;
         # missing_glyph='box' (default, original behaviour) draws a box,
         # 'skip' leaves a blank of the same width
@@ -160,27 +163,7 @@ class TextDocument:
 
     # helpers -----------------------------------------------------
     def _pick_font(self, ch):
-        if not self.font_mix:
-            return self.font
-        total = sum(w for _f, w in self.font_mix if w > 0)
-        if total <= 0:
-            return self.font_mix[0][0] if self.font_mix else self.font
-        r = self.rng.random() * total
-        acc = 0.0
-        pick = self.font_mix[0][0]
-        for f, w in self.font_mix:
-            if w <= 0:
-                continue
-            acc += w
-            if r <= acc:
-                pick = f
-                break
-        if pick.has_glyph(ch):
-            return pick
-        for f, _w in self.font_mix:
-            if f.has_glyph(ch):
-                return f
-        return pick
+        return self._font_resolver.pick(ch, self.rng)
     def _mm2px(self, mm):
         return mm * 0.03937008 * (self.settings.dpi if self.settings else 96)
 

@@ -53,6 +53,13 @@ class FontMixEntry(Model):
     weight: float = Field(1.0, ge=0)
 
 
+class FontRoles(Model):
+    en: Optional[str] = None
+    zh: Optional[str] = None
+    symbol: Optional[str] = None
+    fallback: Optional[str] = None
+
+
 class Jitter(Model):
     """FontsSet handwriting randomisation (field names as in layout.FontsSet)."""
     randomY: float = 0.0
@@ -84,6 +91,7 @@ class TextProps(OpenModel):
     text: str = ''
     font_id: Optional[str] = None
     font_mix: Optional[list[FontMixEntry]] = None
+    font_roles: Optional[FontRoles] = None
     size_mm: float = Field(8.0, gt=0, le=500, description='glyph em height in mm')
     line_height: float = Field(1.3, gt=0, le=10, description='line pitch = size_mm * line_height')
     char_space: float = Field(0.0, description='extra space between chars, mm')
@@ -109,6 +117,7 @@ class FlowTextProps(OpenModel):
     rich_style: Optional[RichStyle] = None
     font_id: Optional[str] = None
     font_mix: Optional[list[FontMixEntry]] = None
+    font_roles: Optional[FontRoles] = None
     text_size: float = Field(1.0, gt=0, le=10, description='glyph scale relative to the ruled line height')
     char_space: float = Field(0.0, description='mm')
     align: Align = 'L'

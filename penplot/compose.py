@@ -143,12 +143,23 @@ def _font_mix(props, res):
     return out or None
 
 
+def _font_roles(pr, res):
+    raw = pr.get('font_roles') or {}
+    out = {}
+    for k in ('en', 'zh', 'symbol', 'fallback'):
+        fid = raw.get(k)
+        if fid:
+            out[k] = res.font(fid)
+    return out or None
+
+
 def flow_text_pages(el, paper, res, variables, settings, warn):
     """-> list of path lists (page mm, y down), one per laid-out page."""
     pr = el.get('props') or {}
     text = substitute(pr.get('text', ''), variables)
     page = page_info(paper, pr.get('line_num'))
     mix = _font_mix(pr, res)
+    roles = _font_roles(pr, res)
     font = mix[0][0] if mix else res.font(pr.get('font_id'))
     para = pr.get('paragraph') or {}
     fmt = ParagraphFormat(int(para.get('spe_type', 0)), float(para.get('spe_value', 0.0)),
@@ -161,6 +172,7 @@ def flow_text_pages(el, paper, res, variables, settings, warn):
             rng=random.Random(_seed(pr, el.get('id'))),
             text_size=float(pr.get('text_size', 1.0)),
             char_space=float(pr.get('char_space', 0.0)), font_mix=mix,
+            font_roles=roles,
             missing_glyph=pr.get('missing_glyph', 'box'),
             rich_style=pr.get('rich_style'),
         )
@@ -172,7 +184,8 @@ def flow_text_pages(el, paper, res, variables, settings, warn):
     doc = TextDocument(page, font, _fonts_set(pr.get('jitter')), settings=settings,
                        rng=random.Random(_seed(pr, el.get('id'))),
                        text_size=float(pr.get('text_size', 1.0)),
-                       char_space=float(pr.get('char_space', 0.0)), font_mix=mix)
+                       char_space=float(pr.get('char_space', 0.0)), font_mix=mix,
+                       font_roles=roles)
     doc.missing_glyph = pr.get('missing_glyph', 'box')
     align = ALIGN.get(pr.get('align', 'L'), LineAlign.LEFT)
     pages = doc.layout(text, fmt)
@@ -206,10 +219,12 @@ def text_box_paths(el, res, variables, settings, warn):
     page = PageInfo(pageWidth=width, pageHeight=lines * pitch, leftGap=0, rightGap=0, topGap=0,
                     bottomGap=0, lineNum=lines, rotation=0.0)
     mix = _font_mix(pr, res)
+    roles = _font_roles(pr, res)
     font = mix[0][0] if mix else res.font(pr.get('font_id'))
     doc = TextDocument(page, font, _fonts_set(pr.get('jitter')), settings=settings,
                        rng=random.Random(_seed(pr, el.get('id'))), text_size=1.0 / lh,
-                       char_space=float(pr.get('char_space', 0.0)), font_mix=mix)
+                       char_space=float(pr.get('char_space', 0.0)), font_mix=mix,
+                       font_roles=roles)
     doc.missing_glyph = pr.get('missing_glyph', 'box')
     align = ALIGN.get(pr.get('align', 'L'), LineAlign.LEFT)
     pages = doc.layout(text)

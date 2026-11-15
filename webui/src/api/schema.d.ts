@@ -2662,6 +2662,8 @@ export interface components {
             font_id?: string | null;
             /** Font Mix */
             font_mix?: components["schemas"]["FontMixEntry"][] | null;
+            /** Font Roles */
+            font_roles?: components["schemas"]["FontRoles"] | null;
             /**
              * Text Size
              * @description glyph scale relative to the ruled line height
@@ -2850,6 +2852,17 @@ export interface components {
              * @default 1
              */
             weight: number;
+        };
+        /** FontRoles */
+        FontRoles: {
+            /** En */
+            en?: string | null;
+            /** Zh */
+            zh?: string | null;
+            /** Symbol */
+            symbol?: string | null;
+            /** Fallback */
+            fallback?: string | null;
         };
         /** FontPatch */
         FontPatch: {
@@ -5705,6 +5718,8 @@ export interface components {
             font_id?: string | null;
             /** Font Mix */
             font_mix?: components["schemas"]["FontMixEntry"][] | null;
+            /** Font Roles */
+            font_roles?: components["schemas"]["FontRoles"] | null;
             /**
              * Size Mm
              * @description glyph em height in mm

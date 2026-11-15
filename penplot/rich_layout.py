@@ -12,6 +12,7 @@ import random
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from .font_resolver import FontResolver
 from .geometry import Affine2D, Path
 from .layout import FontsSet, LineAlign, PageInfo, ParagraphFormat, _NO_LINE_START
 from .math_layout import render_handwritten_math
@@ -39,7 +40,7 @@ class RichTextDocument:
     def __init__(self, page: PageInfo, font, fonts_set: Optional[FontsSet] = None,
                  settings=None, rng: Optional[random.Random] = None,
                  text_size: float = 1.0, char_space: float = 0.0,
-                 font_mix=None, missing_glyph: str = 'box',
+                 font_mix=None, font_roles=None, missing_glyph: str = 'box',
                  rich_style: Optional[dict[str, Any]] = None):
         self.page = page
         self.font = font
@@ -49,6 +50,8 @@ class RichTextDocument:
         self.text_size = float(text_size or 1.0)
         self.char_space = float(char_space or 0.0)
         self.font_mix = font_mix
+        self.font_roles = font_roles
+        self._font_resolver = FontResolver(font, font_mix, font_roles)
         self.missing_glyph = missing_glyph or 'box'
         self.missing: set[str] = set()
 
@@ -71,27 +74,7 @@ class RichTextDocument:
     # ------------------------------------------------------------------ font & glyph helpers
 
     def _pick_font(self, ch: str):
-        if not self.font_mix:
-            return self.font
-        total = sum(w for _f, w in self.font_mix if w > 0)
-        if total <= 0:
-            return self.font_mix[0][0] if self.font_mix else self.font
-        r = self.rng.random() * total
-        acc = 0.0
-        pick = self.font_mix[0][0]
-        for f, w in self.font_mix:
-            if w <= 0:
-                continue
-            acc += w
-            if r <= acc:
-                pick = f
-                break
-        if pick.has_glyph(ch):
-            return pick
-        for f, _w in self.font_mix:
-            if f.has_glyph(ch):
-                return f
-        return pick
+        return self._font_resolver.pick(ch, self.rng)
 
     def _rand(self, pair):
         lo, hi = pair[0], pair[1]

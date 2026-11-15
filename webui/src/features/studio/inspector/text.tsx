@@ -7,7 +7,8 @@ import { JITTER_PRESETS, NO_JITTER, DEFAULT_RICH_STYLE } from '../model'
 import { studio, useStudio } from '../store'
 import { useElementRender } from '../canvas/element-view'
 import { Help } from '../ext'
-import { FontPicker, pushRecentFont, useBestFont } from './font-picker'
+import { FontConfig } from './font-config'
+import { pushRecentFont, useBestFont } from './font-picker'
 import { Note, Num, RangeRow, Row, Section, SegRow, SliderRow, SwitchRow } from './controls'
 import { RichFlowEditor } from './rich-editor'
 
@@ -84,12 +85,15 @@ function MissingGlyphs({ el, missing }: { el: TextElement | FlowTextElement; mis
 export function TextStyle({ el }: { el: TextElement | FlowTextElement }) {
   const set = (patch: Record<string, unknown>, k?: string) => studio.setProps(el.id, patch, k)
   const p = el.props
-  const id = React.useId()
   return (
     <Section title="文字">
-      <Row label="字体" htmlFor={id}>
-        <FontPicker id={id} value={p.font_id} onChange={(v) => set({ font_id: v, font_mix: null })} text={p.text} />
-      </Row>
+      <FontConfig
+        fontId={p.font_id}
+        fontRoles={p.font_roles}
+        fontMix={p.font_mix}
+        text={p.text}
+        onChange={set}
+      />
       {el.type === 'text' ? (
         <>
           <Num label="字号" value={el.props.size_mm} onChange={(v) => set({ size_mm: v })} unit="mm" step={0.5} min={1} max={200} />

@@ -38,6 +38,7 @@ class RenderService:
                 for m in pr.get('font_mix') or []:
                     if m.get('font_id'):
                         fonts.add(m['font_id'])
+                fonts.update(v for v in (pr.get('font_roles') or {}).values() if v)
                 if pr.get('text_font_id'):              # svg <text>
                     fonts.add(pr['text_font_id'])
                 fonts.update(v for v in (pr.get('text_font_map') or {}).values() if v)
@@ -69,6 +70,11 @@ class RenderService:
                         pr['font_id'] = default_font
                     if pr.get('font_mix'):
                         pr['font_mix'] = [m for m in pr['font_mix'] if m.get('font_id') not in missing_fonts] or None
+                    if pr.get('font_roles'):
+                        pr['font_roles'] = {
+                            k: (None if v in missing_fonts else v)
+                            for k, v in pr['font_roles'].items()
+                        }
                     if pr.get('text_font_id') in missing_fonts:
                         pr['text_font_id'] = default_font
                     if pr.get('text_font_map'):
