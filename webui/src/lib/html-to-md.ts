@@ -48,6 +48,18 @@ export function htmlToMarkdown(rawHtml: string): string {
     if (el.hasAttribute('data-chart')) {
       return `\n\n\`\`\`chart\n${el.getAttribute('data-chart')}\n\`\`\`\n\n`
     }
+    if (el.classList.contains('katex-html')) return ''
+    if (el.classList.contains('katex-display')) {
+      const tex = el.querySelector('annotation')?.textContent?.trim()
+      if (tex) return `\n\n$$\n${tex}\n$$\n\n`
+    }
+    if (el.classList.contains('katex') || tag === 'math') {
+      const tex = el.querySelector('annotation')?.textContent?.trim()
+      if (tex) {
+        const isBlock = tag === 'math' && el.getAttribute('display') === 'block'
+        return isBlock ? `\n\n$$\n${tex}\n$$\n\n` : `$${tex}$`
+      }
+    }
 
     const inner = () => [...el.childNodes].map((c) => walk(c, listDepth)).join('')
 
