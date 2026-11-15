@@ -105,9 +105,31 @@ export function RichFlowEditor({
     targetRef: React.RefObject<HTMLTextAreaElement | null>,
   ) => {
     const htmlData = e.clipboardData.getData('text/html')
-    if (!htmlData) return
+    const plainData = e.clipboardData.getData('text/plain')
+
+    if (!htmlData) {
+      if (fmt === 'plain' && plainData) {
+        const looksHtml = /<(h[1-6]|table|ul|ol|blockquote|svg)\b/i.test(plainData)
+        const looksMd = /(^|\n)#{1,6}\s|\$\$[\s\S]+?\$\$|\$[^$\s][^$\n]*\$|(^|\n)```|(^|\n)\|.+\|\s*\n\s*\|[\s:-]+\||\*\*[^*\n]+\*\*/m.test(plainData)
+        if (looksHtml) {
+          setFormat('html')
+          toast.info('检测到 HTML 内容，已自动切换为 H5 富文本格式')
+        } else if (looksMd) {
+          setFormat('markdown')
+          toast.info('检测到 Markdown / 公式内容，已自动切换为 MD 富文本格式')
+        }
+      }
+      return
+    }
+
     const hasRich = /<(h[1-6]|b|strong|i|em|u|s|del|ul|ol|li|table|blockquote|pre|code|svg)\b/i.test(htmlData)
-    if (!hasRich && fmt === 'plain') return
+    if (!hasRich && fmt === 'plain') {
+      if (plainData && /(^|\n)#{1,6}\s|\$\$[\s\S]+?\$\$|\$[^$\s][^$\n]*\$|(^|\n)```|\*\*[^*\n]+\*\*/m.test(plainData)) {
+        setFormat('markdown')
+        toast.info('检测到 Markdown / 公式内容，已自动切换为 MD 富文本格式')
+      }
+      return
+    }
     e.preventDefault()
     let converted = ''
     if (fmt === 'html') {
@@ -116,7 +138,7 @@ export function RichFlowEditor({
       converted = htmlToMarkdown(htmlData)
       if (fmt === 'plain') {
         setFormat('markdown')
-        toast.info('已自动切换为 Markdown 富文本格式')
+        toast.info('已自动切换为 MD 富文本格式')
       }
     }
     const { next, selStart, selEnd } = insertAtCursor(targetRef.current, text, converted)
