@@ -110,18 +110,28 @@ jobs:
         run: |
           npm ci
           npm run dist -- --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+      - name: Stage release assets
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+          destination = Path('release-assets')
+          destination.mkdir(exist_ok=True)
+          sources = [p for p in Path('desktop/dist-electron').iterdir()
+                     if p.is_file() and p.suffix in ('.exe', '.dmg', '.AppImage', '.deb', '.zip')]
+          sources += list(Path('dist/wheels').glob('*.whl'))
+          assert sources, 'No release assets were built'
+          for source in sources:
+              target = destination / source.name
+              assert not target.exists(), f'Duplicate release asset: {source.name}'
+              shutil.copy2(source, target)
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: penplot-${{ matrix.platform }}-${{ matrix.arch }}
           if-no-files-found: error
           compression-level: 0
-          path: |
-            desktop/dist-electron/*.exe
-            desktop/dist-electron/*.dmg
-            desktop/dist-electron/*.AppImage
-            desktop/dist-electron/*.deb
-            desktop/dist-electron/*.zip
-            dist/wheels/*.whl
+          path: release-assets/*
 
   publish:
     name: Publish release

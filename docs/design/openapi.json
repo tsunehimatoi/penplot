@@ -3,7 +3,7 @@
  "info": {
   "title": "penplot desktop workbench API",
   "description": "写字机 / 笔式绘图仪桌面工作台 API。错误体：`{\"error\":{\"code\",\"message\",\"detail\"}}`。",
-  "version": "0.3.0"
+  "version": "0.4.0"
  },
  "paths": {
   "/api/v1/fonts": {
