@@ -7,8 +7,11 @@ Byte-level formats mirror the original software:
 - machine.grbl.a / machine.marlin.a / machine.ebb.a (firmware writers)
 """
 import math
+import re
 
 from .geometry import Path, MOVE
+from .path_optimizer import optimize_paths
+from .path_optimizer import _optimize_paths_py as _optimize_paths_py
 
 
 def fmt3(v: float) -> str:
@@ -37,134 +40,6 @@ def split_paths(paths):
                 cur.line_to(x, y)
         if cur is not None:
             out.append(cur)
-    return out
-
-
-def _dist2(ax, ay, bx, by):
-    dx, dy = ax - bx, ay - by
-    return dx * dx + dy * dy
-
-
-def optimize_paths(paths, near_dst: float):
-    """Stage 2 (c.c): greedy nearest-neighbour ordering with merge/reverse.
-
-    The current working polyline keeps absorbing the nearest remaining
-    polyline while the gap <= near_dst; otherwise it is closed into the
-    output and the nearest becomes the new working polyline.
-    """
-    remaining = list(paths)
-    if not remaining:
-        return []
-    out = []
-    cur = remaining.pop(0)
-    while cur is not None:
-        if out:
-            prev = out[-1]
-            ex, ey = prev.coords[-2], prev.coords[-1]
-            sx, sy = cur.coords[0], cur.coords[1]
-            if math.hypot(ex - sx, ey - sy) <= near_dst:
-                prev.append(cur)
-                cur = prev          # keep extending the merged polyline
-            else:
-                out.append(cur)
-        else:
-            out.append(cur)
-        if not cur.coords:
-            break
-        ex, ey = cur.coords[-2], cur.coords[-1]
-        best_i = None
-        best_d = float('inf')
-        best_tail = False
-        for i, p in enumerate(remaining):
-            d_head = _dist2(ex, ey, p.coords[0], p.coords[1])
-            d_tail = _dist2(ex, ey, p.coords[-2], p.coords[-1])
-            d = d_head if d_head < d_tail else d_tail
-            if d < best_d:
-                best_d = d
-                best_i = i
-                best_tail = d_tail < d_head
-        if best_i is None:
-            cur = None
-        else:
-            nxt = remaining.pop(best_i)
-            if best_tail:
-                nxt.reverse()
-            cur = nxt
-    return out
-
-
-_optimize_paths_py = optimize_paths
-_NUMPY_MIN = 64
-
-
-def optimize_paths(paths, near_dst: float):  # noqa: F811  (same contract as _optimize_paths_py)
-    """Stage 2 (c.c): greedy nearest-neighbour ordering with merge/reverse.
-
-    Identical result to `_optimize_paths_py` (same float maths, same tie
-    breaking: first remaining polyline wins, head wins over tail on a tie),
-    but the nearest search is vectorised: the pure-Python O(n²) loop took
-    ~65 s for a 4 400-stroke SVG on the A53 board (6 s on a desktop).
-    """
-    if len(paths) < _NUMPY_MIN:
-        return _optimize_paths_py(paths, near_dst)
-    try:
-        import numpy as np
-    except ImportError:          # numpy is optional for the core
-        return _optimize_paths_py(paths, near_dst)
-    if any(not p.coords for p in paths):
-        return _optimize_paths_py(paths, near_dst)
-    if not all(math.isfinite(v) for p in paths for v in (p.coords[0], p.coords[1], p.coords[-2], p.coords[-1])):
-        return _optimize_paths_py(paths, near_dst)
-    remaining = list(paths)
-    out = []
-    cur = remaining[0]
-    rest = remaining[1:]
-    # endpoints of the not-yet-used polylines, in their original order
-    idx = np.arange(len(rest))
-    hx = np.array([p.coords[0] for p in rest], dtype=np.float64)
-    hy = np.array([p.coords[1] for p in rest], dtype=np.float64)
-    tx = np.array([p.coords[-2] for p in rest], dtype=np.float64)
-    ty = np.array([p.coords[-1] for p in rest], dtype=np.float64)
-    alive = np.ones(len(rest), dtype=bool)
-    n_alive = len(rest)
-    inf = float('inf')
-    while cur is not None:
-        if out:
-            prev = out[-1]
-            ex, ey = prev.coords[-2], prev.coords[-1]
-            sx, sy = cur.coords[0], cur.coords[1]
-            if math.hypot(ex - sx, ey - sy) <= near_dst:
-                prev.append(cur)
-                cur = prev
-            else:
-                out.append(cur)
-        else:
-            out.append(cur)
-        if not cur.coords or n_alive == 0:
-            break
-        ex, ey = cur.coords[-2], cur.coords[-1]
-        dx = ex - hx
-        dy = ey - hy
-        d_head = dx * dx + dy * dy
-        dx = ex - tx
-        dy = ey - ty
-        d_tail = dx * dx + dy * dy
-        tail = d_tail < d_head
-        d = np.where(tail, d_tail, d_head)
-        d[~alive] = inf
-        k = int(np.argmin(d))            # first minimum = first in remaining order
-        if not alive[k] or not d[k] < inf:
-            break                        # reference: best_i stays None -> stop
-        nxt = rest[int(idx[k])]
-        if tail[k]:
-            nxt.reverse()
-        alive[k] = False
-        n_alive -= 1
-        cur = nxt
-        if n_alive and n_alive * 2 < len(alive) and len(alive) > 256:
-            keep = alive
-            idx, hx, hy, tx, ty = idx[keep], hx[keep], hy[keep], tx[keep], ty[keep]
-            alive = np.ones(len(idx), dtype=bool)
     return out
 
 
@@ -650,6 +525,13 @@ class GcodeAnalysis:
         return self.xs[i], self.ys[i], self.zs[i], bool(self.absolute[i])
 
 
+# Only a complete ASCII match may bypass comment/safety processing. Keeping
+# this narrow also preserves the permissive legacy parser for malformed input.
+_ANALYSIS_MOVE = re.compile(
+    r'G([01]) X([+-]?[0-9]*\.?[0-9]+)Y([+-]?[0-9]*\.?[0-9]+)F([+-]?[0-9]*\.?[0-9]+)'
+)
+
+
 def analyze_gcode(text, machine=None, rapid_rate=None, keep_arrays=True):
     """Per-line simulation for ETA, retry-from-line and import checks (03 §10.9).
 
@@ -708,18 +590,34 @@ def analyze_gcode(text, machine=None, rapid_rate=None, keep_arrays=True):
         n += 1
         if len(s) > 80:
             warn('long', '第 %d 行超过 80 个字符（GRBL 行缓冲上限）' % n)
-        line = strip_comments(s)
-        why = line_problem(line, allow_dollar=False) if line else None
-        if why and len(unsafe) < 200:
-            unsafe.append((n, why))
+        match = _ANALYSIS_MOVE.fullmatch(s)
+        if match is not None:
+            # No comments, modal changes, or unsafe bytes can match this form.
+            # Process it through the same distance/bounds/array state machine.
+            line = s
+            motion = int(match[1])
+            gs = ms = ()
+            vals = {'X': float(match[2]), 'Y': float(match[3]), 'F': float(match[4])}
+        else:
+            line = strip_comments(s)
+            why = line_problem(line, allow_dollar=False) if line else None
+            if why and len(unsafe) < 200:
+                unsafe.append((n, why))
+            gs, ms, vals = [], [], {}
+            if line and not line.startswith(('%', '$')):
+                # findall performs the scan in C, with no Match objects or
+                # intermediate numeric word list and its three extra passes.
+                for k, value in word.findall(line):
+                    k = k.upper()
+                    v = float(value)
+                    if k == 'G':
+                        gs.append(int(v))
+                    elif k == 'M':
+                        ms.append(int(v))
+                    else:
+                        vals[k] = v
         t = 0.0
         if line and not line.startswith(('%', '$')):
-            words = []
-            for m in word.finditer(line):
-                words.append((m.group(1).upper(), float(m.group(2))))
-            gs = [int(v) for k, v in words if k == 'G']
-            ms = [int(v) for k, v in words if k == 'M']
-            vals = {k: v for k, v in words if k not in ('G', 'M')}
             for g in gs:
                 if g == 20:
                     unit = 25.4

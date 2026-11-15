@@ -19,7 +19,8 @@ import sys
 import zlib
 from array import array
 
-from .gcode import analyze_gcode, generate_gcode, optimize_paths, parse_gcode, split_paths
+from .gcode import optimize_paths, parse_gcode, split_paths
+from .generated_gcode import generate_analyzed_gcode
 from .geometry import Path, bbox_of, translate_all
 from .layout import (OriginSpec, FontsSet, LineAlign, PageInfo, ParagraphFormat, TextDocument,
                      check_bounds, export_transform_mm)
@@ -882,7 +883,7 @@ def finish_page(index, source_page, paper, paths, warn, mc, origin, work_area, o
                     translate_all(cp, 0.0, n * (bb[3] - bb[1] + gap))
                 paths.extend(cp)
     if opts.get('optimize'):
-        ordered = optimize_paths(split_paths([p.clone() for p in paths]), mc.settings.nearDst)
+        ordered = optimize_paths(split_paths(paths), mc.settings.nearDst)
     else:
         ordered = []
         for p in paths:
@@ -890,8 +891,7 @@ def finish_page(index, source_page, paper, paths, warn, mc, origin, work_area, o
     ordered = [p for p in ordered if p.ops]
     machine = [p.clone() for p in ordered]
     export_transform_mm(machine, w, h, origin, machine_type=mc.type)
-    g = generate_gcode(machine, mc, optimize=False)
-    a = analyze_gcode(g, mc, keep_arrays=False)
+    g, a = generate_analyzed_gcode(machine, mc)
     rp = RenderedPage()
     rp.index, rp.source_page = index, source_page
     rp.width_mm, rp.height_mm = w, h
