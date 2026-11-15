@@ -2636,6 +2636,8 @@ export interface components {
             math_scale?: number;
             /** @default true */
             table_header_repeat?: boolean;
+            /** @default false */
+            table_hlines?: boolean;
             /** @default true */
             code_box?: boolean;
         };

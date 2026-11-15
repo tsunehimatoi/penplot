@@ -14,7 +14,8 @@ from typing import Any, Optional
 
 from .geometry import Affine2D, Path
 from .layout import FontsSet, LineAlign, PageInfo, ParagraphFormat, _NO_LINE_START
-from .rich_renderers import render_chart_paths, render_latex_paths, render_svg_paths
+from .math_layout import render_handwritten_math
+from .rich_renderers import render_chart_paths, render_svg_paths
 from .rich_text import (
     Block, ChartBlock, CodeBlock, HeadingBlock, HrBlock, Inline, InlineMath,
     ListBlock, MathBlock, PageBreakBlock, ParagraphBlock, QuoteBlock, SvgBlock,
@@ -56,6 +57,7 @@ class RichTextDocument:
         self.chart_lines = max(3, min(30, int(rs.get('chart_lines', 8) or 8)))
         self.math_scale = float(rs.get('math_scale', 1.0) or 1.0)
         self.table_header_repeat = bool(rs.get('table_header_repeat', True))
+        self.table_hlines = bool(rs.get('table_hlines', False))
         self.code_box = bool(rs.get('code_box', True))
 
         # Page geometry in mm
@@ -184,6 +186,15 @@ class RichTextDocument:
             cur_x += adv + self.char_space
         return total_w
 
+    def _math_glyph(self, ch: str, em_mm: float) -> tuple[list[Path], float]:
+        """Glyph callback for math_layout: returns (paths with baseline y=0, advance_mm)."""
+        virt_lh = em_mm / max(0.2, self.text_size)
+        ps, adv = self._glyph_paths(ch, virt_lh, scale_mult=1.0, apply_jitter=True)
+        base_y = virt_lh * 0.75 * self.fs.baseLine
+        for p in ps:
+            p.transform(Affine2D().translate(0.0, -base_y))
+        return ps, adv
+
     # ------------------------------------------------------------------ pagination state
 
     def _reset_pages(self):
@@ -229,10 +240,11 @@ class RichTextDocument:
 
         for run in runs:
             if isinstance(run, InlineMath):
-                em = self.line_h * self.text_size * scale_mult * self.math_scale
-                mpaths, mw, mh, _mb = render_latex_paths(run.latex, em)
-                # Center vertically around text middle
-                y_off = max(0.0, (self.line_h - mh) * 0.5)
+                em = self.line_h * self.text_size * scale_mult * self.math_scale * 0.9
+                mpaths, mw, _mh, mb = render_handwritten_math(run.latex, em, self._math_glyph, display=False)
+                # Align math baseline (mb) with the text baseline
+                text_base = self.line_h * 0.75 * self.fs.baseLine
+                y_off = text_base - mb
                 for mp in mpaths:
                     mp.transform(Affine2D().translate(0.0, y_off))
                 step = mw + gap_mm
@@ -446,8 +458,8 @@ class RichTextDocument:
                 continue
 
             if isinstance(blk, MathBlock):
-                em = self.line_h * self.text_size * 1.35 * self.math_scale
-                mpaths, mw, mh, _mb = render_latex_paths(blk.latex, em)
+                em = self.line_h * self.text_size * 0.98 * self.math_scale
+                mpaths, mw, mh, _mb = render_handwritten_math(blk.latex, em, self._math_glyph, display=True)
                 if mw > avail_base and mw > 0:
                     s = avail_base / mw
                     for mp in mpaths:
@@ -548,17 +560,24 @@ class RichTextDocument:
                         self._emit_line(wc[li], x0 + ci * col_w + pad_x, inner_w, y_line, al, scale_mult=0.92)
                 self._line_idx += 1
             row_h = row_lines * self.line_h
-            # Draw cell borders
-            box = Path()
-            box.rect(x0, y_row_top, avail_w, row_h)
-            self._cur_page.append(box)
+            # Draw cell borders: vertical lines always; horizontal lines only when table_hlines is True
+            if self.table_hlines:
+                box = Path()
+                box.rect(x0, y_row_top, avail_w, row_h)
+                self._cur_page.append(box)
+            else:
+                for vx in (x0, x0 + avail_w):
+                    vp = Path()
+                    vp.move_to(vx, y_row_top)
+                    vp.line_to(vx, y_row_top + row_h)
+                    self._cur_page.append(vp)
             for ci in range(1, ncols):
                 vx = x0 + ci * col_w
                 vp = Path()
                 vp.move_to(vx, y_row_top)
                 vp.line_to(vx, y_row_top + row_h)
                 self._cur_page.append(vp)
-            if is_hdr:
+            if is_hdr and self.table_hlines:
                 hp = Path()
                 hp.move_to(x0, y_row_top + row_h - 0.35)
                 hp.line_to(x0 + avail_w, y_row_top + row_h - 0.35)

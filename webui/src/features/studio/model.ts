@@ -179,6 +179,7 @@ export const DEFAULT_RICH_STYLE = {
   chart_lines: 8,
   math_scale: 1.0,
   table_header_repeat: true,
+  table_hlines: false,
   code_box: true,
 }
 

@@ -99,6 +99,7 @@ class RichStyle(OpenModel):
     chart_lines: int = Field(8, ge=3, le=30)
     math_scale: float = Field(1.0, ge=0.4, le=3.0)
     table_header_repeat: bool = True
+    table_hlines: bool = False
     code_box: bool = True
 
 

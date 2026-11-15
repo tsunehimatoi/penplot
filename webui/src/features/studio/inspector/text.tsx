@@ -138,6 +138,7 @@ export function TextStyle({ el }: { el: TextElement | FlowTextElement }) {
                       <Num label="图表行数" value={rs.chart_lines} onChange={(v) => setRs({ chart_lines: Math.round(v) })} unit="行" step={1} min={3} max={30} />
                       <Num label="公式缩放" value={rs.math_scale} onChange={(v) => setRs({ math_scale: v })} unit="×" step={0.05} min={0.4} max={2.5} />
                       <SwitchRow label="跨页表头" checked={rs.table_header_repeat} onChange={(v) => setRs({ table_header_repeat: v })} />
+                      <SwitchRow label="表格横线" checked={rs.table_hlines} onChange={(v) => setRs({ table_hlines: v })} />
                       <SwitchRow label="代码边框" checked={rs.code_box} onChange={(v) => setRs({ code_box: v })} />
                     </>
                   )

@@ -144,7 +144,7 @@ def _parse_chart_spec(raw: str) -> Optional[dict[str, Any]]:
 
 _INLINE_TOKEN_RE = re.compile(
     r'(\\\((?:\\.|[^\\])+?\\\)'           # \( ... \)
-    r'|\$(?!\s)(?:\\.|[^$\\])+?(?<!\s)\$'  # $ ... $
+    r'|\$(?!\s)(?:\\.|[^$\n])+?(?<!\s)\$'  # $ ... $ (allows LaTeX backslashes!)
     r'|`[^`]+`'                            # `code`
     r'|\*\*(?=\S)(?:\\.|[^*])+?(?<=\S)\*\*' # **bold**
     r'|__(?=\S)(?:\\.|[^_])+?(?<=\S)__'    # __bold__
@@ -262,7 +262,7 @@ def _parse_table_aligns(sep_line: str, ncols: int) -> list[str]:
 
 def parse_markdown(text: str) -> list[Block]:
     """Parse Markdown (+ GFM tables, LaTeX math, ```chart, inline <svg>) into IR blocks."""
-    lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+    lines = text.replace('\u00a0', ' ').replace('\r\n', '\n').replace('\r', '\n').split('\n')
     n = len(lines)
     i = 0
     blocks: list[Block] = []
@@ -303,6 +303,11 @@ def parse_markdown(text: str) -> list[Block]:
             if lang in ('chart', 'plot', 'echarts'):
                 spec = _parse_chart_spec(body)
                 if spec:
+                    blocks.append(ChartBlock(spec))
+                    continue
+            if lang in ('', 'json'):
+                spec = _parse_chart_spec(body)
+                if spec and str(spec.get('type', '')).lower() in ('bar', 'line', 'pie', 'scatter', 'area', 'function', 'formula'):
                     blocks.append(ChartBlock(spec))
                     continue
             if lang in ('math', 'latex', 'tex'):

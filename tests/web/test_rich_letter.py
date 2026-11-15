@@ -40,6 +40,10 @@ $$
     assert isinstance(blocks[0], HeadingBlock) and blocks[0].level == 1
     assert isinstance(blocks[1], ParagraphBlock)
     assert any(isinstance(r, InlineMath) and r.latex == 'E = mc^2' for r in blocks[1].runs)
+    # Inline math with LaTeX backslashes must also parse cleanly
+    inline_tex = parse_markdown('欧拉公式 $e^{i\\pi} + 1 = 0$ 与 $\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$')
+    assert any(isinstance(r, InlineMath) and r.latex == r'e^{i\pi} + 1 = 0' for r in inline_tex[0].runs)
+    assert any(isinstance(r, InlineMath) and r.latex == r'\lim_{x \to 0} \frac{\sin x}{x} = 1' for r in inline_tex[0].runs)
     assert isinstance(blocks[2], MathBlock)
     assert isinstance(blocks[3], ListBlock) and len(blocks[3].items) == 2
     assert isinstance(blocks[4], TableBlock) and len(blocks[4].headers) == 2 and len(blocks[4].rows) == 2
