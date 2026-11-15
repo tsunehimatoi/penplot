@@ -9,6 +9,9 @@
 
 :root {
   color-scheme: light;
+  accent-color: rgb(var(--accent));
+  --scrollbar-thumb: rgb(118 118 128);
+  --scrollbar-track: rgb(242 242 247);
   --blue: 0 122 255;
   --red: 255 59 48;
   --green: 52 199 89;
@@ -75,6 +78,7 @@
   --shadow-ring: 0 0 0 0.5px rgb(0 0 0 / 0.08);
 
   /* sizes (px) */
+  --titlebar-h: 0px;
   --toolbar-h: 52px;
   --navbar-h: 44px;
   --tabbar-h: 49px;
@@ -85,7 +89,7 @@
   --hit: 44px;
   /* Room kept clear for the floating E-stop (it sits above every sheet/dialog).
      Regular: right side-sheets start below the toolbar. Compact: bottom sheets pad their content. */
-  --estop-safe-top: calc(var(--toolbar-h) + 8px);
+  --estop-safe-top: calc(var(--titlebar-h) + var(--toolbar-h) + 8px);
   --estop-safe-bottom: calc(var(--machinebar-h) + 16px + env(safe-area-inset-bottom));
 
   /* motion */
@@ -174,6 +178,8 @@
   --on-tint-gray: 210 210 215;
   --shadow-k: 0.6;
   --shadow-ring: 0 0 0 0.5px rgb(var(--separator) / var(--separator-a));
+  --scrollbar-thumb: rgb(142 142 147);
+  --scrollbar-track: rgb(28 28 30);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
@@ -198,6 +204,8 @@
     --on-tint-gray: 210 210 215;
     --shadow-k: 0.6;
     --shadow-ring: 0 0 0 0.5px rgb(var(--separator) / var(--separator-a));
+    --scrollbar-thumb: rgb(142 142 147);
+    --scrollbar-track: rgb(28 28 30);
   }
 }
 
@@ -461,6 +469,26 @@
   button, [role='button'] { cursor: default; }
   a { color: rgb(var(--accent)); text-decoration: none; }
   .tabular, time, kbd { font-variant-numeric: tabular-nums; }
+  html, * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+  @supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+    ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 9999px; }
+  }
+}
+
+:root[data-desktop='true'] {
+  --titlebar-h: 36px;
+}
+
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
 }
 
 /* Elevated surfaces (sheets, dialogs) in dark mode: iOS uses #1c1c1e for the surface and #2c2c2e

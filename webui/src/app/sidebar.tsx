@@ -6,9 +6,9 @@ import { qk } from '@/api/query'
 import type { Job } from '@/api/types'
 import { Tooltip } from '@/components/ui'
 import { cn } from '@/lib/cn'
+import { isDesktopApp } from '@/lib/desktop'
 import { NAV_GROUPS, isActive, type NavItem } from './nav'
 import { SidebarMiniPlayer } from './mini-player'
-import { UserMenu } from './user-menu'
 
 /** Number of queued jobs (sidebar badge). Silent on errors. */
 function useQueuedCount() {
@@ -25,14 +25,19 @@ function useQueuedCount() {
 export function Sidebar({ onNavigate, className }: { onNavigate?: () => void; className?: string }) {
   const { pathname } = useLocation()
   const queued = useQueuedCount()
+  const desktop = isDesktopApp()
   return (
     <nav aria-label="主导航" className={cn('mat-sidebar hairline-r flex h-full w-[var(--sidebar-w)] flex-col', className)}>
-      <div className="flex h-[var(--toolbar-h)] shrink-0 items-center gap-2 px-4">
-        <span className="flex size-7 items-center justify-center rounded-[7px] bg-gradient-to-b from-accent to-accent/80 text-white shadow-sm">
-          <PenTool className="size-4" strokeWidth={2.25} />
-        </span>
-        <span className="text-headline text-label">PenPlot</span>
-      </div>
+      {desktop ? (
+        <div className="h-1 shrink-0" />
+      ) : (
+        <div className="flex h-[var(--toolbar-h)] shrink-0 items-center gap-2 px-4">
+          <span className="flex size-7 items-center justify-center rounded-[7px] bg-gradient-to-b from-accent to-accent/80 text-white shadow-sm">
+            <PenTool className="size-4" strokeWidth={2.25} />
+          </span>
+          <span className="text-headline text-label">PenPlot</span>
+        </div>
+      )}
       <div className="scrollbar-none min-h-0 flex-1 overflow-y-auto px-2.5 pb-2">
         {NAV_GROUPS.map((g) => (
           <div key={g.id} className="mb-3">
@@ -48,9 +53,6 @@ export function Sidebar({ onNavigate, className }: { onNavigate?: () => void; cl
         ))}
       </div>
       <SidebarMiniPlayer />
-      <div className="hairline-t shrink-0 px-2 py-1.5 pb-safe">
-        <UserMenu />
-      </div>
     </nav>
   )
 }

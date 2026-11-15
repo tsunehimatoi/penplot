@@ -7,7 +7,7 @@ import { OctagonX, X } from 'lucide-react'
 import * as React from 'react'
 import { createPortal } from 'react-dom'
 import { estop, penUp, runAction, unlockMachine } from '@/api/machine'
-import { useLive } from '@/api/store'
+import { isJobActive, useLive } from '@/api/store'
 import { Button, Spinner } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { useIsCompact } from '@/lib/media'
@@ -22,7 +22,7 @@ export function EStopAnchor({ className }: { className?: string }) {
     <div
       ref={setEstopAnchor}
       aria-hidden
-      className={cn('shrink-0', compact ? 'size-12' : 'h-11 w-[88px] pointer-coarse:w-[96px]', className)}
+      className={cn('shrink-0', compact ? 'h-10 w-[56px]' : 'h-8 w-[76px] pointer-coarse:h-10 pointer-coarse:w-[88px]', className)}
     />
   )
 }
@@ -74,11 +74,13 @@ export function EStopLayer() {
   const compact = useIsCompact()
   const conn = useLive((s) => s.conn)
   const machineConnected = useLive((s) => s.machine?.connected ?? null)
+  const activeJob = useLive((s) => isJobActive(s.job))
   const state = useLive((s) => s.estop)
   // Never disabled, for any role (04 §14): when the machine looks disconnected it is merely muted
   // visually; pressing it still sends (the server may know better than our last status).
   const muted = conn === 'open' && machineConnected === false
   const sending = state?.phase === 'sending'
+  const urgent = activeJob || sending
   const bottomSheetOpen = useOverlays((s) => s.bottomSheets > 0)
   const layerRef = React.useRef<HTMLDivElement>(null)
 
@@ -104,12 +106,12 @@ export function EStopLayer() {
   // crashed), at a fixed default corner so it is *always* reachable.
   const style: React.CSSProperties =
     compact && bottomSheetOpen
-      ? { position: 'fixed', top: 'calc(env(safe-area-inset-top) + 8px)', right: 'calc(env(safe-area-inset-right) + 8px)', width: 48, height: 48 }
+      ? { position: 'fixed', top: 'calc(env(safe-area-inset-top) + 8px)', right: 'calc(env(safe-area-inset-right) + 8px)', width: 56, height: 40 }
       : rect && rect.width > 0
         ? { position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height }
         : compact
-          ? { position: 'fixed', right: 8, bottom: 'calc(var(--tabbar-h) + 4px + env(safe-area-inset-bottom))', width: 48, height: 48 }
-          : { position: 'fixed', right: 8, top: 4, width: 88, height: 44 }
+          ? { position: 'fixed', right: 8, bottom: 'calc(var(--tabbar-h) + 8px + env(safe-area-inset-bottom))', width: 56, height: 40 }
+          : { position: 'fixed', right: 8, top: 'calc(var(--titlebar-h, 0px) + 10px)', width: 76, height: 32 }
 
   const button = (
       <button
@@ -122,15 +124,18 @@ export function EStopLayer() {
         title="急停（⌘/Ctrl + .）"
         style={style}
         className={cn(
-          'pointer-events-auto z-[100] inline-flex select-none items-center justify-center gap-1.5 rounded-lg bg-red font-semibold text-white',
-          'shadow-[0_1px_2px_rgb(0_0_0/0.2),inset_0_0_0_0.5px_rgb(0_0_0/0.15)] transition-[transform,filter] duration-[var(--dur-instant)]',
-          'hover:brightness-110 active:scale-[var(--press-scale)] active:brightness-90',
+          'pointer-events-auto z-[100] inline-flex select-none items-center justify-center rounded-md font-semibold',
+          'transition-[background-color,color,box-shadow,transform,opacity,filter] duration-[var(--dur-fast)]',
+          'active:scale-[var(--press-scale)]',
           'focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-red/60',
-          'data-[muted]:opacity-70',
-          compact ? 'flex-col gap-0.5 text-[12px] leading-none' : 'text-body',
+          'data-[muted]:opacity-65',
+          urgent
+            ? 'bg-red text-white shadow-[0_1px_3px_rgb(var(--red)/0.32)] hover:brightness-110 active:brightness-90'
+            : 'bg-red/12 text-on-tint-red ring-1 ring-inset ring-red/25 hover:bg-red hover:text-white hover:ring-red',
+          compact ? 'gap-1 text-[12px] leading-none' : 'gap-1.5 text-callout',
         )}
       >
-        {sending ? <Spinner size={compact ? 20 : 18} label="急停发送中" /> : <OctagonX className={compact ? 'size-5' : 'size-[18px]'} strokeWidth={2.25} aria-hidden />}
+        {sending ? <Spinner size={15} label="急停发送中" /> : <OctagonX className="size-4 shrink-0" strokeWidth={2.1} aria-hidden />}
         <span>急停</span>
       </button>
   )
