@@ -3,7 +3,7 @@
  * To add a route: add an entry below with `lazy: page(() => import('@/features/<name>/…'))`.
  */
 import { Navigate, createBrowserRouter, type RouteObject } from 'react-router-dom'
-import { AuthGate } from './auth-gate'
+import { AppShell } from './app-shell'
 import { NotFoundPage } from './not-found'
 import { PageError } from './page-error'
 import { RouteError } from './route-error'
@@ -16,11 +16,9 @@ type PageModule = { default: React.ComponentType }
 const page = (load: () => Promise<PageModule>) => async () => ({ Component: (await load()).default })
 
 export const routes: RouteObject[] = [
-  { path: '/login', lazy: page(() => import('./auth/login-page')), errorElement: <RouteError /> },
-  { path: '/setup', lazy: page(() => import('./auth/setup-page')), errorElement: <RouteError /> },
   {
     path: '/',
-    element: <AuthGate />,
+    element: <AppShell />,
     errorElement: <RouteError />,
     children: [
       { index: true, element: <Navigate to="/studio" replace /> },

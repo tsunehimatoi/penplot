@@ -4,7 +4,6 @@ from fastapi import APIRouter, File, Form, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
-from ..deps import C, R
 from ..errors import ApiError
 from ..backgrounds import BackgroundImports
 from ..schemas import (BackgroundImportResult, BackgroundPageRequest, FileInfo, FilePatch, GcodeImportResult,
@@ -24,7 +23,7 @@ async def _read(file: UploadFile, limit_mb, request):
 
 # ---------------------------------------------------------------- imports
 @router.post('/import/image', response_model=ImageImportResult, status_code=201, tags=['imports'])
-async def import_image(request: Request, p: C, file: UploadFile = File(...)):
+async def import_image(request: Request, file: UploadFile = File(...)):
     c = request.app.state.ctx
     staged = await _read(file, 20, request)
     return await c.imports.image(staged, file.filename or 'image')
@@ -32,7 +31,7 @@ async def import_image(request: Request, p: C, file: UploadFile = File(...)):
 
 @router.post('/import/image/{file_id}/trace', response_model=TraceResult,
              responses={202: {'model': TaskRef}}, tags=['imports'])
-async def trace_image(file_id: str, body: TraceRequest, request: Request, p: R,
+async def trace_image(file_id: str, body: TraceRequest, request: Request,
                       wait: float = Query(5.0, ge=0, le=60)):
     c = request.app.state.ctx
     task = await run_in_threadpool(c.imports.trace, file_id, body)
@@ -40,7 +39,7 @@ async def trace_image(file_id: str, body: TraceRequest, request: Request, p: R,
 
 
 @router.post('/import/background', response_model=BackgroundImportResult, status_code=201, tags=['imports'])
-async def import_background(request: Request, p: C, file: UploadFile = File(...),
+async def import_background(request: Request, file: UploadFile = File(...),
                             page: int = Form(0, ge=0, le=9999), dpi: float = Form(150, ge=50, le=300)):
     """Reference background for Page.background (never printed): PNG/JPEG/WebP (EXIF rotation baked
     in, longest side <= 3000 px) or a PDF (page `page` rasterised at `dpi`; the PDF is kept as
@@ -51,42 +50,42 @@ async def import_background(request: Request, p: C, file: UploadFile = File(...)
 
 
 @router.post('/import/background/{source_id}/page', response_model=BackgroundImportResult, tags=['imports'])
-async def background_page(source_id: str, body: BackgroundPageRequest, request: Request, p: C):
+async def background_page(source_id: str, body: BackgroundPageRequest, request: Request):
     """Rasterise another page of an uploaded background PDF."""
     return await BackgroundImports(request.app.state.ctx).page(source_id, body.page, body.dpi)
 
 
 @router.get('/import/background/{source_id}/pages/{page}/thumb.png', response_class=Response,
             responses={200: {'content': {'image/png': {}}}}, tags=['imports'])
-async def background_thumb(source_id: str, page: int, request: Request, p: R, size: int = Query(240, ge=48, le=480)):
+async def background_thumb(source_id: str, page: int, request: Request, size: int = Query(240, ge=48, le=480)):
     """Small preview of one page of a background PDF (page picker)."""
     data = await BackgroundImports(request.app.state.ctx).thumb(source_id, page, size)
     return Response(data, media_type='image/png', headers={'Cache-Control': 'private, max-age=86400'})
 
 
 @router.post('/import/svg', response_model=VectorImportResult, status_code=201, tags=['imports'])
-async def import_svg(request: Request, p: C, file: UploadFile = File(...)):
+async def import_svg(request: Request, file: UploadFile = File(...)):
     c = request.app.state.ctx
     staged = await _read(file, 10, request)
     return await c.imports.vector(staged, file.filename or 'drawing.svg', 'svg')
 
 
 @router.post('/import/dxf', response_model=VectorImportResult, status_code=201, tags=['imports'])
-async def import_dxf(request: Request, p: C, file: UploadFile = File(...)):
+async def import_dxf(request: Request, file: UploadFile = File(...)):
     c = request.app.state.ctx
     staged = await _read(file, 20, request)
     return await c.imports.vector(staged, file.filename or 'drawing.dxf', 'dxf')
 
 
 @router.post('/import/gcode', response_model=GcodeImportResult, status_code=201, tags=['imports'])
-async def import_gcode(request: Request, p: C, file: UploadFile = File(...)):
+async def import_gcode(request: Request, file: UploadFile = File(...)):
     c = request.app.state.ctx
     staged = await _read(file, 50, request)
     return await c.imports.gcode(staged, file.filename or 'file.gcode')
 
 
 @router.post('/import/text', response_model=TextImportResult, tags=['imports'])
-async def import_text(request: Request, p: R, file: UploadFile = File(...)):
+async def import_text(request: Request, file: UploadFile = File(...)):
     data = await file.read(5 * MB + 1)
     if len(data) > 5 * MB:
         raise ApiError(413, 'too_large', '文本文件超过 5 MB')
@@ -94,7 +93,7 @@ async def import_text(request: Request, p: R, file: UploadFile = File(...)):
 
 
 @router.post('/import/table', response_model=TableImportResult, status_code=201, tags=['imports'])
-async def import_table(request: Request, p: C, file: UploadFile = File(...)):
+async def import_table(request: Request, file: UploadFile = File(...)):
     c = request.app.state.ctx
     staged = await _read(file, 20, request)
     return await c.imports.table(staged, file.filename or 'data.csv')
@@ -102,13 +101,13 @@ async def import_table(request: Request, p: C, file: UploadFile = File(...)):
 
 # ---------------------------------------------------------------- library
 @router.get('/files', response_model=list[FileInfo])
-def list_files(request: Request, p: R, kind: Optional[str] = None, q: Optional[str] = None,
+def list_files(request: Request, kind: Optional[str] = None, q: Optional[str] = None,
                tag: Optional[str] = None, limit: int = Query(200, ge=1, le=5000)):
     return request.app.state.ctx.files.list(kind=kind, q=q, tag=tag, limit=limit)
 
 
 @router.post('/files', response_model=FileInfo, status_code=201)
-async def upload_file(request: Request, p: C, file: UploadFile = File(...),
+async def upload_file(request: Request, file: UploadFile = File(...),
                       kind: Optional[str] = Form(None), tags: Optional[str] = Form(None)):
     c = request.app.state.ctx
     staged = await _read(file, 100, request)
@@ -117,12 +116,12 @@ async def upload_file(request: Request, p: C, file: UploadFile = File(...),
 
 
 @router.get('/files/{file_id}', response_model=FileInfo)
-def get_file(file_id: str, request: Request, p: R):
+def get_file(file_id: str, request: Request):
     return request.app.state.ctx.files.get(file_id)
 
 
 @router.get('/files/{file_id}/content', response_class=FileResponse)
-def file_content(file_id: str, request: Request, p: R, download: int = 0):
+def file_content(file_id: str, request: Request, download: int = 0):
     c = request.app.state.ctx
     info = c.files.get(file_id)
     # P11: user content is never active content on our origin
@@ -140,18 +139,18 @@ def file_content(file_id: str, request: Request, p: R, download: int = 0):
 
 @router.get('/files/{file_id}/preview.svg', response_class=Response,
             responses={200: {'content': {'image/svg+xml': {}}}})
-async def file_preview(file_id: str, request: Request, p: R):
+async def file_preview(file_id: str, request: Request):
     c = request.app.state.ctx
     svg = await c.files.preview_svg(file_id)
     return Response(svg, media_type='image/svg+xml', headers={'Cache-Control': 'private, max-age=3600'})
 
 
 @router.patch('/files/{file_id}', response_model=FileInfo)
-def patch_file(file_id: str, body: FilePatch, request: Request, p: C):
+def patch_file(file_id: str, body: FilePatch, request: Request):
     return request.app.state.ctx.files.patch(file_id, body.name, body.tags)
 
 
 @router.delete('/files/{file_id}', status_code=204)
-def delete_file(file_id: str, request: Request, p: C):
+def delete_file(file_id: str, request: Request):
     request.app.state.ctx.files.delete(file_id)
     return Response(status_code=204)

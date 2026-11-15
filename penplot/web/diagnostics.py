@@ -72,9 +72,7 @@ class Diagnostics:
         checks = []
         t0 = time.time()
         port = m.port if m.connected else m._resolve_port(None)
-        if port == 'fake':
-            checks.append(_chk('serial_present', '串口设备', 'ok', 'FakeGrbl 模拟器'))
-        elif m._port_exists(port):
+        if m._port_exists(port):
             checks.append(_chk('serial_present', '串口设备', 'ok', port))
         else:
             checks.append(_chk('serial_present', '串口设备', 'fail', '%s 不存在' % port,
@@ -83,7 +81,7 @@ class Diagnostics:
             checks.append(_chk('serial_open', '串口独占', 'ok', '本服务已独占打开 %s' % m.port))
         else:
             from .machine.service import _fuser
-            pid = _fuser(port) if port != 'fake' and os.path.exists(port) else None
+            pid = _fuser(port) if os.path.exists(port) else None
             checks.append(_chk('serial_open', '串口独占', 'fail', '未连接' + ('，被 PID %d 占用' % pid if pid else ''),
                                '关掉占用串口的程序（命令行 penplot print/tool？），然后点「连接」' if pid else
                                '点「连接」；如果失败看错误信息'))
@@ -197,7 +195,7 @@ class Diagnostics:
         if shutil.which('timedatectl'):
             try:
                 ntp = subprocess.run(['timedatectl', 'show', '-p', 'NTPSynchronized', '--value'], capture_output=True,
-                                     text=True, timeout=2).stdout.strip()
+                                     text=True, errors='replace', timeout=2).stdout.strip()
             except Exception:
                 ntp = None
         if year < 2024:

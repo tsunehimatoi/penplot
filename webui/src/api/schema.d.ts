@@ -4,249 +4,6 @@
  */
 
 export interface paths {
-    "/api/v1/auth/state": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Auth State */
-        get: operations["auth_state_api_v1_auth_state_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/setup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Setup */
-        post: operations["setup_api_v1_auth_setup_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Login */
-        post: operations["login_api_v1_auth_login_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/logout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Logout */
-        post: operations["logout_api_v1_auth_logout_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Me */
-        get: operations["me_api_v1_auth_me_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/password": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Change Password
-         * @description Change your own password (any role); revokes your other sessions.
-         */
-        post: operations["change_password_api_v1_auth_password_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/sessions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Sessions
-         * @description Your sessions; admins may pass ?all=1.
-         */
-        get: operations["sessions_api_v1_auth_sessions_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/sessions/{sid}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Revoke Session */
-        delete: operations["revoke_session_api_v1_auth_sessions__sid__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/tokens": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Tokens
-         * @description Your API tokens; admins may pass ?all=1.
-         */
-        get: operations["tokens_api_v1_auth_tokens_get"];
-        put?: never;
-        /**
-         * Create Token
-         * @description Scopes are capped by your role (viewer: read; operator: read+control).
-         */
-        post: operations["create_token_api_v1_auth_tokens_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/tokens/{tid}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Revoke Token */
-        delete: operations["revoke_token_api_v1_auth_tokens__tid__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Users
-         * @description Everyone may see the user list (for presence); only admins change it.
-         */
-        get: operations["list_users_api_v1_users_get"];
-        put?: never;
-        /** Create User */
-        post: operations["create_user_api_v1_users_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/users/{uid}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get User */
-        get: operations["get_user_api_v1_users__uid__get"];
-        put?: never;
-        post?: never;
-        /** Delete User */
-        delete: operations["delete_user_api_v1_users__uid__delete"];
-        options?: never;
-        head?: never;
-        /** Patch User */
-        patch: operations["patch_user_api_v1_users__uid__patch"];
-        trace?: never;
-    };
-    "/api/v1/users/{uid}/password": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reset User Password
-         * @description Admin password reset; revokes all of that user's sessions.
-         */
-        post: operations["reset_user_password_api_v1_users__uid__password_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/fonts": {
         parameters: {
             query?: never;
@@ -489,8 +246,7 @@ export interface paths {
         get: operations["get_project_api_v1_projects__project_id__get"];
         /**
          * Put Project
-         * @description Other viewers of the project get WS `project` {kind:'doc', rev, by}. Send `X-Conn-Id`
-         *     (your WS conn_id) so your own client can ignore the echo.
+         * @description Update a project document.
          */
         put: operations["put_project_api_v1_projects__project_id__put"];
         post?: never;
@@ -514,11 +270,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /**
-         * Patch Element
-         * @description 409 element_locked if another user holds a soft lock on it (force=1 overrides).
-         *     Broadcasts WS `project` {kind:'element', patch} to the other viewers.
-         */
+        /** Patch Element */
         patch: operations["patch_element_api_v1_projects__project_id__elements__element_id__patch"];
         trace?: never;
     };
@@ -1298,62 +1050,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/machine/lease": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Lease */
-        get: operations["get_lease_api_v1_machine_lease_get"];
-        put?: never;
-        /**
-         * Take Lease
-         * @description Take machine control. 409 lease_held if someone else has it (admins may force).
-         */
-        post: operations["take_lease_api_v1_machine_lease_post"];
-        /** Release Lease */
-        delete: operations["release_lease_api_v1_machine_lease_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/presence": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Presence */
-        get: operations["presence_api_v1_presence_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/projects/{project_id}/collab": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Project Collab */
-        get: operations["project_collab_api_v1_projects__project_id__collab_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/machine/status": {
         parameters: {
             query?: never;
@@ -1607,7 +1303,7 @@ export interface paths {
         put?: never;
         /**
          * Estop
-         * @description E-stop: every signed-in user (viewers too), never rate limited, never lease-gated.
+         * @description E-stop: never rate limited.
          */
         post: operations["estop_api_v1_machine_estop_post"];
         delete?: never;
@@ -1946,7 +1642,7 @@ export interface paths {
         /**
          * Diagnostics
          * @description Self-test with remediation hints: serial, banner, $$ vs profile, status latency,
-         *     optional pen up/down test (needs confirm + the control lease), WiFi, disk, memory, temp,
+         *     optional pen up/down test (needs confirm), WiFi, disk, memory, temp,
          *     fonts, clock, data dir.
          */
         post: operations["diagnostics_api_v1_system_diagnostics_post"];
@@ -1971,23 +1667,6 @@ export interface paths {
         get: operations["recovery_api_v1_machine_recovery_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/machine/fake/fault": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** FakeGrbl fault injection (simulator only) */
-        post: operations["fake_fault_api_v1_machine_fake_fault_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2297,45 +1976,6 @@ export interface components {
             /** Detail */
             detail?: unknown;
         };
-        /** AuthState */
-        AuthState: {
-            /** Setup Required */
-            setup_required: boolean;
-            /** Authenticated */
-            authenticated: boolean;
-            /**
-             * User
-             * @description username
-             */
-            user?: string | null;
-            user_info?: components["schemas"]["UserRef"] | null;
-            /** Role */
-            role?: ("admin" | "operator" | "viewer") | null;
-            /**
-             * Csrf
-             * @description unsafe requests with cookie auth must send header X-Penplot: 1
-             * @default true
-             */
-            csrf: boolean;
-            /**
-             * Setup Code Required
-             * @description false in dev mode (PENPLOT_DEV=1)
-             * @default true
-             */
-            setup_code_required: boolean;
-            /**
-             * Scopes
-             * @default []
-             */
-            scopes: ("read" | "control" | "admin")[];
-            /** Via */
-            via?: ("session" | "token") | null;
-            /**
-             * Dev
-             * @default false
-             */
-            dev: boolean;
-        };
         /**
          * BackgroundCalib
          * @description Last two-point calibration (image px), kept for re-editing and as snap targets.
@@ -2578,7 +2218,7 @@ export interface components {
             chars?: string | null;
             /**
              * Size Px
-             * @default 160
+             * @default 256
              */
             size_px: number;
             /**
@@ -2628,7 +2268,7 @@ export interface components {
         ConnectRequest: {
             /**
              * Port
-             * @description default: profile connection.port; 'fake' = simulator (dev)
+             * @description default: profile connection.port
              */
             port?: string | null;
             /** Baud */
@@ -2796,19 +2436,6 @@ export interface components {
             type: "dxf";
             props: components["schemas"]["VectorProps"];
         };
-        /** ElementLock */
-        ElementLock: {
-            /** Element Id */
-            element_id: string;
-            /** User */
-            user: {
-                [key: string]: unknown;
-            };
-            /** Conn Id */
-            conn_id: string;
-            /** Ts */
-            ts: number;
-        };
         /** ElementPatch */
         ElementPatch: {
             /**
@@ -2849,16 +2476,6 @@ export interface components {
             message: string;
             /** Detail */
             detail?: unknown;
-        };
-        /** FakeFault */
-        FakeFault: {
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "unplug" | "alarm" | "reset" | "reset_in_motion" | "garbage" | "slow_acks" | "error_every" | "error_next" | "clear";
-            /** Value */
-            value?: number | null;
         };
         /** Features */
         Features: {
@@ -3912,56 +3529,6 @@ export interface components {
              */
             seq?: number | null;
         };
-        /** LeaseInfo */
-        LeaseInfo: {
-            /** Held */
-            held: boolean;
-            holder?: components["schemas"]["UserRef"] | null;
-            /** Since */
-            since?: number | null;
-            /** Last Active */
-            last_active?: number | null;
-            /**
-             * Online
-             * @description holder has a WebSocket open
-             * @default false
-             */
-            online: boolean;
-            /**
-             * Release After S
-             * @description auto-release after this long without WS/activity
-             * @default 60
-             */
-            release_after_s: number;
-            /** Reason */
-            reason?: string | null;
-            /**
-             * Mine
-             * @description REST only: the caller holds it
-             */
-            mine?: boolean | null;
-            /**
-             * Expires At
-             * @description auto-release time while the holder is offline
-             */
-            expires_at?: number | null;
-        };
-        /** LeaseRequest */
-        LeaseRequest: {
-            /**
-             * Force
-             * @description admin only: take it from the current holder
-             * @default false
-             */
-            force: boolean;
-        };
-        /** LocksData */
-        LocksData: {
-            /** Project Id */
-            project_id: string;
-            /** Locks */
-            locks: components["schemas"]["ElementLock"][];
-        };
         /** LogData */
         LogData: {
             /** Lines */
@@ -4004,26 +3571,6 @@ export interface components {
             /** Next Seq */
             next_seq: number;
         };
-        /** LoginRequest */
-        LoginRequest: {
-            /**
-             * Username
-             * @description default: the only user, or 'admin'
-             */
-            username?: string | null;
-            /** Password */
-            password: string;
-        };
-        /** LoginResponse */
-        LoginResponse: {
-            /**
-             * Ok
-             * @default true
-             */
-            ok: boolean;
-            /** Expires At */
-            expires_at: number;
-        };
         /** MachineStatus */
         MachineStatus: {
             /** Connected */
@@ -4040,12 +3587,6 @@ export interface components {
              * @default 115200
              */
             baud: number;
-            /**
-             * Fake
-             * @description FakeGrbl simulator (dev/test)
-             * @default false
-             */
-            fake: boolean;
             /**
              * Firmware
              * @default
@@ -4513,13 +4054,6 @@ export interface components {
              */
             right: number;
         };
-        /** PasswordChange */
-        PasswordChange: {
-            /** Old */
-            old: string;
-            /** New */
-            new: string;
-        };
         /** PenRequest */
         PenRequest: {
             /**
@@ -4614,27 +4148,6 @@ export interface components {
             pid?: string | null;
             /** Busy Pid */
             busy_pid?: number | null;
-        };
-        /** PresenceData */
-        PresenceData: {
-            /** Online */
-            online: components["schemas"]["PresenceEntry"][];
-        };
-        /** PresenceEntry */
-        PresenceEntry: {
-            /** Conn Id */
-            conn_id: string;
-            user: components["schemas"]["UserRef"];
-            /** Page */
-            page?: string | null;
-            /** Project Id */
-            project_id?: string | null;
-            /** Element Id */
-            element_id?: string | null;
-            /** Since */
-            since: number;
-            /** Client */
-            client?: string | null;
         };
         /**
          * PrintOverrides
@@ -4913,7 +4426,6 @@ export interface components {
              * @enum {string}
              */
             kind: "doc" | "element";
-            by?: components["schemas"]["UserRef"] | null;
             /**
              * Conn Id
              * @description X-Conn-Id of the writer (ignore your own echo)
@@ -4926,15 +4438,6 @@ export interface components {
             patch?: {
                 [key: string]: unknown;
             } | null;
-        };
-        /** ProjectCollab */
-        ProjectCollab: {
-            /** Project Id */
-            project_id: string;
-            /** Viewers */
-            viewers: components["schemas"]["PresenceEntry"][];
-            /** Locks */
-            locks: components["schemas"]["ElementLock"][];
         };
         /** ProjectCreate */
         ProjectCreate: {
@@ -5355,53 +4858,6 @@ export interface components {
             /** Name */
             name?: string | null;
         };
-        /** SessionInfo */
-        SessionInfo: {
-            /**
-             * Id
-             * @description short id (first 16 hex of the stored hash)
-             */
-            id: string;
-            /**
-             * Ip
-             * @default
-             */
-            ip: string;
-            /**
-             * Ua
-             * @default
-             */
-            ua: string;
-            /** Created At */
-            created_at: number;
-            /** Last Seen */
-            last_seen: number;
-            /** Expires At */
-            expires_at: number;
-            /**
-             * Current
-             * @default false
-             */
-            current: boolean;
-            /** User Id */
-            user_id?: string | null;
-            /** Username */
-            username?: string | null;
-        };
-        /** SetupRequest */
-        SetupRequest: {
-            /** Setup Code */
-            setup_code?: string | null;
-            /**
-             * Username
-             * @default admin
-             */
-            username: string;
-            /** Display Name */
-            display_name?: string | null;
-            /** Password */
-            password: string;
-        };
         /** ShapeElement */
         ShapeElement: {
             /** Id */
@@ -5530,12 +4986,6 @@ export interface components {
             batch?: {
                 [key: string]: unknown;
             } | null;
-            lease?: components["schemas"]["LeaseInfo"] | null;
-            /**
-             * Presence
-             * @default []
-             */
-            presence: components["schemas"]["PresenceEntry"][];
             /**
              * Teletype
              * @description TeletypeState when a session is active
@@ -6305,63 +5755,6 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** TokenCreate */
-        TokenCreate: {
-            /** Name */
-            name: string;
-            /**
-             * Scopes
-             * @default [
-             *       "read"
-             *     ]
-             */
-            scopes: ("read" | "control" | "admin")[];
-            /** Expires Days */
-            expires_days?: number | null;
-        };
-        /** TokenCreated */
-        TokenCreated: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /** Scopes */
-            scopes: ("read" | "control" | "admin")[];
-            /** User Id */
-            user_id?: string | null;
-            /** Username */
-            username?: string | null;
-            /** Created At */
-            created_at: number;
-            /** Last Used */
-            last_used?: number | null;
-            /** Expires At */
-            expires_at?: number | null;
-            /**
-             * Token
-             * @description ppt_<id>_<secret>; shown once
-             */
-            token: string;
-        };
-        /** TokenInfo */
-        TokenInfo: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /** Scopes */
-            scopes: ("read" | "control" | "admin")[];
-            /** User Id */
-            user_id?: string | null;
-            /** Username */
-            username?: string | null;
-            /** Created At */
-            created_at: number;
-            /** Last Used */
-            last_used?: number | null;
-            /** Expires At */
-            expires_at?: number | null;
-        };
         /** TraceRequest */
         TraceRequest: {
             /**
@@ -6479,78 +5872,6 @@ export interface components {
              * @default 0
              */
             rotation: number;
-        };
-        /** UserCreate */
-        UserCreate: {
-            /** Username */
-            username: string;
-            /** Password */
-            password: string;
-            /**
-             * Role
-             * @default operator
-             * @enum {string}
-             */
-            role: "admin" | "operator" | "viewer";
-            /** Display Name */
-            display_name?: string | null;
-        };
-        /** UserInfo */
-        UserInfo: {
-            /** Id */
-            id: string;
-            /** Username */
-            username: string;
-            /**
-             * Display Name
-             * @default
-             */
-            display_name: string;
-            /**
-             * Role
-             * @enum {string}
-             */
-            role: "admin" | "operator" | "viewer";
-            /**
-             * Disabled
-             * @default false
-             */
-            disabled: boolean;
-            /** Created At */
-            created_at: number;
-            /** Last Login */
-            last_login?: number | null;
-        };
-        /** UserPasswordReset */
-        UserPasswordReset: {
-            /** New */
-            new: string;
-        };
-        /** UserPatch */
-        UserPatch: {
-            /** Role */
-            role?: ("admin" | "operator" | "viewer") | null;
-            /** Disabled */
-            disabled?: boolean | null;
-            /** Display Name */
-            display_name?: string | null;
-        };
-        /** UserRef */
-        UserRef: {
-            /** Id */
-            id: string;
-            /** Username */
-            username: string;
-            /**
-             * Display Name
-             * @default
-             */
-            display_name: string;
-            /**
-             * Role
-             * @enum {string}
-             */
-            role: "admin" | "operator" | "viewer";
         };
         /** Variable */
         Variable: {
@@ -6830,60 +6151,6 @@ export interface components {
             type: "job";
             data: components["schemas"]["JobEventData"];
         };
-        /** WsLease */
-        WsLease: {
-            /**
-             * Seq
-             * @description per-connection sequence number
-             */
-            seq: number;
-            /** Ts */
-            ts: number;
-            /**
-             * Type
-             * @default lease
-             * @constant
-             */
-            type: "lease";
-            data: components["schemas"]["LeaseInfo"];
-        };
-        /**
-         * WsLockMsg
-         * @description Soft element lock (expires after 120 s; refresh by sending again; released on disconnect).
-         */
-        WsLockMsg: {
-            /**
-             * Type
-             * @enum {string}
-             */
-            type: "lock" | "unlock";
-            /**
-             * Id
-             * @description ack id
-             */
-            id?: string | null;
-            /** Project Id */
-            project_id: string;
-            /** Element Id */
-            element_id: string;
-        };
-        /** WsLocks */
-        WsLocks: {
-            /**
-             * Seq
-             * @description per-connection sequence number
-             */
-            seq: number;
-            /** Ts */
-            ts: number;
-            /**
-             * Type
-             * @default locks
-             * @constant
-             */
-            type: "locks";
-            data: components["schemas"]["LocksData"];
-        };
         /** WsLog */
         WsLog: {
             /**
@@ -6959,43 +6226,6 @@ export interface components {
             /** T */
             t: number;
         };
-        /** WsPresence */
-        WsPresence: {
-            /**
-             * Seq
-             * @description per-connection sequence number
-             */
-            seq: number;
-            /** Ts */
-            ts: number;
-            /**
-             * Type
-             * @default presence
-             * @constant
-             */
-            type: "presence";
-            data: components["schemas"]["PresenceData"];
-        };
-        /**
-         * WsPresenceUpdate
-         * @description Which page/project/element this tab shows (coalesced to 1/s).
-         */
-        WsPresenceUpdate: {
-            /**
-             * Type
-             * @default presence
-             * @constant
-             */
-            type: "presence";
-            /** Page */
-            page?: string | null;
-            /** Project Id */
-            project_id?: string | null;
-            /** Element Id */
-            element_id?: string | null;
-            /** Client */
-            client?: string | null;
-        };
         /** WsProgress */
         WsProgress: {
             /**
@@ -7013,10 +6243,7 @@ export interface components {
             type: "progress";
             data: components["schemas"]["ProgressData"];
         };
-        /**
-         * WsProject
-         * @description Only to sockets whose presence.project_id is this project.
-         */
+        /** WsProject */
         WsProject: {
             /**
              * Seq
@@ -7059,7 +6286,7 @@ export interface components {
              */
             type: "subscribe";
             /** Topics */
-            topics: ("status" | "progress" | "job" | "log" | "alarm" | "task" | "system" | "error" | "notice" | "presence" | "lease" | "project" | "locks" | "teletype" | "attention")[];
+            topics: ("status" | "progress" | "job" | "log" | "alarm" | "task" | "system" | "error" | "notice" | "project" | "teletype" | "attention")[];
         };
         /** WsSystem */
         WsSystem: {
@@ -7114,7 +6341,7 @@ export interface components {
         };
         /**
          * WsTtKeys
-         * @description Teletype keystrokes (control scope + lease; terminal mode: admin + terminal_enabled).
+         * @description Teletype keystrokes.
          */
         WsTtKeys: {
             /**
@@ -7134,9 +6361,9 @@ export interface components {
          */
         WsTypes: {
             /** Server */
-            server: components["schemas"]["WsHello"] | components["schemas"]["WsStatus"] | components["schemas"]["WsProgress"] | components["schemas"]["WsJob"] | components["schemas"]["WsAlarm"] | components["schemas"]["WsError"] | components["schemas"]["WsLog"] | components["schemas"]["WsTask"] | components["schemas"]["WsSystem"] | components["schemas"]["WsNotice"] | components["schemas"]["WsGap"] | components["schemas"]["WsAck"] | components["schemas"]["WsPong"] | components["schemas"]["WsAttention"] | components["schemas"]["WsPresence"] | components["schemas"]["WsLease"] | components["schemas"]["WsProject"] | components["schemas"]["WsLocks"] | components["schemas"]["WsTeletype"];
+            server: components["schemas"]["WsHello"] | components["schemas"]["WsStatus"] | components["schemas"]["WsProgress"] | components["schemas"]["WsJob"] | components["schemas"]["WsAlarm"] | components["schemas"]["WsError"] | components["schemas"]["WsLog"] | components["schemas"]["WsTask"] | components["schemas"]["WsSystem"] | components["schemas"]["WsNotice"] | components["schemas"]["WsGap"] | components["schemas"]["WsAck"] | components["schemas"]["WsPong"] | components["schemas"]["WsAttention"] | components["schemas"]["WsProject"] | components["schemas"]["WsTeletype"];
             /** Client */
-            client: components["schemas"]["WsSubscribe"] | components["schemas"]["WsCmd"] | components["schemas"]["WsPing"] | components["schemas"]["WsPresenceUpdate"] | components["schemas"]["WsLockMsg"] | components["schemas"]["WsTtKeys"];
+            client: components["schemas"]["WsSubscribe"] | components["schemas"]["WsCmd"] | components["schemas"]["WsPing"] | components["schemas"]["WsTtKeys"];
         };
         /** ZeroRequest */
         ZeroRequest: {
@@ -7163,7 +6390,6 @@ export type AlarmInfo = components['schemas']['AlarmInfo'];
 export type AppSettings = components['schemas']['AppSettings'];
 export type AttentionData = components['schemas']['AttentionData'];
 export type AuditEntry = components['schemas']['AuditEntry'];
-export type AuthState = components['schemas']['AuthState'];
 export type BackgroundCalib = components['schemas']['BackgroundCalib'];
 export type BackgroundImportResult = components['schemas']['BackgroundImportResult'];
 export type BackgroundPageRequest = components['schemas']['BackgroundPageRequest'];
@@ -7193,10 +6419,8 @@ export type DiagnosticsRequest = components['schemas']['DiagnosticsRequest'];
 export type DiagnosticsResult = components['schemas']['DiagnosticsResult'];
 export type DiskInfo = components['schemas']['DiskInfo'];
 export type DxfElement = components['schemas']['DxfElement'];
-export type ElementLock = components['schemas']['ElementLock'];
 export type ElementPatch = components['schemas']['ElementPatch'];
 export type ErrorInfo = components['schemas']['ErrorInfo'];
-export type FakeFault = components['schemas']['FakeFault'];
 export type Features = components['schemas']['Features'];
 export type FileInfo = components['schemas']['FileInfo'];
 export type FilePatch = components['schemas']['FilePatch'];
@@ -7235,15 +6459,10 @@ export type JobRetry = components['schemas']['JobRetry'];
 export type JobSource = components['schemas']['JobSource'];
 export type JobStart = components['schemas']['JobStart'];
 export type JogRequest = components['schemas']['JogRequest'];
-export type LeaseInfo = components['schemas']['LeaseInfo'];
-export type LeaseRequest = components['schemas']['LeaseRequest'];
-export type LocksData = components['schemas']['LocksData'];
 export type LogData = components['schemas']['LogData'];
 export type LogEntry = components['schemas']['LogEntry'];
 export type LogLine = components['schemas']['LogLine'];
 export type LogSlice = components['schemas']['LogSlice'];
-export type LoginRequest = components['schemas']['LoginRequest'];
-export type LoginResponse = components['schemas']['LoginResponse'];
 export type MachineStatus = components['schemas']['MachineStatus'];
 export type Margins = components['schemas']['Margins'];
 export type MemInfo = components['schemas']['MemInfo'];
@@ -7259,13 +6478,10 @@ export type PaperBase = components['schemas']['PaperBase'];
 export type PaperRef = components['schemas']['PaperRef'];
 export type PaperSpec = components['schemas']['PaperSpec'];
 export type Paragraph = components['schemas']['Paragraph'];
-export type PasswordChange = components['schemas']['PasswordChange'];
 export type PenRequest = components['schemas']['PenRequest'];
 export type Placement = components['schemas']['Placement'];
 export type PlacementInfo = components['schemas']['PlacementInfo'];
 export type PortInfo = components['schemas']['PortInfo'];
-export type PresenceData = components['schemas']['PresenceData'];
-export type PresenceEntry = components['schemas']['PresenceEntry'];
 export type PrintOverrides = components['schemas']['PrintOverrides'];
 export type Profile = components['schemas']['Profile'];
 export type ProfileCreate = components['schemas']['ProfileCreate'];
@@ -7275,7 +6491,6 @@ export type ProfileUpdate = components['schemas']['ProfileUpdate'];
 export type ProgressData = components['schemas']['ProgressData'];
 export type Project = components['schemas']['Project'];
 export type ProjectChange = components['schemas']['ProjectChange'];
-export type ProjectCollab = components['schemas']['ProjectCollab'];
 export type ProjectCreate = components['schemas']['ProjectCreate'];
 export type ProjectDoc = components['schemas']['ProjectDoc'];
 export type ProjectImportResult = components['schemas']['ProjectImportResult'];
@@ -7294,8 +6509,6 @@ export type RenderTextRequest = components['schemas']['RenderTextRequest'];
 export type RestartRequest = components['schemas']['RestartRequest'];
 export type Ruling = components['schemas']['Ruling'];
 export type SaveAsTemplate = components['schemas']['SaveAsTemplate'];
-export type SessionInfo = components['schemas']['SessionInfo'];
-export type SetupRequest = components['schemas']['SetupRequest'];
 export type ShapeElement = components['schemas']['ShapeElement'];
 export type ShapeProps = components['schemas']['ShapeProps'];
 export type SheetInfo = components['schemas']['SheetInfo'];
@@ -7321,17 +6534,9 @@ export type TeletypeTypeResult = components['schemas']['TeletypeTypeResult'];
 export type TextElement = components['schemas']['TextElement'];
 export type TextImportResult = components['schemas']['TextImportResult'];
 export type TextProps = components['schemas']['TextProps'];
-export type TokenCreate = components['schemas']['TokenCreate'];
-export type TokenCreated = components['schemas']['TokenCreated'];
-export type TokenInfo = components['schemas']['TokenInfo'];
 export type TraceRequest = components['schemas']['TraceRequest'];
 export type TraceResult = components['schemas']['TraceResult'];
 export type Transform = components['schemas']['Transform'];
-export type UserCreate = components['schemas']['UserCreate'];
-export type UserInfo = components['schemas']['UserInfo'];
-export type UserPasswordReset = components['schemas']['UserPasswordReset'];
-export type UserPatch = components['schemas']['UserPatch'];
-export type UserRef = components['schemas']['UserRef'];
 export type Variable = components['schemas']['Variable'];
 export type VectorImportResult = components['schemas']['VectorImportResult'];
 export type VectorProps = components['schemas']['VectorProps'];
@@ -7345,16 +6550,11 @@ export type WsError = components['schemas']['WsError'];
 export type WsGap = components['schemas']['WsGap'];
 export type WsHello = components['schemas']['WsHello'];
 export type WsJob = components['schemas']['WsJob'];
-export type WsLease = components['schemas']['WsLease'];
-export type WsLockMsg = components['schemas']['WsLockMsg'];
-export type WsLocks = components['schemas']['WsLocks'];
 export type WsLog = components['schemas']['WsLog'];
 export type WsLogLine = components['schemas']['WsLogLine'];
 export type WsNotice = components['schemas']['WsNotice'];
 export type WsPing = components['schemas']['WsPing'];
 export type WsPong = components['schemas']['WsPong'];
-export type WsPresence = components['schemas']['WsPresence'];
-export type WsPresenceUpdate = components['schemas']['WsPresenceUpdate'];
 export type WsProgress = components['schemas']['WsProgress'];
 export type WsProject = components['schemas']['WsProject'];
 export type WsStatus = components['schemas']['WsStatus'];
@@ -7368,666 +6568,6 @@ export type ZeroRequest = components['schemas']['ZeroRequest'];
 export type ErrorBody = components['schemas']['ErrorBody'];
 export type $defs = Record<string, never>;
 export interface operations {
-    auth_state_api_v1_auth_state_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuthState"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    setup_api_v1_auth_setup_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetupRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Ok"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    login_api_v1_auth_login_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoginRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoginResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    logout_api_v1_auth_logout_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    me_api_v1_auth_me_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserInfo"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    change_password_api_v1_auth_password_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PasswordChange"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    sessions_api_v1_auth_sessions_get: {
-        parameters: {
-            query?: {
-                all?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionInfo"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    revoke_session_api_v1_auth_sessions__sid__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sid: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    tokens_api_v1_auth_tokens_get: {
-        parameters: {
-            query?: {
-                all?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenInfo"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    create_token_api_v1_auth_tokens_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TokenCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenCreated"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    revoke_token_api_v1_auth_tokens__tid__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                tid: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    list_users_api_v1_users_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserInfo"][];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    create_user_api_v1_users_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserInfo"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    get_user_api_v1_users__uid__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                uid: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserInfo"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    delete_user_api_v1_users__uid__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                uid: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    patch_user_api_v1_users__uid__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                uid: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserPatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserInfo"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    reset_user_password_api_v1_users__uid__password_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                uid: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserPasswordReset"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
     list_fonts_api_v1_fonts_get: {
         parameters: {
             query?: {
@@ -11256,184 +9796,6 @@ export interface operations {
             };
         };
     };
-    get_lease_api_v1_machine_lease_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LeaseInfo"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    take_lease_api_v1_machine_lease_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["LeaseRequest"] | null;
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LeaseInfo"];
-                };
-            };
-            /** @description lease_held */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    release_lease_api_v1_machine_lease_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LeaseInfo"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    presence_api_v1_presence_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PresenceEntry"][];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    project_collab_api_v1_projects__project_id__collab_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProjectCollab"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
     status_api_v1_machine_status_get: {
         parameters: {
             query?: never;
@@ -12943,48 +11305,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecoveryInfo"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    fake_fault_api_v1_machine_fake_fault_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FakeFault"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Error */

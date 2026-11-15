@@ -8,7 +8,6 @@ import time
 
 import penplot
 
-from .auth import AuthService
 from .db import DB
 from .errors import ApiError
 from .events import EventBus
@@ -84,7 +83,6 @@ class AppContext:
         self.db.migrate()
         self.bus = EventBus()
         self.bus.start()
-        self.auth = AuthService(self.db, cfg)
         self.settings = AppSettingsStore(self.db)
         self.tasks = TaskRunner(self, cfg.task_workers, cfg.task_mode)
         self.tasks.start()
@@ -101,8 +99,6 @@ class AppContext:
         self.idem = Idempotency()
         from .diagnostics import Diagnostics
         self.diagnostics = Diagnostics(self)
-        from .collab import Collab
-        self.collab = Collab(self)
         self.machine = MachineService(self)
         self.jobs = JobService(self)
         from .teletype.service import TeletypeService
@@ -119,9 +115,7 @@ class AppContext:
             await self.loop.run_in_executor(None, self.fonts.scan)
         else:
             self.loop.run_in_executor(None, self.fonts.scan)     # pick up changes in the background
-        self.auth.ensure_setup_code()
         await self.machine.start()
-        self.collab.start()
         self._bg.append(asyncio.create_task(self.system.publisher()))
         self._bg.append(asyncio.create_task(self._watchdog()))
         sd_notify('READY=1')
@@ -140,7 +134,6 @@ class AppContext:
             log.exception('job shutdown')
         for t in self._bg:
             t.cancel()
-        await self.collab.stop()
         await self.machine.stop()
         self.tasks.stop()
         await self.bus.stop()
@@ -171,15 +164,13 @@ class AppContext:
                 pass
         tt = self.teletype.state() if getattr(self, 'teletype', None) and self.teletype.session else None
         return {'machine': self.machine.status(), 'job': job, 'tasks': self.tasks.active_list(), 'batch': batch,
-                'lease': self.collab.lease_info(), 'presence': self.collab.presence(), 'teletype': tt}
+                'teletype': tt}
 
-    async def ws_command(self, op, args, actor='-', principal=None):
+    async def ws_command(self, op, args, actor='desktop'):
         m = self.machine
         if op == 'estop':
             await m.estop(actor=actor)
             return {'machine': m.status()}
-        if op != 'jog_cancel' and principal is not None:
-            self.collab.check(principal)
         # P7: same pydantic models as REST
         from pydantic import ValidationError
         from .schemas import JobPause, JogRequest, PenRequest, RealtimeRequest
@@ -201,8 +192,7 @@ class AppContext:
             return await self.jobs.stop(j.id)
         if op == 'jog':
             b = val(JogRequest)
-            client = 'ws:%s' % ((principal.session_hash or principal.id) if principal else actor)
-            return await m.jog(b.dx, b.dy, b.dz, b.feed, b.seq, deadman=True, client=client)
+            return await m.jog(b.dx, b.dy, b.dz, b.feed, b.seq, deadman=True, client='ws:%s' % actor)
         if op == 'jog_cancel':
             m.jog_cancel()
             return {'ok': True}

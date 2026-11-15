@@ -1,5 +1,5 @@
 """FakeGrbl: in-process serial-port stand-in emulating GRBL 1.1f closely
-enough for the web service, tests and UI development (PENPLOT_SERIAL_PORT=fake).
+enough for isolated serial transport tests. Not shipped with the application.
 
 Emulated: 128 B RX buffer (overflow counted), 15-block planner with timed
 motion (time_scale speeds it up), '?' status with MPos/Bf/FS/WCO(every 10th)/Ov,
@@ -8,8 +8,7 @@ soft reset with ALARM:3 when reset in motion, $$ / $N=v / $X / $H / $SLP / $J=,
 G0/G1/G4/G10 L20/G90/G91/G21/M3/M5, error:N for unsupported words, and
 unplug() (reads raise, like a vanished USB device).
 
-Fault injection (tests, and dev via PENPLOT_FAKE_FAULTS="slow_acks=0.05,garbage=0.02,
-error_every=300,alarm_after=30,unplug_after=60,reset_after=45,reset_in_motion_after=20"):
+Fault injection (tests only):
   slow_acks=S        delay every 'ok' by S seconds
   garbage=P          with probability P emit a line of random bytes between replies
   error_every=N      every N-th motion line answers error:20

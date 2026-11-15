@@ -16,7 +16,7 @@ log = logging.getLogger('penplot.web.events')
 
 LATEST = ('status', 'progress', 'system')
 DEFAULT_TOPICS = {'status', 'progress', 'job', 'alarm', 'task', 'system', 'error', 'notice',
-                  'presence', 'lease', 'project', 'locks', 'teletype', 'attention'}
+                  'project', 'teletype', 'attention'}
 ALL_TOPICS = DEFAULT_TOPICS | {'log'}
 MAXQ = 256
 

@@ -35,11 +35,12 @@ def _cpu_times():
 
 def _ips():
     ips = []
-    try:
-        out = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=1).stdout
-        ips = [x for x in out.split() if ':' not in x]
-    except Exception:
-        pass
+    if os.name != 'nt':
+        try:
+            out = subprocess.run(['hostname', '-I'], capture_output=True, text=True, errors='replace', timeout=1).stdout
+            ips = [x for x in out.split() if ':' not in x]
+        except Exception:
+            pass
     if not ips:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -65,7 +66,7 @@ class SystemService:
         j = c.jobs.active if hasattr(c, 'jobs') else None
         return {'status': 'ok', 'version': penplot.__version__, 'uptime_s': round(time.time() - self.started, 1),
                 'machine_connected': c.machine.connected if hasattr(c, 'machine') else False,
-                'job_active': j is not None, 'setup_required': not c.auth.has_admin()}
+                'job_active': j is not None, 'setup_required': False}
 
     def build(self):
         p = os.path.join(self.ctx.cfg.static_dir, '_build.json')
@@ -102,7 +103,7 @@ class SystemService:
         self._cpu_prev = cur
         try:
             load = list(os.getloadavg())
-        except OSError:
+        except (OSError, AttributeError):
             load = [0.0, 0.0, 0.0]
         temp = None
         for z in sorted(os.listdir('/sys/class/thermal')) if os.path.isdir('/sys/class/thermal') else []:
@@ -143,7 +144,7 @@ class SystemService:
         ssid = bitrate = None
         if iface and shutil.which('iw'):
             try:
-                out = subprocess.run(['iw', 'dev', iface, 'link'], capture_output=True, text=True, timeout=1).stdout
+                out = subprocess.run(['iw', 'dev', iface, 'link'], capture_output=True, text=True, errors='replace', timeout=1).stdout
                 for line in out.splitlines():
                     line = line.strip()
                     if line.startswith('SSID:'):
@@ -170,7 +171,7 @@ class SystemService:
         if priority is not None:
             cmd += ['-p', str(int(priority))]
         try:
-            out = subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+            out = subprocess.run(cmd, capture_output=True, text=True, errors='replace', timeout=5).stdout
         except Exception:
             return []
         res = []

@@ -4,6 +4,8 @@ import {
   FolderOpen,
   Maximize2,
   Minus,
+  PanelLeft,
+  PanelRight,
   PenTool,
   Power,
   RefreshCw,
@@ -19,16 +21,26 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  IconButton,
 } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { getDesktopBridge } from '@/lib/desktop'
+import { useBreakpoint } from '@/lib/media'
 import { toast } from '@/lib/toast'
 import { useChrome } from './chrome'
+import { NotificationCenter } from './notification-center'
+import { useUi } from './ui-store'
 
 /** Custom frameless desktop title bar (rendered only inside Electron). */
-export function TitleBar() {
+export function TitleBar({ sidebarVisible }: { sidebarVisible: boolean }) {
   const bridge = getDesktopBridge()
   const title = useChrome((c) => c.title)
+  const subtitle = useChrome((c) => c.subtitle)
+  const hasInspector = useChrome((c) => c.hasInspector)
+  const bp = useBreakpoint()
+  const toggleSidebar = useUi((s) => s.toggleSidebar)
+  const inspectorOpen = useUi((s) => s.inspector[bp])
+  const toggleInspector = useUi((s) => s.toggleInspector)
   const [maximized, setMaximized] = React.useState(false)
 
   React.useEffect(() => {
@@ -110,52 +122,89 @@ export function TitleBar() {
         </DropdownMenu>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 flex justify-center px-40">
-        <span className="truncate text-footnote font-medium text-secondary-label">
+      <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center gap-2 px-56">
+        <span className="truncate text-footnote font-medium text-label">
           {title ? `${title} — PenPlot` : 'PenPlot'}
         </span>
+        {subtitle ? (
+          <>
+            <span className="text-tertiary-label" aria-hidden>·</span>
+            <span className="shrink-0 truncate text-footnote text-secondary-label">{subtitle}</span>
+          </>
+        ) : null}
       </div>
 
-      {!isMac ? (
-        <div className="app-no-drag flex h-full items-center">
-          <button
-            type="button"
-            onClick={() => void bridge.minimizeWindow()}
-            className="flex h-full w-11 items-center justify-center text-secondary-label transition-colors hover:bg-quaternary-fill hover:text-label"
-            aria-label="最小化"
-            title="最小化"
+      <div className="app-no-drag flex h-full items-center gap-1">
+        <div className="flex items-center gap-0.5 pr-1">
+          <NotificationCenter size="sm" />
+          <IconButton
+            size="sm"
+            label={sidebarVisible ? '隐藏侧边栏' : '显示侧边栏'}
+            shortcut="mod+alt+s"
+            tooltipSide="bottom"
+            onClick={() => toggleSidebar(bp)}
+            active={sidebarVisible}
           >
-            <Minus className="size-3.5" strokeWidth={1.75} aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={() => void bridge.toggleMaximizeWindow()}
-            className="flex h-full w-11 items-center justify-center text-secondary-label transition-colors hover:bg-quaternary-fill hover:text-label"
-            aria-label={maximized ? '还原窗口' : '最大化'}
-            title={maximized ? '还原窗口' : '最大化'}
-          >
-            {maximized ? (
-              <svg className="size-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden>
-                <rect x="1.5" y="3.5" width="7" height="7" rx="0.75" />
-                <path d="M3.5 3.5V2a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-.5.5H8.5" />
-              </svg>
-            ) : (
-              <Square className="size-3" strokeWidth={1.6} aria-hidden />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => void bridge.closeWindow()}
-            className="flex h-full w-11 items-center justify-center text-secondary-label transition-colors hover:bg-red hover:text-white"
-            aria-label="关闭"
-            title="关闭"
-          >
-            <X className="size-3.5" strokeWidth={1.75} aria-hidden />
-          </button>
+            <PanelLeft />
+          </IconButton>
+          {hasInspector ? (
+            <IconButton
+              size="sm"
+              label={inspectorOpen ? '隐藏检查器' : '显示检查器'}
+              shortcut="mod+alt+i"
+              tooltipSide="bottom"
+              onClick={() => toggleInspector(bp)}
+              active={inspectorOpen}
+            >
+              <PanelRight />
+            </IconButton>
+          ) : null}
         </div>
-      ) : (
-        <div className="w-4 shrink-0" />
-      )}
+
+        {!isMac ? (
+          <>
+            <span className="mr-0.5 h-3.5 w-px bg-separator" aria-hidden />
+            <div className="flex h-full items-center">
+              <button
+                type="button"
+                onClick={() => void bridge.minimizeWindow()}
+                className="flex h-full w-11 items-center justify-center text-secondary-label transition-colors hover:bg-quaternary-fill hover:text-label"
+                aria-label="最小化"
+                title="最小化"
+              >
+                <Minus className="size-3.5" strokeWidth={1.75} aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => void bridge.toggleMaximizeWindow()}
+                className="flex h-full w-11 items-center justify-center text-secondary-label transition-colors hover:bg-quaternary-fill hover:text-label"
+                aria-label={maximized ? '还原窗口' : '最大化'}
+                title={maximized ? '还原窗口' : '最大化'}
+              >
+                {maximized ? (
+                  <svg className="size-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden>
+                    <rect x="1.5" y="3.5" width="7" height="7" rx="0.75" />
+                    <path d="M3.5 3.5V2a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-.5.5H8.5" />
+                  </svg>
+                ) : (
+                  <Square className="size-3" strokeWidth={1.6} aria-hidden />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => void bridge.closeWindow()}
+                className="flex h-full w-11 items-center justify-center text-secondary-label transition-colors hover:bg-red hover:text-white"
+                aria-label="关闭"
+                title="关闭"
+              >
+                <X className="size-3.5" strokeWidth={1.75} aria-hidden />
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="w-2 shrink-0" />
+        )}
+      </div>
     </div>
   )
 }

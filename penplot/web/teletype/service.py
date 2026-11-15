@@ -139,22 +139,20 @@ class TeletypeService:
         cfg['cell_w'] = round(geo['cw'] / geo['h'], 4)
         cfg['line_h'] = round(geo['lh'] / geo['h'], 4)
 
-    async def create(self, body, p):
+    async def create(self, body, actor='desktop'):
         if self.session is not None:
-            if self.session.owner['id'] == p.user_id:
-                return self.state()
-            raise ApiError(409, 'teletype_active', '已有电传会话（%s）' % self.session.owner['username'])
+            return self.state()
         if self.ctx.jobs.active is not None:
             raise ApiError(409, 'job_active', '任务进行中，不能开始电传会话', {'job_id': self.ctx.jobs.active.id})
         m = self.m
         m.require_free()
         if body.mode == 'term':
-            self._check_terminal(p)
+            self._check_terminal()
         cfg = self._cfg(body)
         glyphs = await self._load_glyphs(cfg['font_id'])
-        if self.session is not None:          # someone else won the race while the font loaded
-            raise ApiError(409, 'teletype_active', '已有电传会话（%s）' % self.session.owner['username'])
-        s = Session('tt' + secrets.token_hex(4), cfg, p.user_dict())
+        if self.session is not None:
+            return self.state()
+        s = Session('tt' + secrets.token_hex(4), cfg, None)
         s.glyphs = glyphs
         set_zero = True if body.set_zero is None else body.set_zero
         if not set_zero and not m.origin_valid:
@@ -162,9 +160,9 @@ class TeletypeService:
         self._loop = asyncio.get_running_loop()
         await m.call(self._prepare_blocking, s, set_zero)
         self.session = s
-        self.ctx.db.audit(p.actor, 'teletype_start', {'session': s.id, 'mode': body.mode})
+        self.ctx.db.audit(actor, 'teletype_start', {'session': s.id, 'mode': body.mode})
         if body.mode == 'term':
-            self._start_pty(p)
+            self._start_pty(actor=actor)
             s.mode = 'term'
         self._emit('snapshot', state=self.state())
         m._publish_status(True)
@@ -199,10 +197,8 @@ class TeletypeService:
             raise ApiError(409, 'no_session', '没有电传会话')
         return self.session
 
-    async def close(self, p, force=False):
+    async def close(self, force=False, actor='desktop'):
         s = self._need()
-        if s.owner['id'] != p.user_id and not p.is_admin:
-            raise ApiError(403, 'forbidden', '只有会话所有者或管理员可以结束会话')
         m = self.m
 
         def run():
@@ -220,7 +216,7 @@ class TeletypeService:
                 await asyncio.get_running_loop().run_in_executor(m._exec, run)
         finally:
             self._teardown()
-        self.ctx.db.audit(p.actor, 'teletype_stop', {'session': s.id})
+        self.ctx.db.audit(actor, 'teletype_stop', {'session': s.id})
         self.ctx.bus.publish('teletype', {'kind': 'closed', 'session_id': s.id})
         m._publish_status(True)
         return {'active': False}
@@ -255,14 +251,12 @@ class TeletypeService:
             raise ApiError(409, 'origin_invalid', '原点已失效：抬笔并重新设零后点「设为原点」')
 
     # ------------------------------------------------------------ typing
-    def keys(self, data, p=None):
+    def keys(self, data):
         s = self._need()
         if s.mode == 'term':
             if s.pty is None:
                 raise ApiError(409, 'no_terminal', '终端没有运行')
-            if p is None:
-                raise ApiError(403, 'forbidden', '终端输入需要管理员身份')
-            self._check_terminal(p)      # admin, enabled, and never from the internet
+            self._check_terminal()
             s.pty.write(data)
             return {'ok': True, 'echo': ''}
         self._guard_write(s)
@@ -312,7 +306,7 @@ class TeletypeService:
                 s.paper.apply(s.tty.reprint_line())
         return self.state()
 
-    async def action(self, a, p, args=None):
+    async def action(self, a, args=None, actor='desktop'):
         s = self._need()
         m = self.m
         args = args or {}
@@ -344,7 +338,7 @@ class TeletypeService:
         elif a == 'pen_up':
             s.streamer.queue(['G90 G1 Z%s F%d' % (num(s.cfg['z_up']), s.cfg['z_speed'])])
         elif a == 'mode':
-            await self.set_mode(args.get('mode', 'type'), p)
+            await self.set_mode(args.get('mode', 'type'), actor=actor)
         elif a == 'interrupt':
             if s.pty is not None:
                 s.pty.write('\x03')
@@ -397,24 +391,20 @@ class TeletypeService:
             self._emit('cols', cols=cols)
 
     # ------------------------------------------------------------ terminal mode
-    def _check_terminal(self, p):
+    def _check_terminal(self):
         if not self.settings().get('terminal_enabled'):
             raise ApiError(403, 'terminal_disabled', '终端模式已关闭（设置 teletype.terminal_enabled）')
-        if not p.is_admin:
-            raise ApiError(403, 'forbidden', '终端模式只对管理员开放')
-        if (p.extra or {}).get('remote'):
-            raise ApiError(403, 'terminal_remote', '终端模式只能在局域网内使用（公网访问已禁用）')
 
-    async def set_mode(self, mode, p):
+    async def set_mode(self, mode, actor='desktop'):
         s = self._need()
         if mode not in ('type', 'term'):
             raise ApiError(400, 'bad_mode', '模式只能是 type / term')
         if mode == s.mode:
             return
         if mode == 'term':
-            self._check_terminal(p)
+            self._check_terminal()
             if s.pty is None:
-                self._start_pty(p)
+                self._start_pty(actor=actor)
         with s.lock:
             s.mode = mode
             s.paper.newline_if_needed()
@@ -422,14 +412,14 @@ class TeletypeService:
                 s.paper.apply(s.tty.reprint_line())
         self._emit('mode', mode=mode)
 
-    def _start_pty(self, p):
+    def _start_pty(self, actor='desktop'):
         from .pty import Pty
         s = self.session
         st = self.settings()
         s.pty = Pty(self._on_pty, s.paper.geo['cols'], PTY_ROWS, user=st.get('terminal_user'),
                     shell=st.get('terminal_shell'))
         s.pty.start()
-        self.ctx.db.audit(p.actor, 'terminal_start', {'session': s.id, 'run_as': s.pty.run_as})
+        self.ctx.db.audit(actor, 'terminal_start', {'session': s.id, 'run_as': s.pty.run_as})
 
     def _on_pty(self, text):
         s = self.session

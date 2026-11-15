@@ -1,5 +1,5 @@
 /**
- * Profiles, papers, app settings, account (sessions/tokens) hooks — pages-agent addition.
+ * Profiles, papers, and app settings hooks.
  * Endpoints: 03 §4.1, §4.3 (papers), §4.8; shapes: 04 §7, §10.
  */
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -14,10 +14,6 @@ export type ProfileCreate = S['ProfileCreate']
 export type PaperSpec = S['PaperSpec']
 export type PaperBase = S['PaperBase']
 export type AppSettings = S['AppSettings']
-export type SessionInfo = S['SessionInfo']
-export type TokenInfo = S['TokenInfo']
-export type TokenCreate = S['TokenCreate']
-export type TokenCreated = S['TokenCreated']
 export type PortInfo = S['PortInfo']
 export type FontSummary = S['FontSummary']
 
@@ -97,32 +93,3 @@ export function patchAppSettings(body: Partial<AppSettings>) {
 
 export const useFontsLite = () =>
   useQuery({ queryKey: qk.fonts.list({}), queryFn: () => api.get<FontSummary[]>('/fonts'), staleTime: 60_000 })
-
-// ---------------- account ----------------
-export const useSessions = () => useQuery({ queryKey: qk.auth.sessions, queryFn: () => api.get<SessionInfo[]>('/auth/sessions') })
-export const useTokens = () => useQuery({ queryKey: qk.auth.tokens, queryFn: () => api.get<TokenInfo[]>('/auth/tokens') })
-
-export function useRevokeSession() {
-  return useMutation({
-    mutationFn: (id: string) => api.delete(`/auth/sessions/${encodeURIComponent(id)}`),
-    meta: { errorTitle: '注销会话失败' },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.auth.sessions }),
-  })
-}
-export function useCreateToken() {
-  return useMutation({
-    mutationFn: (b: TokenCreate) => api.post<TokenCreated>('/auth/tokens', b),
-    meta: { errorTitle: '创建令牌失败' },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.auth.tokens }),
-  })
-}
-export function useRevokeToken() {
-  return useMutation({
-    mutationFn: (id: string) => api.delete(`/auth/tokens/${encodeURIComponent(id)}`),
-    meta: { errorTitle: '吊销令牌失败' },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.auth.tokens }),
-  })
-}
-export function changePassword(oldPw: string, newPw: string) {
-  return api.post('/auth/password', { old: oldPw, new: newPw })
-}

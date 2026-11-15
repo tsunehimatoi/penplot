@@ -14,14 +14,14 @@ from penplot.layout import (FontsSet, OriginSpec, PageInfo, TextDocument, check_
 from penplot.machine.base import Sender
 from penplot.machine.grbl import GrblController
 from penplot.settings import MachineConfig, Settings
-from penplot.web.machine.fake import FakeGrbl
+from fake_serial import FakeGrbl
 
 
 def _ctrl(mc=None, time_scale=0.01):
     mc = mc or MachineConfig.load(os.path.join(REPO, 'configs', 'grbl-zpen.json'))
     c = GrblController(mc)
     fake = FakeGrbl(time_scale=time_scale)
-    c.open('fake', ser=fake, reset=False)
+    c.open('test-serial', ser=fake, reset=False)
     end = time.time() + 2
     while not c.firmware_version and time.time() < end:
         time.sleep(0.01)

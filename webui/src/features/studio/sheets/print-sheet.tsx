@@ -3,15 +3,12 @@
  * missing glyphs, frame step, machine-config defaults with per-field override dots, copies, pages, start/end G-code.
  * Starting is blocked when the drawing leaves the machine travel (admin can explicitly override).
  */
-import { useQuery } from '@tanstack/react-query'
 import { Check, CircleCheck, CircleX, Crosshair, Download, Plug, RotateCcw, TriangleAlert } from 'lucide-react'
 import * as React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
 import { connectMachine } from '@/api/machine'
-import { qk } from '@/api/query'
 import { useLive } from '@/api/store'
-import type { AuthState } from '@/api/types'
 import { exportRender, type PaperBase, type PrintOverrides, type RenderResult } from '@/api/studio'
 import { Button, Dialog, DialogContent, DialogTitle, NumberField, ProgressBar, Segmented, Select, Spinner, Switch, Textarea } from '@/components/ui'
 import { cn } from '@/lib/cn'
@@ -53,8 +50,7 @@ export function PrintSheet({ open, onOpenChange, paper, origin, onOpenPosition }
   const navigate = useNavigate()
   const profiles = useProfiles()
   const machine = useLive((s) => s.machine)
-  const auth = useQuery({ queryKey: qk.auth.state, queryFn: () => api.get<AuthState>('/auth/state'), staleTime: 60_000 })
-  const isAdmin = (auth.data?.scopes ?? ['admin']).includes('admin')
+  const isAdmin = true
   const doc = useStudio((s) => s.doc)
   const project = useStudio((s) => s.project)
   const view = useStudio((s) => s.view)

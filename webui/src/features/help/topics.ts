@@ -47,8 +47,6 @@ export const HELP_TOPICS: HelpTopic[] = [
     short: '长文按纸张的行线自动换行，写满一页自动新建下一页，适合写信。' },
   { id: 'image-trace', title: '图片描线', aliases: ['描线', '描摹', 'trace'], article: 'image-trace', anchor: 'modes',
     short: '把图片变成笔能画的线：边缘适合照片，骨架适合线稿和签名，点阵表现明暗但很慢。' },
-  { id: 'lease', title: '控制权', aliases: ['控制权', '占用', 'lease'], article: 'multi-user', anchor: 'lease',
-    short: '同一时刻只有一个人能操纵机器。用完请释放；急停对所有人都有效。' },
   { id: 'estop', title: '急停', aliases: ['急停', 'e-stop', 'emergency'], article: 'safety', anchor: 'estop',
     short: '立刻停止一切运动（Ctrl/⌘ + .）。急停后原点失效，需要重新设原点。网络不稳时直接关电源同样安全。' },
   { id: 'alarm', title: '报警（ALARM）', aliases: ['报警', 'ALARM', '解锁'], article: 'troubleshooting', anchor: 'alarm',

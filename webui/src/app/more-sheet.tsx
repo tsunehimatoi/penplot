@@ -1,6 +1,5 @@
-import { ArrowUpRight, Keyboard, LogOut } from 'lucide-react'
+import { ArrowUpRight, Keyboard } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { useLogout } from '@/api/auth'
 import { useMediaQuery } from '@/lib/media'
 import { GroupedList, ListRow, Sheet, SheetContent } from '@/components/ui'
 import { MORE_ITEMS } from './nav'
@@ -13,7 +12,6 @@ export function MoreSheet() {
   const open = useUi((s) => s.moreSheet)
   const set = useUi((s) => s.set)
   const navigate = useNavigate()
-  const logout = useLogout()
   const close = () => set({ moreSheet: false })
   // Keyboard shortcuts only make sense with a hardware keyboard (≈ a fine pointer / hover device).
   const hasKeyboard = useMediaQuery('(hover: hover) and (pointer: fine)')
@@ -50,16 +48,11 @@ export function MoreSheet() {
               ),
             )}
           </GroupedList>
-          <GroupedList>
-            {hasKeyboard ? <ListRow icon={Keyboard} iconColor="bg-gray" label="键盘快捷键" onClick={() => set({ moreSheet: false, shortcutsSheet: true })} /> : null}
-            <ListRow
-              icon={LogOut}
-              iconColor="bg-red"
-              label="退出登录"
-              destructive
-              onClick={() => logout.mutate(undefined, { onSettled: () => (close(), navigate('/login', { replace: true })) })}
-            />
-          </GroupedList>
+          {hasKeyboard ? (
+            <GroupedList>
+              <ListRow icon={Keyboard} iconColor="bg-gray" label="键盘快捷键" onClick={() => set({ moreSheet: false, shortcutsSheet: true })} />
+            </GroupedList>
+          ) : null}
         </div>
       </SheetContent>
     </Sheet>

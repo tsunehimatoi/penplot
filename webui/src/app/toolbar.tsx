@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { isJobActive, useLive } from '@/api/store'
 import { IconButton } from '@/components/ui'
 import { cn } from '@/lib/cn'
+import { isDesktopApp } from '@/lib/desktop'
 import { formatNumber } from '@/lib/format'
 import { useBreakpoint } from '@/lib/media'
 import { useChrome } from './chrome'
@@ -16,7 +17,6 @@ function useSlotRefs() {
   const trailing = React.useCallback((el: HTMLDivElement | null) => setSlot('trailing', el), [setSlot])
   return { leading, trailing }
 }
-import { ControlLeasePill } from './control-lease-pill'
 import { EStopAnchor } from './estop'
 import { MiniPlayerBody, useMiniPlayerJob, useMiniPlayerSuppressed } from './mini-player'
 import { SafeBoundary } from './error-boundary'
@@ -47,29 +47,33 @@ export function Toolbar({ sidebarVisible }: { sidebarVisible: boolean }) {
   const toggleSidebar = useUi((s) => s.toggleSidebar)
   const inspectorOpen = useUi((s) => s.inspector[bp])
   const toggleInspector = useUi((s) => s.toggleInspector)
+  const desktop = isDesktopApp()
   return (
     <header className="mat-toolbar hairline-b relative z-30 flex h-[var(--toolbar-h)] shrink-0 items-center gap-2 pl-[max(8px,env(safe-area-inset-left))] pr-[max(8px,env(safe-area-inset-right))]">
-      <IconButton label={sidebarVisible ? '隐藏侧边栏' : '显示侧边栏'} shortcut="mod+alt+s" onClick={() => toggleSidebar(bp)} active={false}>
-        <PanelLeft />
-      </IconButton>
-      <ToolbarTitle />
+      {!desktop ? (
+        <>
+          <IconButton label={sidebarVisible ? '隐藏侧边栏' : '显示侧边栏'} shortcut="mod+alt+s" onClick={() => toggleSidebar(bp)} active={false}>
+            <PanelLeft />
+          </IconButton>
+          <ToolbarTitle />
+        </>
+      ) : null}
       <div ref={slots.leading} className="flex min-w-0 items-center gap-2 empty:hidden" />
       <div className="min-w-2 flex-1" />
-      <SafeBoundary name="lease-pill">
-        <ControlLeasePill />
-      </SafeBoundary>
       <SafeBoundary name="status-pill">
         <MachineStatusPill showProgressRing={!sidebarVisible} />
       </SafeBoundary>
       <div ref={slots.trailing} className="flex items-center gap-1 empty:hidden" />
-      <div className="flex items-center gap-0.5">
-        <NotificationCenter />
-        {hasInspector ? (
-          <IconButton label={inspectorOpen ? '隐藏检查器' : '显示检查器'} shortcut="mod+alt+i" onClick={() => toggleInspector(bp)} active={inspectorOpen}>
-            <PanelRight />
-          </IconButton>
-        ) : null}
-      </div>
+      {!desktop ? (
+        <div className="flex items-center gap-0.5">
+          <NotificationCenter />
+          {hasInspector ? (
+            <IconButton label={inspectorOpen ? '隐藏检查器' : '显示检查器'} shortcut="mod+alt+i" onClick={() => toggleInspector(bp)} active={inspectorOpen}>
+              <PanelRight />
+            </IconButton>
+          ) : null}
+        </div>
+      ) : null}
       <EStopAnchor className="ml-1.5" />
     </header>
   )

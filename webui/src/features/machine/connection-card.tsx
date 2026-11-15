@@ -143,7 +143,6 @@ function ConnectionCardBody({ profile }: { profile: Profile | null }) {
           <dd className="flex items-center gap-1.5 text-label">
             <Cpu className="size-3.5 text-tertiary-label" />
             {connected ? `Grbl ${machine?.firmware || '?'}` : '—'}
-            {machine?.fake ? <Badge size="sm" tone="orange">模拟器</Badge> : null}
           </dd>
           <dt className="text-secondary-label">设备</dt>
           <dd className="truncate font-mono text-caption text-label" title={machine?.port ?? undefined}>

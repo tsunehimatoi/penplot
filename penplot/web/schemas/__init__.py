@@ -1,6 +1,5 @@
 """Pydantic models = the HTTP/WS contract (dumped to docs/design/openapi.json)."""
 from .common import *      # noqa: F401,F403
-from .auth import *        # noqa: F401,F403
 from .fonts import *       # noqa: F401,F403
 from .projects import *    # noqa: F401,F403
 from .files import *       # noqa: F401,F403

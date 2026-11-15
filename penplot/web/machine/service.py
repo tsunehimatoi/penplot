@@ -81,7 +81,6 @@ class MachineService:
         self.port = None
         self.baud = 115200
         self._last_connection = None
-        self.fake = None
         self.connecting = False
         self.error = None
         self.manual_disconnect = False
@@ -327,7 +326,6 @@ class MachineService:
             'connected': conn, 'connecting': self.connecting,
             'port': self.port if conn else (self.cfg.serial_port or (last[0] if last else self.conn_cfg.get('port'))),
             'baud': self.baud if conn else (last[1] if last else self.conn_cfg.get('baud', 115200)),
-            'fake': self.fake is not None and conn,
             'firmware': (c.firmware_version if c else '') or '',
             'machine_type': self.mc.type if self.mc else None,
             'profile_id': (self.profile or {}).get('id'), 'profile_name': (self.profile or {}).get('name'),
@@ -434,7 +432,7 @@ class MachineService:
                 if not cc.get('auto_connect', True) and not self.cfg.serial_port:
                     continue
                 port = self._resolve_port(None)
-                if port == 'fake' or self._port_exists(port):
+                if self._port_exists(port):
                     try:
                         await self.connect(None, None, None, auto=True)
                         delay = 2.0
@@ -497,9 +495,6 @@ class MachineService:
             if real not in seen:
                 out.append({'path': real, 'by_id': p, 'description': '', 'vid': None, 'pid': None,
                             'busy_pid': _fuser(real)})
-        if self.cfg.dev or self.cfg.serial_port == 'fake':
-            out.append({'path': 'fake', 'by_id': None, 'description': 'FakeGrbl 模拟器', 'vid': None,
-                        'pid': None, 'busy_pid': None})
         return out
 
     async def connect(self, port=None, baud=None, reset=None, auto=False):
@@ -515,7 +510,7 @@ class MachineService:
                 self._exec, self._connect_blocking, port, baud, reset)
         finally:
             self.connecting = False
-        self._publish_status(True)
+            self._publish_status(True)
         self.bus.publish('notice', {'level': 'info', 'code': 'connected',
                                     'message': '已连接 %s' % self.port})
         return self.status()
@@ -527,27 +522,15 @@ class MachineService:
         if reset is None:
             reset = bool(self.conn_cfg.get('reset_on_connect', False))
         self._close()
-        ser = None
-        fake = None
-        if port == 'fake':
-            if not (self.cfg.dev or self.cfg.serial_port == 'fake' or getattr(self.cfg, 'allow_fake', False)):
-                raise ApiError(400, 'fake_not_allowed', '模拟器只在开发模式可用')
-            from .fake import FakeGrbl, FakeMarlin
-            if self.mc.type in ('Marlin', 'K_AT'):
-                fake = FakeMarlin()
-            else:
-                fake = FakeGrbl(time_scale=self.cfg.fake_time_scale, faults=os.environ.get('PENPLOT_FAKE_FAULTS'))
-            ser = fake
-        else:
-            if not self._port_exists(port):
-                self.error = 'not_found: %s' % port
-                raise ApiError(503, 'port_not_found', '串口不存在：%s' % port)
-            self._take_lock()
+        if not self._port_exists(port):
+            self.error = 'not_found: %s' % port
+            raise ApiError(503, 'port_not_found', '串口不存在：%s' % port)
+        self._take_lock()
         ctrl = make_controller(self.mc, on_log=self._on_log)
         ctrl.add_event_listener(self._on_event)
         self._banners = 0
         try:
-            ctrl.open(port, baud, exclusive=True, reset=bool(reset), ser=ser)
+            ctrl.open(port, baud, exclusive=True, reset=bool(reset))
         except Exception as e:
             self._release_lock()
             en = getattr(e, 'errno', None)
@@ -559,9 +542,9 @@ class MachineService:
                                {'busy_pid': pid})
             self.error = msg
             raise ApiError(503, 'connect_failed', '打开串口失败：%s' % msg)
-        self.ctrl, self.port, self.baud, self.fake = ctrl, port, baud, fake
+        self.ctrl, self.port, self.baud = ctrl, port, baud
         # DTR auto-reset boards need ~2 s for bootloader + banner
-        end = time.time() + (2.5 if (reset or port != 'fake') else 1.0)
+        end = time.time() + 2.5
         while time.time() < end and not ctrl.firmware_version:
             time.sleep(0.05)
         st = ctrl.query_status(1.5) if hasattr(ctrl, 'query_status') else None
@@ -579,6 +562,8 @@ class MachineService:
 
     def _take_lock(self):
         if os.name == 'nt':
+            # pyserial uses CreateFile with share mode 0 on Windows, so the
+            # serial handle itself excludes other CLI/web processes.
             return
         import fcntl
         path = os.environ.get('PENPLOT_SERIAL_LOCK', SERIAL_LOCK)
@@ -608,10 +593,7 @@ class MachineService:
                 c.close()
             except Exception:
                 pass
-            if self.fake is not None:
-                self.fake.close()
         self.ctrl = None
-        self.fake = None
         self._release_lock()
 
     async def disconnect(self):

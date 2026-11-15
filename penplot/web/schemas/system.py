@@ -203,9 +203,3 @@ class RecoveryInfo(Model):
     machine: dict[str, Any]
     last_job: Optional[dict[str, Any]] = None
     steps: list[RecoveryStep]
-
-
-class FakeFault(Model):
-    kind: Literal['unplug', 'alarm', 'reset', 'reset_in_motion', 'garbage', 'slow_acks', 'error_every',
-                  'error_next', 'clear']
-    value: Optional[float] = None

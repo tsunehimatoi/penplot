@@ -1,11 +1,6 @@
-"""ASGI guard (P9): reject unsafe /api requests before their body is read when
-unauthenticated, and enforce per-route body limits (Content-Length and a
-running count for chunked bodies). Also sets security headers (P11)."""
+"""ASGI guard: enforce per-route body limits (Content-Length and a running count
+for chunked bodies) and set security headers."""
 import json
-from http.cookies import SimpleCookie
-
-from .auth import COOKIE, UNSAFE
-from .errors import ApiError
 
 MB = 1024 * 1024
 LIMITS = [  # (path prefix, max bytes); first match wins
@@ -17,7 +12,7 @@ LIMITS = [  # (path prefix, max bytes); first match wins
     ('/api/v1/profiles/import', 2 * MB),
 ]
 DEFAULT_LIMIT = 1 * MB
-AUTH_EXEMPT = ('/api/v1/auth/login', '/api/v1/auth/setup', '/api/v1/auth/logout')
+UNSAFE = ('POST', 'PUT', 'PATCH', 'DELETE')
 SECURITY_HEADERS = [(b'x-content-type-options', b'nosniff'), (b'x-frame-options', b'DENY'),
                     (b'referrer-policy', b'same-origin')]
 
@@ -42,7 +37,7 @@ async def _reply(send, status, code, message, detail=None):
 
 
 class BodyGuard:
-    def __init__(self, app, get_ctx):
+    def __init__(self, app, get_ctx=None):
         self.app = app
         self.get_ctx = get_ctx
 
@@ -75,24 +70,6 @@ class BodyGuard:
         if clen > limit:
             return await _reply(send, 413, 'too_large', '请求体太大（上限 %d MB）' % max(1, limit // MB),
                                 {'limit': limit})
-        ctx = self.get_ctx()
-        if ctx is not None and path not in AUTH_EXEMPT:
-            cookies = {}
-            if headers.get('cookie'):
-                try:
-                    sc = SimpleCookie()
-                    sc.load(headers['cookie'])
-                    cookies = {k: m.value for k, m in sc.items()}
-                except Exception:
-                    cookies = {}
-            if not ctx.auth.has_admin():
-                return await _reply(send, 423, 'setup_required', '请先完成初始化设置')
-            try:
-                p = ctx.auth.resolve(headers, cookies if COOKIE in cookies else {})
-            except ApiError as e:
-                return await _reply(send, e.status, e.code, e.message)
-            if p.kind == 'none':
-                return await _reply(send, 401, 'unauthenticated', '请先登录')
         seen = {'n': 0}
 
         async def recv():

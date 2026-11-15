@@ -25,7 +25,6 @@ class MachineStatus(Model):
     connecting: bool = False
     port: Optional[str] = None
     baud: int = 115200
-    fake: bool = Field(False, description='FakeGrbl simulator (dev/test)')
     firmware: str = ''
     machine_type: Optional[str] = Field(None, description='Grbl | Marlin | Ebb | K_AT (active profile)')
     profile_id: Optional[str] = None
@@ -60,7 +59,7 @@ class PortInfo(Model):
 
 
 class ConnectRequest(Model):
-    port: Optional[str] = Field(None, description="default: profile connection.port; 'fake' = simulator (dev)")
+    port: Optional[str] = Field(None, description="default: profile connection.port")
     baud: Optional[int] = None
     reset: bool = Field(False, description='send soft-reset (0x18) after opening')
 

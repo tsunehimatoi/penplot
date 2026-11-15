@@ -15,7 +15,6 @@ import { DroCard, homeWithConfirm } from './dro-card'
 import { runAction } from './errors'
 import { useMachineGate } from './gate'
 import { JogPad } from './jog-pad'
-import { LeaseStrip } from './lease'
 import { MacrosCard, OverridesCard } from './overrides-card'
 import { SetupWizard } from './setup-wizard'
 import { TravelMapCard } from './travel-map'
@@ -111,7 +110,6 @@ export default function MachinePage() {
         <ErrorState title="读不到机器配置" error={error} onRetry={() => refetch()} />
       ) : (
         <>
-          <LeaseStrip className="mb-4" />
           {strayHold ? (
             <Card className="mb-4 flex items-center gap-3 px-4 py-3.5">
               <CirclePause className="size-5 shrink-0 text-orange" aria-hidden />

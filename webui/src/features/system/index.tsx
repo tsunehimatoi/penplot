@@ -21,7 +21,6 @@ import { auditActor, auditSentence } from './audit-text'
 import { GaugeCard, SignalBars, type GaugeTone } from './gauges'
 import { DiagnosticsTab } from './diagnostics'
 import { LogsCard } from './logs-card'
-import { PresenceCard } from './presence-card'
 import { useRestart } from './restart'
 
 const HISTORY = 60
@@ -247,8 +246,6 @@ export default function SystemPage() {
             </div>
 
             <div className="flex flex-col gap-6">
-              <PresenceCard />
-
               <PortsCard />
 
               <GroupedList header="数据目录">

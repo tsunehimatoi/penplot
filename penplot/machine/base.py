@@ -118,7 +118,7 @@ class MachineController:
         reset: firmware soft reset after opening (GRBL 0x18). The web
         service attaches with reset=False so the MCU state is kept when
         the port open does not toggle DTR.
-        ser: an already-open serial-like object (FakeGrbl / tests).
+        ser: an already-open serial-like object (transport injection for tests).
         """
         self.port_name = port
         self.baud = baud

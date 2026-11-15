@@ -10,7 +10,6 @@ import { JobDetailSheet } from './job-detail'
 import { QueueCard } from './queue-card'
 import { RecoveryBanner } from './recovery-wizard'
 import { useHideMiniPlayer } from '@/app/mini-player'
-import { LeaseStrip } from '@/features/machine/lease'
 
 type View = 'now' | 'queue' | 'history'
 
@@ -31,7 +30,6 @@ export default function JobsPage() {
     <Page title="任务">
       {compact ? (
         <div className="flex flex-col gap-4">
-          <LeaseStrip />
           <RecoveryBanner jobs={all.data} />
           <Segmented<View>
             block
@@ -51,7 +49,6 @@ export default function JobsPage() {
       ) : (
         <div className="flex flex-col gap-6">
           <div className="flex flex-col gap-3 empty:hidden">
-            <LeaseStrip />
             <RecoveryBanner jobs={all.data} />
           </div>
           <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">

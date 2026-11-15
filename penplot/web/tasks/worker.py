@@ -21,7 +21,7 @@ def _sandbox():
         os.environ[k] = '1'
     try:
         os.nice(15)
-    except OSError:
+    except (OSError, AttributeError):
         pass
     try:
         with open('/proc/self/oom_score_adj', 'w') as f:

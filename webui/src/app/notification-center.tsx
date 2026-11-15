@@ -13,7 +13,7 @@ const ICON: Record<ToastLevel, { i: typeof Info; c: string }> = {
 }
 
 /** Bell → recent notifications (all toasts are recorded here). */
-export function NotificationCenter({ size = 'md' }: { size?: 'md' | 'lg' }) {
+export function NotificationCenter({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   const history = useToastStore((s) => s.history)
   const markAllRead = useToastStore((s) => s.markAllRead)
   const clear = useToastStore((s) => s.clearHistory)
@@ -30,7 +30,7 @@ export function NotificationCenter({ size = 'md' }: { size?: 'md' | 'lg' }) {
       <PopoverTrigger asChild>
         <IconButton label={unread ? `通知（${unread} 条未读）` : '通知'} size={size} className="relative">
           <Bell />
-          {unread ? <span className="absolute right-1 top-1 size-2 rounded-full bg-red ring-2 ring-bg pointer-coarse:right-2 pointer-coarse:top-2" aria-hidden /> : null}
+          {unread ? <span className={cn('absolute size-2 rounded-full bg-red ring-2 ring-bg pointer-coarse:right-2 pointer-coarse:top-2', size === 'sm' ? 'right-0.5 top-0.5' : 'right-1 top-1')} aria-hidden /> : null}
         </IconButton>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[340px] p-0">

@@ -11,13 +11,13 @@ const ICONS: Record<ToastLevel, { icon: typeof Info; cls: string }> = {
   error: { icon: CircleAlert, cls: 'text-red' },
 }
 
-/** Toast viewport: regular top-right under the toolbar; compact top-centre. Mounted once in the shell. */
+/** Toast viewport: bottom-right (above bottom bars on compact). Mounted once in the shell. */
 export function Toaster() {
   const toasts = useToastStore((s) => s.toasts)
   const dismiss = useToastStore((s) => s.dismiss)
   const compact = useIsCompact()
   return (
-    <ToastPrimitive.Provider swipeDirection={compact ? 'up' : 'right'} label="通知">
+    <ToastPrimitive.Provider swipeDirection="right" label="通知">
       {toasts.map((t) => (
         <ToastCard key={`${t.id}:${t.rev}`} t={t} onDismiss={() => dismiss(t.id)} />
       ))}
@@ -25,8 +25,8 @@ export function Toaster() {
         className={cn(
           'fixed z-[70] flex max-h-dvh w-full flex-col gap-2 outline-none',
           compact
-            ? 'left-1/2 top-[calc(env(safe-area-inset-top)+8px)] max-w-[calc(100vw-16px)] -translate-x-1/2 items-center'
-            : 'right-3 top-[calc(var(--toolbar-h)+8px)] max-w-[360px] items-end',
+            ? 'bottom-[calc(var(--machinebar-h)+var(--tabbar-h)+8px+env(safe-area-inset-bottom))] right-3 max-w-[calc(100vw-24px)] items-end'
+            : 'bottom-3 right-3 max-w-[360px] items-end',
         )}
       />
     </ToastPrimitive.Provider>

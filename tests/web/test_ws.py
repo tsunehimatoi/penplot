@@ -1,10 +1,6 @@
 import time
 
-import pytest
-from fastapi.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
-
-from conftest import H, PW, gcode_file, make_app, square_gcode
+from conftest import H, gcode_file, square_gcode
 
 
 def _recv_until(ws, pred, n=400):
@@ -45,34 +41,6 @@ def test_ws_hello_job_progress_and_estop_cmd(client, app):
         m = _recv_until(ws, lambda m: m['type'] == 'pong')
         assert m['seq'] > ack['seq']
         del seqs
-
-
-def test_ws_requires_auth(tmp_path):
-    app = make_app(tmp_path)
-    with TestClient(app) as c:
-        with c.websocket_connect('/api/v1/ws') as ws:
-            with pytest.raises(WebSocketDisconnect) as e:
-                ws.receive_json()
-            assert e.value.code == 4423
-        c.post('/api/v1/auth/setup', json={'password': PW}, headers=H)
-        tok = c.post('/api/v1/auth/tokens', json={'name': 'r', 'scopes': ['read']}, headers=H).json()['token']
-        c.post('/api/v1/auth/logout', headers=H)
-        with c.websocket_connect('/api/v1/ws') as ws:
-            with pytest.raises(WebSocketDisconnect) as e:
-                ws.receive_json()
-            assert e.value.code == 4401
-        # bearer via subprotocol; read scope cannot send commands
-        with c.websocket_connect('/api/v1/ws', subprotocols=['penplot.v1', 'bearer.' + tok]) as ws:
-            assert ws.receive_json()['type'] == 'hello'
-            ws.send_json({'type': 'cmd', 'id': 'x', 'op': 'estop'})       # everyone may e-stop
-            ack = _recv_until(ws, lambda m: m['type'] == 'ack')
-            assert ack['ok'] is True
-            ws.send_json({'type': 'cmd', 'id': 'y', 'op': 'pause'})
-            ack = _recv_until(ws, lambda m: m['type'] == 'ack' and m['id'] == 'y')
-            assert ack['ok'] is False and ack['error']['code'] == 'forbidden'
-            ws.send_json({'type': 'tt_keys', 'id': 'z', 'data': 'hi'})     # P2
-            ack = _recv_until(ws, lambda m: m['type'] == 'ack' and m['id'] == 'z')
-            assert ack['ok'] is False and ack['error']['code'] == 'forbidden'
 
 
 def test_eventbus_slow_client_drops_and_gaps():

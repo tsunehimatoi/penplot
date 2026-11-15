@@ -41,14 +41,14 @@ def test_marlin_profile_runs_jobs(tmp_path):
         doc['marlin'] = {'type': 'Stepper', 'penDownMM': 2.0, 'penUpMM': 0.0, 'zSpeed': 3000}
         p = c.post('/api/v1/profiles', json={'name': 'Marlin', 'doc': doc}, headers=H).json()
         assert c.post('/api/v1/profiles/%s/activate' % p['id'], headers=H).status_code == 200
-        st = c.post('/api/v1/machine/connect', json={'port': 'fake'}, headers=H).json()
+        st = c.post('/api/v1/machine/connect', json={'port': 'test-serial'}, headers=H).json()
         assert st['connected'] and st['machine_type'] == 'Marlin' and st['firmware'] == '2.1.2'
         assert c.post('/api/v1/machine/zero', json={'axes': 'xyz'}, headers=H).status_code == 200
         g = 'G21\nG90\nG1G90 Z0.0F3000\nG0 X1Y-1F2500\nG1G90 Z2.0F3000\nG1 X5Y-1F1500\nG1G90 Z0.0F3000\n'
         f = gcode_file(c, g)
         j = c.post('/api/v1/jobs', json={'source': {'file_id': f['file']['id']}, 'start': True}, headers=H).json()
         assert job_wait(c, j['id'])['status'] == 'done'
-        fake = app.state.ctx.machine.fake
+        fake = app.state.ctx.machine.ctrl.ser
         assert 'G92X0.0Y0.0' in fake.received_lines and 'M400' in fake.received_lines
         assert c.post('/api/v1/machine/estop', headers=H).status_code == 200
         r = c.post('/api/v1/render/text', json={'text': 'Hi', 'font_id': 'penplot-sans'}, headers=H)

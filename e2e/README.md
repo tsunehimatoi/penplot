@@ -1,7 +1,7 @@
 # PenPlot end-to-end tests
 
 Playwright suite that drives the **real frontend** (production build of `webui/`) against the **real
-backend** (`python -m penplot.web serve`) with the **FakeGrbl** simulated plotter. Owned by QA; it only
+backend** (`python e2e/scripts/serve-backend.py`) with the **FakeGrbl** simulated plotter. Owned by QA; it only
 lives in `e2e/` and never modifies `webui/`, `penplot/` or `tests/`.
 
 ## Run
@@ -23,8 +23,8 @@ What `playwright test` does (see `playwright.config.ts`, `scripts/serve.mjs`):
    that every pre-compressed `.br`/`.gz` sibling equals its plain asset and **removes mismatches** (bug F1),
    writing `.precompress-report.json`.
 2. **Starts the backend** in a fresh temp data dir:
-   `PENPLOT_DEV=1 PENPLOT_DATA_DIR=<tmp> PENPLOT_SERIAL_PORT=fake PENPLOT_FAKE_TIME_SCALE=0.05 PENPLOT_PORT=8093
-   PENPLOT_HOST=127.0.0.1 PENPLOT_STATIC_DIR=e2e/.webui-dist .venv/bin/python -m penplot.web serve`.
+   `PENPLOT_DEV=1 PENPLOT_DATA_DIR=<tmp> E2E_TIME_SCALE=0.05 PENPLOT_PORT=8093
+   PENPLOT_HOST=127.0.0.1 PENPLOT_STATIC_DIR=e2e/.webui-dist .venv/bin/python e2e/scripts/serve-backend.py`.
    The backend serves the SPA itself (same origin, no proxy). The data dir is deleted at the end
    (`E2E_KEEP_DATA=1` keeps it).
 3. `serve.mjs` **supervises** the backend like systemd (`Restart=always`): it respawns it after any exit, which
@@ -43,7 +43,7 @@ E2E_REUSE=1 npx playwright test tests/machine.spec.ts
 (With `E2E_REUSE=1` the setup project just logs in if the admin already exists. Restart the supervisor to pick
 up new frontend/backend code.)
 
-Env knobs: `E2E_PORT` (8093), `E2E_PYTHON`, `E2E_FAKE_TIME_SCALE` (0.05), `E2E_LOG_LEVEL`, `E2E_SKIP_BUILD=1`
+Env knobs: `E2E_PORT` (8093), `E2E_PYTHON`, `E2E_TIME_SCALE` (0.05), `E2E_LOG_LEVEL`, `E2E_SKIP_BUILD=1`
 (reuse the last build), `E2E_KEEP_DATA=1`, `E2E_REUSE=1`, `E2E_FIREFOX=1`.
 
 ### Projects
@@ -102,3 +102,5 @@ The simulated plotter is one shared resource, so the suite runs **serially** (`w
 | `build.spec.ts` | pre-compressed assets identical to plain (F1); cache headers; missing assets 404; no CSP violation / theme before first paint (F6) |
 
 Real bugs found are in [`FINDINGS.md`](./FINDINGS.md) (IDs F1…F8 are referenced by `knownBug()` markers).
+
+串口模拟实现仅在 `tests/web/` 中，由 E2E 专用入口注入。普通桌面/服务启动不提供模拟设备；未连接真实串口时保持未连接。

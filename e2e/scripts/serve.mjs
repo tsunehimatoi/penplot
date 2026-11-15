@@ -2,7 +2,7 @@
 //
 // 1. builds webui into e2e/.webui-dist (scripts/build-webui.mjs)
 // 2. creates an isolated temp data dir
-// 3. runs `python -m penplot.web serve` with FakeGrbl and the private SPA build
+// 3. runs the test-only serial harness with the private SPA build
 // 4. restarts the backend whenever it exits (like systemd's Restart=always), so tests can
 //    exercise /system/restart and kill-based restarts. While the file .run/hold exists the
 //    supervisor waits before respawning (deterministic "server is down" windows).
@@ -33,8 +33,7 @@ const env = {
   ...process.env,
   PENPLOT_DEV: '1',
   PENPLOT_DATA_DIR: dataDir,
-  PENPLOT_SERIAL_PORT: 'fake',
-  PENPLOT_FAKE_TIME_SCALE: process.env.E2E_FAKE_TIME_SCALE ?? '0.05',
+  E2E_TIME_SCALE: process.env.E2E_TIME_SCALE ?? '0.05',
   PENPLOT_PORT: String(port),
   PENPLOT_HOST: host,
   PENPLOT_STATIC_DIR: path.join(e2e, '.webui-dist'),
@@ -63,7 +62,7 @@ function writeState() {
 
 function start() {
   starts++
-  child = spawn(python, ['-m', 'penplot.web', 'serve'], { cwd: repo, env, stdio: ['ignore', 'inherit', 'inherit'] })
+  child = spawn(python, [path.join(here, 'serve-backend.py')], { cwd: repo, env, stdio: ['ignore', 'inherit', 'inherit'] })
   writeState()
   child.on('exit', (code, sig) => {
     child = null

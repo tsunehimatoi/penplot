@@ -136,8 +136,7 @@ class Files:
 
     def _free_ok(self):
         try:
-            st = os.statvfs(self.cfg.data_dir)
-            return st.f_bavail * st.f_frsize > 500 * 1024 * 1024
+            return shutil.disk_usage(self.cfg.data_dir).free > 500 * 1024 * 1024
         except OSError:
             return True
 
@@ -459,18 +458,10 @@ class Projects:
         if not n:
             raise ApiError(409, 'rev_conflict', '工程已被修改，请刷新')
         out = self.get(pid)
-        if getattr(self.ctx, 'collab', None):
-            self.ctx.collab.project_changed(pid, out['rev'], by, 'doc', None, conn_id)
         return out
 
     def patch_element(self, pid, eid, body, by=None, conn_id=None, force=False):
         cur = self._writable(pid)
-        coll = getattr(self.ctx, 'collab', None)
-        if coll and by is not None and not force:
-            lk = coll.locked_by_other(pid, eid, by.user_id)
-            if lk:
-                raise ApiError(409, 'element_locked', '%s 正在编辑这个元素' % lk['username'],
-                               {'user': {'id': lk['user_id'], 'username': lk['username']}})
         if body.rev is not None and body.rev != cur['rev']:
             raise ApiError(409, 'rev_conflict', '工程已被修改，请刷新', {'rev': cur['rev']})
         doc = cur['doc']
@@ -497,10 +488,6 @@ class Projects:
         doc = self._norm(doc)
         self.db.execute('UPDATE projects SET doc=?, rev=rev+1, updated_at=? WHERE id=?', (jdump(doc), time.time(), pid))
         out = self.get(pid)
-        if coll:
-            patch = {'page_id': body.page_id, 'element_id': eid,
-                     'element': next((e for pg in out['doc']['pages'] for e in pg['elements'] if e['id'] == eid), None)}
-            coll.project_changed(pid, out['rev'], by, 'element', patch, conn_id)
         return out
 
     def duplicate(self, pid, as_template=False, name=None):

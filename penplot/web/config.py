@@ -29,11 +29,11 @@ def _repo_fonts():
 
 @dataclass
 class Config:
-    host: str = '0.0.0.0'
+    host: str = '127.0.0.1'
     port: int = 8080
-    data_dir: str = '/var/lib/penplot'
+    data_dir: str = '~/.penplot'
     font_dir: str = ''
-    cache_dir: str = '/run/penplot'
+    cache_dir: str = ''
     cache_mb: int = 150
     static_dir: str = ''
     serial_port: str = ''
@@ -45,7 +45,6 @@ class Config:
     tls_key: str = ''
     dev_origins: list = field(default_factory=lambda: ['http://localhost:5173',
                                                        'http://127.0.0.1:5173'])
-    fake_time_scale: float = 1.0   # FakeGrbl motion speed-up (tests)
     seed_profile: str = ''         # json used to seed the first profile
     seed_dir: str = ''             # seed/ content: papers, built-in templates, samples
 
@@ -53,19 +52,18 @@ class Config:
     def from_env(cls, env=None, **over):
         e = os.environ if env is None else env
         dev = _bool(e.get('PENPLOT_DEV'))
-        data = e.get('PENPLOT_DATA_DIR') or ('~/.penplot-dev' if dev else '/var/lib/penplot')
+        data = e.get('PENPLOT_DATA_DIR') or ('~/.penplot-dev' if dev else '~/.penplot')
         data = os.path.abspath(os.path.expanduser(data))
         cache = e.get('PENPLOT_CACHE_DIR')
         if not cache:
-            cache = '/run/penplot' if (os.path.isdir('/run/penplot') and os.access('/run/penplot', os.W_OK)) \
-                else os.path.join(data, 'cache')
+            cache = os.path.join(data, 'cache')
         font_dir = e.get('PENPLOT_FONT_DIR') or os.path.join(data, 'fonts')
         static = e.get('PENPLOT_STATIC_DIR') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
         seed = e.get('PENPLOT_SEED_PROFILE') or _bundled(os.path.join('configs', 'grbl-zpen.json'))
         seed_dir = e.get('PENPLOT_SEED_DIR') or _bundled('seed')
         c = cls(
             seed_dir=os.path.abspath(os.path.expanduser(seed_dir)),
-            host=e.get('PENPLOT_HOST', '0.0.0.0'),
+            host=e.get('PENPLOT_HOST', '127.0.0.1'),
             port=int(e.get('PENPLOT_PORT', '8080')),
             data_dir=data,
             font_dir=os.path.abspath(os.path.expanduser(font_dir)),
@@ -79,7 +77,6 @@ class Config:
             dev=dev,
             tls_cert=e.get('PENPLOT_TLS_CERT', ''),
             tls_key=e.get('PENPLOT_TLS_KEY', ''),
-            fake_time_scale=float(e.get('PENPLOT_FAKE_TIME_SCALE', '1.0')),
             seed_profile=seed,
         )
         extra = e.get('PENPLOT_DEV_ORIGINS')

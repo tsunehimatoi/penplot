@@ -2,22 +2,19 @@
  * 设置 /settings/:section (02-ux §3.10). Regular: 220px category list + inset-grouped form (max 640).
  * Compact: iOS-style push — /settings/general shows the category list, each section has a back button.
  */
-import { ChevronLeft, FileText, Palette, ShieldCheck, SlidersHorizontal, Users, Wrench, type LucideIcon } from 'lucide-react'
+import { ChevronLeft, FileText, Palette, SlidersHorizontal, Wrench, type LucideIcon } from 'lucide-react'
 import * as React from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { Page } from '@/app/page'
 import { GroupedList, ListRow } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { useIsCompact } from '@/lib/media'
-import { AccountSection } from './account'
 import { AppearanceSection } from './appearance'
 import { MachineSection } from './machine'
 import { PapersSection } from './papers'
 import { PreferencesSection } from './preferences'
-import { UsersSection } from './users'
-import { useRole } from '@/api/collab'
 
-type SectionId = 'appearance' | 'machine' | 'papers' | 'account' | 'users' | 'preferences'
+type SectionId = 'appearance' | 'machine' | 'papers' | 'preferences'
 
 interface SectionDef {
   id: SectionId
@@ -25,15 +22,12 @@ interface SectionDef {
   description: string
   icon: LucideIcon
   tile: string
-  adminOnly?: boolean
 }
 
 const SECTIONS: SectionDef[] = [
   { id: 'appearance', label: '外观', description: '浅色 / 深色、强调色、密度', icon: Palette, tile: 'bg-blue' },
   { id: 'machine', label: '机器配置', description: '控制器、串口、笔、行程', icon: Wrench, tile: 'bg-orange' },
   { id: 'papers', label: '纸张预设', description: '尺寸、边距与行格', icon: FileText, tile: 'bg-green' },
-  { id: 'account', label: '账户与安全', description: '我的资料、密码、会话、API 令牌', icon: ShieldCheck, tile: 'bg-indigo' },
-  { id: 'users', label: '用户与权限', description: '添加成员、分配角色', icon: Users, tile: 'bg-teal', adminOnly: true },
   { id: 'preferences', label: '偏好', description: '默认值、任务与服务', icon: SlidersHorizontal, tile: 'bg-gray' },
 ]
 
@@ -53,10 +47,6 @@ function SectionBody({ id, setActions }: { id: SectionId; setActions: (n: React.
       return <MachineSection onActions={setActions} />
     case 'papers':
       return <PapersSection onActions={setActions} />
-    case 'account':
-      return <AccountSection />
-    case 'users':
-      return <UsersSection onActions={setActions} />
     case 'preferences':
       return <PreferencesSection />
   }
@@ -95,8 +85,7 @@ export default function SettingsPage() {
   const compact = useIsCompact()
   const current = resolve(section, compact)
   const [actions, setActions] = React.useState<React.ReactNode>(null)
-  const role = useRole()
-  const visible = SECTIONS.filter((s) => !s.adminOnly || role === 'admin')
+  const visible = SECTIONS
 
   if (current == null) return <Navigate to="/settings/general" replace />
 

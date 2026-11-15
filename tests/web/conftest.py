@@ -20,8 +20,8 @@ PW = 'correct horse battery'
 
 def make_app(tmp_path, dev=True, task_mode='thread', time_scale=0.02, **env):
     e = {'PENPLOT_DATA_DIR': str(tmp_path / 'data'), 'PENPLOT_CACHE_DIR': str(tmp_path / 'cache'),
-         'PENPLOT_FONT_DIR': str(tmp_path / 'fonts'), 'PENPLOT_SERIAL_PORT': 'fake',
-         'PENPLOT_FAKE_TIME_SCALE': str(time_scale), 'PENPLOT_TASK_MODE': task_mode,
+         'PENPLOT_FONT_DIR': str(tmp_path / 'fonts'), 'PENPLOT_SERIAL_PORT': 'test-serial',
+         'PENPLOT_TASK_MODE': task_mode,
          'PENPLOT_SERIAL_LOCK': str(tmp_path / 'serial.lock'),
          # fixed test profile (paper-anchored origin, 300x300 travel) so tests don't
          # depend on the real machine defaults in configs/grbl-zpen.json
@@ -35,7 +35,8 @@ def make_app(tmp_path, dev=True, task_mode='thread', time_scale=0.02, **env):
     if os.path.exists(src) and not os.path.exists(dst):
         os.symlink(src, dst)
     os.environ['PENPLOT_SERIAL_LOCK'] = e['PENPLOT_SERIAL_LOCK']
-    return create_app(Config.from_env(env=e))
+    from serial_harness import with_simulated_serial
+    return with_simulated_serial(create_app(Config.from_env(env=e)), time_scale)
 
 
 def wait_for(fn, timeout=10.0, dt=0.05):
@@ -56,11 +57,9 @@ def app(tmp_path):
 
 @pytest.fixture
 def client(app):
-    """Logged-in dev client with the FakeGrbl connected."""
+    """Client with FakeGrbl connected."""
     with TestClient(app, base_url='http://testserver') as c:
-        r = c.post('/api/v1/auth/setup', json={'password': PW}, headers=H)
-        assert r.status_code == 200, r.text
-        r = c.post('/api/v1/machine/connect', json={'port': 'fake'}, headers=H)
+        r = c.post('/api/v1/machine/connect', json={'port': 'test-serial'}, headers=H)
         assert r.status_code == 200, r.text
         # pen parked up at the paper corner: calibrate XYZ once (Z is never zeroed implicitly)
         r = c.post('/api/v1/machine/zero', json={'axes': 'xyz'}, headers=H)

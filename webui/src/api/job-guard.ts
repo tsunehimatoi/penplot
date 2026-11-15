@@ -14,13 +14,7 @@
  */
 import { confirm } from '@/lib/confirm'
 import { api, isApiError } from './client'
-import { queryClient, qk } from './query'
-import type { AuthState, Job } from './types'
-
-function isAdmin() {
-  const a = queryClient.getQueryData<AuthState>(qk.auth.state)
-  return a?.role ? a.role === 'admin' : true // single-user backends: the admin
-}
+import type { Job } from './types'
 
 export interface StartFlags {
   allowOutOfBounds: boolean
@@ -49,7 +43,7 @@ export async function guardStart<T>(attempt: (o: StartFlags) => Promise<T>, init
       }
       if (e.code === 'out_of_work_area') {
         const issues = ((e.detail as { issues?: string[] } | null)?.issues ?? []).filter(Boolean)
-        const admin = isAdmin()
+        const admin = true
         const ok = await confirm({
           title: '这个任务可能不安全，已阻止开始',
           description: admin

@@ -10,10 +10,9 @@ from pydantic import Field
 from .common import Model, Task
 from .jobs import Job
 from .machine import MachineStatus
-from .auth import ElementLock, LeaseInfo, PresenceEntry, UserRef
 
 Topic = Literal['status', 'progress', 'job', 'log', 'alarm', 'task', 'system', 'error', 'notice',
-                'presence', 'lease', 'project', 'locks', 'teletype', 'attention']
+                'project', 'teletype', 'attention']
 
 
 class WsEnvelope(Model):
@@ -26,8 +25,6 @@ class Snapshot(Model):
     job: Optional[Job] = None
     tasks: list[Task] = []
     batch: Optional[dict[str, Any]] = None
-    lease: Optional[LeaseInfo] = None
-    presence: list[PresenceEntry] = []
     teletype: Optional[dict[str, Any]] = Field(None, description='TeletypeState when a session is active')
 
 
@@ -190,43 +187,17 @@ class WsAttention(WsEnvelope):
     data: AttentionData
 
 
-class PresenceData(Model):
-    online: list[PresenceEntry]
-
-
-class WsPresence(WsEnvelope):
-    type: Literal['presence'] = 'presence'
-    data: PresenceData
-
-
-class WsLease(WsEnvelope):
-    type: Literal['lease'] = 'lease'
-    data: LeaseInfo
-
-
 class ProjectChange(Model):
     project_id: str
     rev: int
     kind: Literal['doc', 'element'] = Field(description="doc: refetch the project; element: apply patch.element")
-    by: Optional[UserRef] = None
     conn_id: Optional[str] = Field(None, description='X-Conn-Id of the writer (ignore your own echo)')
     patch: Optional[dict[str, Any]] = Field(None, description='{page_id, element_id, element}')
 
 
 class WsProject(WsEnvelope):
-    """Only to sockets whose presence.project_id is this project."""
     type: Literal['project'] = 'project'
     data: ProjectChange
-
-
-class LocksData(Model):
-    project_id: str
-    locks: list[ElementLock]
-
-
-class WsLocks(WsEnvelope):
-    type: Literal['locks'] = 'locks'
-    data: LocksData
 
 
 class TeletypeEvent(Model):
@@ -247,7 +218,7 @@ class WsTeletype(WsEnvelope):
 
 WsServerMessage = Union[WsHello, WsStatus, WsProgress, WsJob, WsAlarm, WsError,
                         WsLog, WsTask, WsSystem, WsNotice, WsGap, WsAck, WsPong, WsAttention,
-                        WsPresence, WsLease, WsProject, WsLocks, WsTeletype]
+                        WsProject, WsTeletype]
 
 
 # ---------------------------------------------------------------- client
@@ -268,31 +239,14 @@ class WsPing(Model):
     t: float
 
 
-class WsPresenceUpdate(Model):
-    """Which page/project/element this tab shows (coalesced to 1/s)."""
-    type: Literal['presence'] = 'presence'
-    page: Optional[str] = None
-    project_id: Optional[str] = None
-    element_id: Optional[str] = None
-    client: Optional[str] = None
-
-
-class WsLockMsg(Model):
-    """Soft element lock (expires after 120 s; refresh by sending again; released on disconnect)."""
-    type: Literal['lock', 'unlock']
-    id: Optional[str] = Field(None, description='ack id')
-    project_id: str
-    element_id: str
-
-
 class WsTtKeys(Model):
-    """Teletype keystrokes (control scope + lease; terminal mode: admin + terminal_enabled)."""
+    """Teletype keystrokes."""
     type: Literal['tt_keys'] = 'tt_keys'
     id: Optional[str] = None
     data: str
 
 
-WsClientMessage = Union[WsSubscribe, WsCmd, WsPing, WsPresenceUpdate, WsLockMsg, WsTtKeys]
+WsClientMessage = Union[WsSubscribe, WsCmd, WsPing, WsTtKeys]
 
 
 class WsTypes(Model):

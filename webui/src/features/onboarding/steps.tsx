@@ -99,11 +99,11 @@ function useAct() {
   return { busy, run }
 }
 
-function DemoBadge({ mode }: { mode: Mode }) {
-  if (mode !== 'demo') return null
+function OfflineNotice({ mode }: { mode: Mode }) {
+  if (mode !== 'offline') return null
   return (
     <Note tone="warn">
-      <strong>演示模式</strong>：没有连上后台服务，下面的操作只在页面里模拟，不会动机器。
+      未连接到后台服务，请检查服务是否启动后重试。
     </Note>
   )
 }
@@ -159,7 +159,7 @@ export function ConnectStep({ mode, setReady }: StepProps) {
   const [picked, setPort] = React.useState<string | undefined>(data.port)
   const port = preferredPort(ports.data, picked, status?.port)
   const { busy, run } = useAct()
-  const act = machineActions(mode)
+  const act = machineActions()
   const connected = !!status?.connected
   const fw = status?.firmware ?? null
   const fwOk = !!fw && /^1\.1/.test(fw)
@@ -172,7 +172,7 @@ export function ConnectStep({ mode, setReady }: StepProps) {
         lead="用 USB 线把写字机接到控制盒上，打开写字机电源。然后在下面选择端口并连接。"
         art={<ConnectArt connected={connected} />}
       />
-      <DemoBadge mode={mode} />
+      <OfflineNotice mode={mode} />
       <Task n={1} title="选择端口" done={!!port}>
         <div className="flex flex-wrap items-center gap-2">
           <Select
@@ -180,13 +180,13 @@ export function ConnectStep({ mode, setReady }: StepProps) {
             aria-label="串口"
             value={port}
             onValueChange={setPort}
-            placeholder={ports.isPending ? '正在查找…' : '没有找到端口'}
+            placeholder={mode === 'offline' ? '后台未连接' : ports.isPending ? '正在查找…' : '没有找到端口'}
             options={(ports.data ?? []).map((p) => ({
               value: p.by_id ?? p.path,
               label: (
                 <span className="flex items-center gap-2">
-                  <span className="truncate">{p.path === 'fake' ? '模拟器（开发用）' : p.description && p.description !== 'n/a' ? p.description : p.path}</span>
-                  <span className="truncate text-footnote text-tertiary-label">{p.path === 'fake' ? '' : p.path}</span>
+                  <span className="truncate">{p.description && p.description !== 'n/a' ? p.description : p.path}</span>
+                  <span className="truncate text-footnote text-tertiary-label">{p.path}</span>
                   {p.busy_pid ? <Badge tone="orange">被占用</Badge> : null}
                 </span>
               ),
@@ -202,14 +202,13 @@ export function ConnectStep({ mode, setReady }: StepProps) {
         {connected ? (
           <Note tone="ok">
             已连接{status?.port ? `：${status.port}` : ''}。状态：{status?.state_text || '空闲'}
-            {status?.fake ? '（模拟器）' : ''}
           </Note>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="filled"
               icon={<Plug />}
-              disabled={!port}
+              disabled={mode !== 'live' || !port}
               loading={busy === 'connect' || !!status?.connecting}
               onClick={() =>
                 void run('connect', '连接失败', async () => {
@@ -247,7 +246,8 @@ export function ConnectStep({ mode, setReady }: StepProps) {
 
 // ------------------------------------------------------------------ 3 笔
 async function savePen(mode: Mode, profileId: string | undefined, v: { type: 'Stepper' | 'Servo'; down?: number; up?: number }) {
-  if (mode === 'demo' || !profileId) return
+  if (mode !== 'live') throw new Error('后台未连接')
+  if (!profileId) throw new Error('尚未加载机器配置')
   const grbl: Record<string, unknown> = { type: v.type }
   const pd: Record<string, unknown> = {}
   if (v.down != null) {
@@ -273,7 +273,7 @@ export function PenStep({ mode, setReady }: StepProps) {
   const [extra, setExtra] = React.useState('0.5')
   const [saved, setSaved] = React.useState(false)
   const { busy, run } = useAct()
-  const act = machineActions(mode)
+  const act = machineActions()
   const z = Array.isArray(status?.wpos) ? (status.wpos[2] ?? 0) : 0
   const connected = !!status?.connected
   const touch = data.touchZ
@@ -296,7 +296,7 @@ export function PenStep({ mode, setReady }: StepProps) {
           </>
         }
       />
-      <DemoBadge mode={mode} />
+      <OfflineNotice mode={mode} />
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-callout text-secondary-label">笔的类型</span>
         <Segmented
@@ -398,7 +398,7 @@ export function PenStep({ mode, setReady }: StepProps) {
                       void run('save', '保存失败', async () => {
                         await savePen(mode, profile?.id, { type: 'Stepper', down, up: 0 })
                         update({ data: { penDownZ: down, penUpZ: 0, penType: 'Stepper' } })
-                        await act.pen('up', down).catch(() => act.jog({ dz: -z }))
+                        await act.pen('up').catch(() => act.jog({ dz: -z }))
                         setSaved(true)
                       }, `已保存：落笔 Z${down?.toFixed(1)}，抬笔 Z0`)
                     }
@@ -440,7 +440,7 @@ export function PaperStep({ mode, setReady }: StepProps) {
   const [framed, setFramed] = React.useState(false)
   const paper = PAPERS.find((p) => p.value === (data.paper ?? 'test')) ?? PAPERS[0]
   const { busy, run } = useAct()
-  const act = machineActions(mode)
+  const act = machineActions()
   const connected = !!status?.connected
   const work = profile?.doc?.work_area as { w_mm?: number; h_mm?: number } | undefined
   const tooBig = !!work && (work.w_mm ?? 0) > 0 && (work.h_mm ?? 0) > 0 && (paper.w > work.w_mm! || paper.h > work.h_mm!)
@@ -458,7 +458,7 @@ export function PaperStep({ mode, setReady }: StepProps) {
           </>
         }
       />
-      <DemoBadge mode={mode} />
+      <OfflineNotice mode={mode} />
       <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
         <div className="flex flex-col gap-3">
           <Task n={1} title="把纸固定好">
@@ -584,8 +584,7 @@ export function TestStep({ mode, setReady }: StepProps) {
   const liveJob = useLive((s) => s.job)
   const finished = useLive((s) => s.finished)
   const { busy, run } = useAct()
-  const act = machineActions(mode)
-  const [demoProgress, setDemoProgress] = React.useState<number | null>(null)
+  const act = machineActions()
 
   const fontOptions = (fonts.data ?? []).filter((f) => !f.hidden).map((f) => ({ value: f.id, label: f.display_name || f.id }))
   const fontId = data.fontId ?? (fonts.data?.some((f) => f.id === PREFERRED_FONT) ? PREFERRED_FONT : (settings.data?.default_font ?? fonts.data?.[0]?.id))
@@ -604,8 +603,8 @@ export function TestStep({ mode, setReady }: StepProps) {
     refetchInterval: (q) => (q.state.data && ['done', 'failed', 'aborted'].includes(q.state.data.status) ? false : 2000),
   })
   const j = liveJob?.id === data.testJobId ? liveJob : finished && finished.job.id === data.testJobId ? finished.job : job.data
-  const jobState = mode === 'demo' ? (demoProgress == null ? null : demoProgress >= 100 ? 'done' : 'running') : (j?.status ?? null)
-  const percent = mode === 'demo' ? (demoProgress ?? 0) : (j?.percent ?? 0)
+  const jobState = j?.status ?? null
+  const percent = j?.percent ?? 0
   const finishedOk = jobState === 'done'
   React.useEffect(() => setReady(finishedOk || !!data.testResult), [finishedOk, data.testResult, setReady])
 
@@ -617,14 +616,6 @@ export function TestStep({ mode, setReady }: StepProps) {
   const start = () =>
     run('start', '开始试写失败', async () => {
       update({ data: { testResult: '' } })
-      if (mode === 'demo') {
-        setDemoProgress(0)
-        for (let p = 0; p <= 100; p += 10) {
-          await new Promise((r) => setTimeout(r, 250))
-          setDemoProgress(p)
-        }
-        return
-      }
       const rid = render.data?.rid
       if (!rid) throw new Error('预览还没准备好')
       const created = await api.post<Job>('/jobs', { source: { render_id: rid, page: 0 }, name: '设置向导 · 试写', start: false, overrides: { pen_down_z: down } }, { idempotencyKey: true })
@@ -645,15 +636,11 @@ export function TestStep({ mode, setReady }: StepProps) {
   return (
     <div className="flex flex-col gap-5">
       <StepHeader title="试写" lead="写一个 2 cm 的方块和「你好」两个字，大约 1 分钟。笔会从原点（你停笔的位置，内容的左上角）开始写。" />
-      <DemoBadge mode={mode} />
+      <OfflineNotice mode={mode} />
       <div className="grid gap-5 md:grid-cols-[1fr_280px]">
         <div className="flex flex-col gap-3">
           <Task n={1} title="选一个字体" help="single-line-font">
-            {mode === 'demo' ? (
-              <p className="text-callout text-secondary-label">演示模式下使用示意字体。</p>
-            ) : (
-              <Select aria-label="字体" className="w-full sm:max-w-[320px]" value={fontId} onValueChange={(v) => update({ data: { fontId: v } })} options={fontOptions} placeholder={fonts.isPending ? '加载字体…' : '没有字体'} />
-            )}
+            <Select aria-label="字体" className="w-full sm:max-w-[320px]" value={fontId} onValueChange={(v) => update({ data: { fontId: v } })} options={fontOptions} placeholder={fonts.isPending ? '加载字体…' : '没有字体'} />
             {missing.length ? <Note tone="warn">这个字体缺「{missing.join('')}」字，会写成方框。换一个字体吧。</Note> : null}
           </Task>
           <Task n={2} title="开始" done={finishedOk}>

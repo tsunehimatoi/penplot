@@ -2,20 +2,19 @@
 import {
   ChevronDown, Circle, Copy, Crosshair, Download, Eye, FileCode2, FilePlus2, FileUp, FolderOpen, Grid3x3, Hand, Image as ImageIcon,
   LayoutTemplate, Layers, Lock, Maximize, Minus, MousePointer2, MoreHorizontal, PenTool, Pencil, Play, Plus, Printer, Redo2,
-  RectangleHorizontal, Settings2, Shapes, Slash, Trash2, Triangle, Type, Undo2, Users, FileImage, ImageOff, Ruler,
+  RectangleHorizontal, Settings2, Shapes, Slash, Trash2, Triangle, Type, Undo2, FileImage, ImageOff, Ruler,
 } from 'lucide-react'
 import * as React from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   Button, DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger, IconButton, Input, Popover, PopoverContent, PopoverTrigger, Segmented, Spinner, Tooltip,
+  DropdownMenuSeparator, DropdownMenuTrigger, IconButton, Segmented, Spinner,
 } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { useBreakpoint } from '@/lib/media'
 import { formatDurationSpoken } from '@/lib/format'
 import { deleteSelection, duplicateSelection, insertShape, insertText, setMode, toggleLock, zOrder } from './actions'
 import { MM_100 } from './canvas/canvas'
-import { useCollab } from './collab'
 import { isLetterMode } from './model'
 import { outputIndex, usePageUpdating, useRender } from './render-engine'
 import { useStudio, type Tool } from './store'
@@ -226,68 +225,6 @@ export function InsertMenu({ cmd, trigger }: { cmd: StudioCommands; trigger?: Re
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  )
-}
-
-export function Collaborators() {
-  const peers = useCollab((s) => s.peers)
-  const me = useCollab((s) => s.me)
-  const list = Object.values(peers)
-  const [name, setName] = React.useState(me.name)
-  return (
-    <Popover onOpenChange={(o) => o && setName(me.name)}>
-      <PopoverTrigger asChild>
-        <button type="button" className="press focus-ring flex items-center -space-x-1.5 rounded-full p-0.5" aria-label={list.length ? `${list.length} 人也在编辑` : '协作'}>
-          {list.length ? (
-            list.slice(0, 3).map((p) => <Avatar key={p.client} name={p.name} color={p.color} />)
-          ) : (
-            <span className="flex size-7 items-center justify-center text-secondary-label">
-              <Users className="size-[18px]" />
-            </span>
-          )}
-          {list.length > 3 ? <span className="flex size-6 items-center justify-center rounded-full bg-fill text-caption ring-2 ring-bg">+{list.length - 3}</span> : null}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-72">
-        <h3 className="mb-2 text-headline">正在查看此项目</h3>
-        <ul className="mb-3 flex flex-col gap-1.5">
-          <li className="flex items-center gap-2">
-            <Avatar name={me.name} color={me.color} />
-            <span className="text-body">{me.name}（你）</span>
-          </li>
-          {list.map((p) => (
-            <li key={p.client} className="flex items-center gap-2">
-              <Avatar name={p.name} color={p.color} />
-              <span className="min-w-0 flex-1 truncate text-body">{p.name}</span>
-              <span className="text-footnote text-secondary-label">第 {p.page + 1} 页{p.selection.length ? ' · 编辑中' : ''}</span>
-            </li>
-          ))}
-        </ul>
-        {!list.length ? <p className="mb-3 text-footnote text-secondary-label">在另一台设备或窗口打开同一项目，修改会实时同步。</p> : null}
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            useCollab.getState().setName(name)
-          }}
-        >
-          <Input value={name} onChange={(e) => setName(e.currentTarget.value)} aria-label="我的显示名称" className="min-w-0 flex-1" />
-          <Button type="submit" size="sm">
-            改名
-          </Button>
-        </form>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-export function Avatar({ name, color, size = 26 }: { name: string; color: string; size?: number }) {
-  return (
-    <Tooltip content={name}>
-      <span className="flex shrink-0 items-center justify-center rounded-full font-semibold text-white ring-2 ring-bg" style={{ width: size, height: size, background: color, fontSize: 12 }}>
-        {[...name.trim()][0]?.toUpperCase() ?? '?'}
-      </span>
-    </Tooltip>
   )
 }
 

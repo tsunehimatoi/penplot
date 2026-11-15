@@ -444,7 +444,7 @@ non-`/api` 404 GET falls back to `index.html` (SPA routes). Large API JSON/SVG g
 `PENPLOT_HOST=0.0.0.0` · `PENPLOT_PORT=8080` · `PENPLOT_DATA_DIR=/var/lib/penplot` (dev `~/.penplot`) ·
 `PENPLOT_FONT_DIR=$DATA_DIR/fonts` (the CLI honours it already) · `PENPLOT_CACHE_DIR=/run/penplot` · `PENPLOT_CACHE_MB=150` ·
 `PENPLOT_STATIC_DIR=<pkg>/web/static` · `PENPLOT_SERIAL_PORT` (overrides the profile) · `PENPLOT_TASK_WORKERS=2` · `PENPLOT_LOG_LEVEL=INFO` ·
-`PENPLOT_DEV=0` (1 = CORS/Origin allowlist `http://localhost:5173`, FakeGrbl, no setup code) · `PENPLOT_TLS_CERT/_KEY` (optional HTTPS).
+`PENPLOT_DEV=0` (1 = CORS/Origin allowlist `http://localhost:5173`; serial emulation is test-only) · `PENPLOT_TLS_CERT/_KEY` (optional HTTPS).
 
 ### 7.2 Logging
 stdlib `logging` → stderr → **journald** (no files, no logrotate). Format `level logger message` (journald adds

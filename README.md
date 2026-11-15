@@ -94,8 +94,8 @@ penplot gcode2svg any.gcode out.svg                     # 任意 G 代码导入�
 ### 2. 网页工作台（开发模式，不需要硬件）
 
 ```bash
-# 后端：FakeGrbl 模拟写字机，免初始化码，允许 Vite 跨域
-PENPLOT_DEV=1 PENPLOT_SERIAL_PORT=fake PENPLOT_DATA_DIR=~/.penplot-dev \
+# 后端：允许 Vite 跨域；没有连接真实串口时保持未连接
+PENPLOT_DEV=1 PENPLOT_DATA_DIR=~/.penplot-dev \
     penplot-web serve                   # http://localhost:8080，API 文档 /api/v1/docs
 
 # 前端（另开终端，Node 22）

@@ -42,7 +42,7 @@ def test_job_runs_to_done_and_events(client, app):
     assert st['wpos'] == [0.0, 0.0, 0.0]
     seen = [(e['data']['from'], e['data']['to']) for e in events if e['data']['job_id'] == j['id']]
     assert ('preparing', 'running') in seen and ('running', 'done') in seen
-    fake = app.state.ctx.machine.fake
+    fake = app.state.ctx.machine.ctrl.ser
     assert fake.overflows == 0
     # job start zeroes XY only (P6); Z was calibrated explicitly by the fixture
     assert 'G10 P0 L20 X0.0Y0.0' in fake.received_lines
@@ -67,16 +67,16 @@ def test_pause_soft_resume(client, app):
     # after the buffer drains the machine is idle with the pen up: jogging is allowed
     wait_for(lambda: client.get('/api/v1/machine/status').json()['busy'] is False, 10)
     assert client.get('/api/v1/machine/status').json()['pen'] == 'up'
-    before = list(app.state.ctx.machine.fake.wpos)
+    before = list(app.state.ctx.machine.ctrl.ser.wpos)
     r = client.post('/api/v1/machine/jog', json={'dx': 5, 'dy': 0, 'seq': 1}, headers=H)
     assert r.status_code == 200, r.text
-    wait_for(lambda: app.state.ctx.machine.fake.state == 'Idle' and
-             abs(app.state.ctx.machine.fake.wpos[0] - before[0] - 5) < 1e-6)
+    wait_for(lambda: app.state.ctx.machine.ctrl.ser.state == 'Idle' and
+             abs(app.state.ctx.machine.ctrl.ser.wpos[0] - before[0] - 5) < 1e-6)
     r = client.post('/api/v1/jobs/%s/resume' % j['id'], headers=H)
     assert r.json()['status'] == 'running'
     done = job_wait(client, j['id'], timeout=30)
     assert done['status'] == 'done'
-    rl = app.state.ctx.machine.fake.received_lines
+    rl = app.state.ctx.machine.ctrl.ser.received_lines
     # returned to the pause point before continuing
     import re
     back = [x for x in rl if re.match(r'^G0 X[-0-9.]+Y[-0-9.]+$', x)]
@@ -90,12 +90,12 @@ def test_pause_hold_resume_and_stop_from_hold(client, app):
     wait_for(lambda: client.get('/api/v1/jobs/' + j['id']).json()['acked_line'] > 20)
     r = client.post('/api/v1/jobs/%s/pause' % j['id'], json={'mode': 'hold'}, headers=H)
     assert r.json()['pause_mode'] == 'hold'
-    wait_for(lambda: app.state.ctx.machine.fake.state == 'Hold:0')
+    wait_for(lambda: app.state.ctx.machine.ctrl.ser.state == 'Hold:0')
     wait_for(lambda: client.get('/api/v1/machine/status').json()['busy'] is True)
     client.post('/api/v1/jobs/%s/resume' % j['id'], headers=H)
-    wait_for(lambda: app.state.ctx.machine.fake.state in ('Run', 'Idle'))
+    wait_for(lambda: app.state.ctx.machine.ctrl.ser.state in ('Run', 'Idle'))
     client.post('/api/v1/jobs/%s/pause' % j['id'], json={'mode': 'hold'}, headers=H)
-    wait_for(lambda: app.state.ctx.machine.fake.state == 'Hold:0')
+    wait_for(lambda: app.state.ctx.machine.ctrl.ser.state == 'Hold:0')
     r = client.post('/api/v1/jobs/%s/stop' % j['id'], headers=H)
     done = job_wait(client, j['id'])
     assert done['status'] == 'aborted' and done['reason'] == 'user_stop'
@@ -110,7 +110,7 @@ def test_soft_stop(client, app):
     done = job_wait(client, j['id'])
     assert done['status'] == 'aborted' and done['reason'] == 'user_stop'
     assert done['can_retry_from'] >= 1
-    assert app.state.ctx.machine.fake.received_lines[-2:] == ['G1G90 Z0.0F5000', 'G90G0 X0Y0']
+    assert app.state.ctx.machine.ctrl.ser.received_lines[-2:] == ['G1G90 Z0.0F5000', 'G90G0 X0Y0']
 
 
 def test_estop_keeps_origin_when_hold_completes(client, app):
@@ -124,11 +124,11 @@ def test_estop_keeps_origin_when_hold_completes(client, app):
     assert j2['status'] == 'aborted' and j2['reason'] == 'estop'
     st = r.json()
     assert st['origin_valid'] is True and st['grbl_state'].startswith('Idle')
-    assert app.state.ctx.machine.fake.received_lines[-1] == 'G1G90 Z0.0F5000'   # pen lifted
+    assert app.state.ctx.machine.ctrl.ser.received_lines[-1] == 'G1G90 Z0.0F5000'   # pen lifted
 
 
 def test_reset_in_motion_alarm3_invalidates_origin(client, app):
-    fake = app.state.ctx.machine.fake
+    fake = app.state.ctx.machine.ctrl.ser
     j = _job(client, square_gcode(80))
     wait_for(lambda: client.get('/api/v1/jobs/' + j['id']).json()['acked_line'] > 10)
     # the decel never completes in time -> reset in motion -> ALARM:3
@@ -153,7 +153,7 @@ def test_reset_in_motion_alarm3_invalidates_origin(client, app):
 
 
 def test_gcode_error_fails_job(client, app):
-    app.state.ctx.machine.fake.fail_lines['X7.500Y-2.000'] = 'error:20'
+    app.state.ctx.machine.ctrl.ser.fail_lines['X7.500Y-2.000'] = 'error:20'
     j = _job(client, square_gcode(40))
     done = job_wait(client, j['id'])
     assert done['status'] == 'failed' and done['reason'] == 'gcode_error'
@@ -163,7 +163,7 @@ def test_gcode_error_fails_job(client, app):
 def test_alarm_fails_job_and_unlock(client, app):
     j = _job(client, square_gcode(80))
     wait_for(lambda: client.get('/api/v1/jobs/' + j['id']).json()['acked_line'] > 10)
-    app.state.ctx.machine.fake.trigger_alarm(1)
+    app.state.ctx.machine.ctrl.ser.trigger_alarm(1)
     done = job_wait(client, j['id'])
     assert done['status'] == 'failed' and done['reason'] == 'alarm:1'
     st = client.get('/api/v1/machine/status').json()
@@ -175,7 +175,7 @@ def test_alarm_fails_job_and_unlock(client, app):
 def test_unplug_fails_job_and_reconnects(client, app):
     j = _job(client, square_gcode(80))
     wait_for(lambda: client.get('/api/v1/jobs/' + j['id']).json()['acked_line'] > 10)
-    app.state.ctx.machine.fake.unplug()
+    app.state.ctx.machine.ctrl.ser.unplug()
     done = job_wait(client, j['id'])
     assert done['status'] == 'failed' and done['reason'] == 'serial_lost'
     # the supervisor reconnects the (fake) port
@@ -193,12 +193,12 @@ def test_manual_controls(client, app):
     # same key: deduped; older seq: ignored
     client.post('/api/v1/machine/jog', json={'dx': 3, 'dy': -2, 'seq': 5}, headers={**H, 'Idempotency-Key': 'k1'})
     client.post('/api/v1/machine/jog', json={'dx': 3, 'dy': -2, 'seq': 4}, headers=H)
-    wait_for(lambda: app.state.ctx.machine.fake.state == 'Idle')
+    wait_for(lambda: app.state.ctx.machine.ctrl.ser.state == 'Idle')
     wait_for(lambda: client.get('/api/v1/machine/status').json()['wpos'][:2] == [3.0, -2.0])
     assert client.post('/api/v1/machine/jog', json={'dx': 80}, headers=H).status_code == 422
     r = client.post('/api/v1/machine/goto-origin', headers=H)
     assert r.status_code == 200
-    rl = app.state.ctx.machine.fake.received_lines
+    rl = app.state.ctx.machine.ctrl.ser.received_lines
     assert rl[-2:] == ['G1G90 Z0.0F5000', 'G90G0 X0Y0']      # pen up before going home (B12)
     r = client.post('/api/v1/machine/command', json={'line': '$I'}, headers=H)
     assert r.json()['ok'] and any('VER' in x for x in r.json()['reply_lines'])
@@ -271,7 +271,7 @@ def test_clear_hold_without_job(client, app):
     m = app.state.ctx.machine
     client.post('/api/v1/machine/zero', json={'axes': 'xyz'}, headers=H)
     m.ctrl.state = 'Hold:0'
-    m.fake.state = 'Hold:0'
+    m.ctrl.ser.state = 'Hold:0'
     rec = client.get('/api/v1/machine/recovery', headers=H).json()
     assert 'hold' in rec['reasons'] and any(s['id'] == 'hold' for s in rec['steps'])
     r = client.post('/api/v1/machine/clear-hold', headers=H)

@@ -167,8 +167,7 @@ def capp(tmp_path):
 @pytest.fixture
 def cclient(capp):
     with TestClient(capp, base_url='http://testserver') as c:
-        assert c.post('/api/v1/auth/setup', json={'password': PW}, headers=H).status_code == 200
-        assert c.post('/api/v1/machine/connect', json={'port': 'fake'}, headers=H).status_code == 200
+        assert c.post('/api/v1/machine/connect', json={'port': 'test-serial'}, headers=H).status_code == 200
         assert c.post('/api/v1/machine/zero', json={'axes': 'xyz'}, headers=H).status_code == 200
         yield c
 
@@ -197,7 +196,7 @@ def test_custom_font_session(cclient, capp):
     assert st['pen'] is not None and 'state' in st['pen']
     r = c.post('/api/v1/teletype/type', json={'text': '你好，H'}, headers=H)
     assert r.status_code == 200 and r.json()['echo'] == '你好，H'     # no ASCII conversion with a CJK font
-    fake = capp.state.ctx.machine.fake
+    fake = capp.state.ctx.machine.ctrl.ser
     n0 = len(fake.received_lines)
     wait_for(lambda: c.get('/api/v1/teletype/state').json()['pending'] == 0, 10)
     st = c.get('/api/v1/teletype/state').json()

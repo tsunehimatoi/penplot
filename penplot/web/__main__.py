@@ -1,4 +1,4 @@
-"""python -m penplot.web serve | dump-openapi | reset-password | check"""
+"""python -m penplot.web serve | dump-openapi | mcp | check"""
 import argparse
 import json
 import logging
@@ -49,20 +49,9 @@ def cmd_dump_openapi(args):
     return 0
 
 
-def cmd_reset_password(args):
-    from .auth import AuthService
-    from .config import Config
-    from .db import DB
-    cfg = Config.from_env()
-    db = DB(cfg.db_path)
-    db.migrate()
-    a = AuthService(db, cfg)
-    if not a.has_admin():
-        print('no users yet: open the web UI and use setup code %s' % a.ensure_setup_code())
-        return 0
-    user, pw = a.reset_password(args.password, args.user)
-    print('password for %s %s; their sessions were revoked' % (user, 'set' if args.password else 'is now: ' + pw))
-    return 0
+def cmd_mcp(args):
+    from .mcp_server import run_mcp
+    return run_mcp(transport=args.transport, host=args.host, port=args.port)
 
 
 def cmd_check(args):
@@ -104,10 +93,11 @@ def main(argv=None):
     p = sub.add_parser('dump-openapi')
     p.add_argument('-o', '--out')
     p.set_defaults(fn=cmd_dump_openapi)
-    p = sub.add_parser('reset-password')
-    p.add_argument('--password', help='new password (default: a random one is printed)')
-    p.add_argument('--user', help='username (default: the first admin)')
-    p.set_defaults(fn=cmd_reset_password)
+    p = sub.add_parser('mcp')
+    p.add_argument('--transport', choices=['stdio', 'streamable-http'], default='stdio')
+    p.add_argument('--host', default='127.0.0.1')
+    p.add_argument('--port', type=int, default=8081)
+    p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser('check')
     p.set_defaults(fn=cmd_check)
     args = ap.parse_args(argv)

@@ -14,12 +14,6 @@ type S = components['schemas']
 export type ApiErrorBody = S['ErrorBody']
 export type ErrorInfo = S['ErrorInfo']
 
-// ---------- auth ----------
-export type AuthState = S['AuthState']
-export type LoginRequest = S['LoginRequest']
-export type LoginResponse = S['LoginResponse']
-export type SetupRequest = S['SetupRequest']
-
 // ---------- machine ----------
 export type MachineStatus = S['MachineStatus']
 export type PenState = MachineStatus['pen']
@@ -70,8 +64,6 @@ export interface WsServerEvents {
   ack: WsAck
   pong: S['WsPong']
   attention: S['AttentionData']
-  lease: S['LeaseInfo']
-  presence: S['PresenceData']
 }
 export type WsServerType = keyof WsServerEvents
 

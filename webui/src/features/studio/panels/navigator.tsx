@@ -10,7 +10,6 @@ import { cn } from '@/lib/cn'
 import { confirm } from '@/lib/confirm'
 import { addPage, deletePage, duplicatePage, lastKeys, moveToIndex, movePage, papersCache, toggleHidden, toggleLock } from '../actions'
 import { patchBackground } from '../background'
-import { useCollab } from '../collab'
 import { svgTransform } from '../geometry'
 import { elementName, pagePaperRef, paperDims, resolvePaper, sortedByZ } from '../model'
 import { useRender } from '../render-engine'
@@ -45,7 +44,6 @@ export function useAutoPages(page: DocPage | undefined) {
 
 export function PagesList({ horizontal = false }: { horizontal?: boolean }) {
   const { doc, view } = useStudio(useShallow((s) => ({ doc: s.doc, view: s.view })))
-  const peers = useCollab((s) => s.peers)
   const [dragFrom, setDragFrom] = React.useState<number | null>(null)
   if (!doc) return null
   const papers = papersCache()
@@ -60,7 +58,6 @@ export function PagesList({ horizontal = false }: { horizontal?: boolean }) {
           active={view.page === i}
           activeSub={view.page === i ? view.sub : -1}
           horizontal={horizontal}
-          peers={Object.values(peers).filter((x) => x.page === i).map((x) => x.color)}
           canDelete={doc.pages.length > 1}
           onDragStart={() => setDragFrom(i)}
           onDrop={() => {
@@ -86,7 +83,7 @@ export function PagesList({ horizontal = false }: { horizontal?: boolean }) {
 }
 
 function PageItem({
-  page, index, paper, active, activeSub, horizontal, peers, canDelete, onDragStart, onDrop,
+  page, index, paper, active, activeSub, horizontal, canDelete, onDragStart, onDrop,
 }: {
   page: DocPage
   index: number
@@ -94,7 +91,6 @@ function PageItem({
   active: boolean
   activeSub: number
   horizontal: boolean
-  peers: string[]
   canDelete: boolean
   onDragStart: () => void
   onDrop: () => void
@@ -119,13 +115,6 @@ function PageItem({
           {auto ? <span className="rounded-xs bg-fill px-1">自动</span> : null}
         </span>
       )}
-      {peers.length && sub === 0 ? (
-        <span className="absolute right-1 top-1 flex -space-x-1">
-          {peers.slice(0, 3).map((c, i) => (
-            <span key={i} className="size-2.5 rounded-full ring-2 ring-bg-secondary" style={{ background: c }} />
-          ))}
-        </span>
-      ) : null}
     </button>
   )
   return (
@@ -175,7 +164,6 @@ function PageItem({
 
 export function LayersList() {
   const { doc, view, selection } = useStudio(useShallow((s) => ({ doc: s.doc, view: s.view, selection: s.selection })))
-  const peers = useCollab((s) => s.peers)
   const [drag, setDrag] = React.useState<string | null>(null)
   const [over, setOver] = React.useState<number | null>(null)
   const [renaming, setRenaming] = React.useState<string | null>(null)
@@ -196,7 +184,6 @@ export function LayersList() {
       {list.map((el, i) => {
         const Icon = TYPE_ICON[el.type]
         const sel = selection.includes(el.id)
-        const editing = Object.values(peers).filter((p) => p.page === view.page && p.selection.includes(el.id))
         return (
           <li
             key={el.id}
@@ -266,7 +253,11 @@ export function LayersList() {
                 className="min-w-0 flex-1 rounded-xs bg-bg-elevated px-1 text-body text-label outline-none ring-2 ring-accent"
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') e.currentTarget.blur()
+                  if (e.key === 'Enter') {
+                    if (e.nativeEvent.isComposing || e.keyCode === 229) return
+                    e.preventDefault()
+                    e.currentTarget.blur()
+                  }
                   if (e.key === 'Escape') setRenaming(null)
                 }}
                 onBlur={(e) => {
@@ -278,13 +269,6 @@ export function LayersList() {
             ) : (
               <span className="min-w-0 flex-1 truncate pl-1">{elementName(el)}</span>
             )}
-            {editing.length ? (
-              <span className="flex -space-x-1" title={`${editing.map((p) => p.name).join('、')} 正在编辑`}>
-                {editing.slice(0, 2).map((p) => (
-                  <span key={p.client} className="size-2.5 rounded-full ring-1 ring-white" style={{ background: p.color }} />
-                ))}
-              </span>
-            ) : null}
           </li>
         )
       })}

@@ -4,7 +4,7 @@
  * Compact: list → push article (iOS style), large title.
  */
 import {
-  BookOpen, ChevronLeft, CircleAlert, Code2, Compass, FileText, Image as ImageIcon, Keyboard, Mail, PenLine, Rocket, ShieldCheck, Type, Users, Wand2,
+  BookOpen, ChevronLeft, CircleAlert, Code2, Compass, FileText, Image as ImageIcon, Keyboard, Mail, PenLine, Rocket, ShieldCheck, Type, Wand2,
   type LucideIcon,
 } from 'lucide-react'
 import * as React from 'react'
@@ -23,7 +23,6 @@ const ICON: Record<string, [LucideIcon, string]> = {
   fonts: [Type, 'bg-purple'],
   'image-trace': [ImageIcon, 'bg-pink'],
   batch: [Mail, 'bg-orange'],
-  'multi-user': [Users, 'bg-green'],
   teletype: [Keyboard, 'bg-gray'],
   troubleshooting: [CircleAlert, 'bg-red'],
   safety: [ShieldCheck, 'bg-yellow'],
@@ -79,7 +78,7 @@ export default function HelpPage() {
 function ArticleList({ current }: { current?: string }) {
   const groups: [string, string[]][] = [
     ['入门', ['quick-start', 'glossary', 'safety']],
-    ['使用', ['paper', 'fonts', 'image-trace', 'batch', 'multi-user', 'teletype']],
+    ['使用', ['paper', 'fonts', 'image-trace', 'batch', 'teletype']],
     ['遇到问题', ['troubleshooting']],
     ['开发者', ['api']],
   ]

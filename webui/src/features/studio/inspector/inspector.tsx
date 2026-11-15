@@ -1,11 +1,10 @@
 /** Context inspector (02-ux §3.1.4): groups change with the selection; document settings when nothing is selected. */
-import { Crosshair, TriangleAlert, Users } from 'lucide-react'
+import { Crosshair, TriangleAlert } from 'lucide-react'
 import * as React from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Element, OriginSpec, PaperBase } from '@/api/studio'
 import { Segmented } from '@/components/ui'
 import { elementAABB } from '../actions'
-import { usePeersEditing } from '../collab'
 import { contains } from '../geometry'
 import { elementName, originAnchor, paperDims, TYPE_LABEL, workAreaRect } from '../model'
 import { useRender } from '../render-engine'
@@ -95,7 +94,6 @@ function ElementGroups({ el, group, paper }: { el: Element; group: Group; paper:
 
 function Warnings({ els, paper, origin, workArea }: { els: Element[]; paper: PaperBase; origin: OriginSpec; workArea: InspectorProps['workArea'] }) {
   useRender((s) => s.els)
-  const peers = usePeersEditing(els.length === 1 ? els[0].id : null)
   const { w, h } = paperDims(paper)
   const work = workArea ? workAreaRect(origin, w, h, workArea.w_mm, workArea.h_mm) : null
   let outPaper = 0
@@ -106,14 +104,9 @@ function Warnings({ els, paper, origin, workArea }: { els: Element[]; paper: Pap
     if (!contains({ x: 0, y: 0, w, h }, b)) outPaper++
     if (work && !contains(work, b, 1)) outWork++
   }
-  if (!outPaper && !outWork && !peers.length) return null
+  if (!outPaper && !outWork) return null
   return (
     <div className="flex flex-col gap-1.5 px-3 pt-3">
-      {peers.length ? (
-        <Note tone="blue" icon={<Users />}>
-          {peers.map((p) => p.name).join('、')} 正在编辑此元素。你的修改会实时同步给对方。
-        </Note>
-      ) : null}
       {outWork ? (
         <Note tone="red" icon={<TriangleAlert />}>
           {els.length > 1 ? `${outWork} 个元素` : '元素'}超出机器行程，这部分无法绘制。

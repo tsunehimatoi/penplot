@@ -21,7 +21,6 @@ import { useBreakpoint } from '@/lib/media'
 import { toast } from '@/lib/toast'
 import { addFiles, defaultFontId, lastKeys, setFallbackFont } from './actions'
 import { Canvas } from './canvas/canvas'
-import { setBase, useCollaboration } from './collab'
 import { useActiveProfile, useAppSettings, useFontCoverage, useFonts, usePapers } from './data'
 import { errText } from './ext'
 import { onImport, takeImports } from './import-queue'
@@ -42,7 +41,7 @@ import { ProjectsSheet } from './sheets/projects-sheet'
 import { StudioShortcuts } from './shortcuts'
 import { useStudio } from './store'
 import {
-  CanvasBar, Collaborators, CompactBar, ModeSwitch, PrimaryActions, ProjectMenu, SaveIndicator, ToolButtons, UndoRedo, type StudioCommands,
+  CanvasBar, CompactBar, ModeSwitch, PrimaryActions, ProjectMenu, SaveIndicator, ToolButtons, UndoRedo, type StudioCommands,
 } from './toolbar'
 
 /** Built-in templates (tpl-*) are read-only on the server (409 builtin): open a copy instead. */
@@ -121,7 +120,6 @@ function Studio({ projectId }: { projectId: string }) {
     if (q.data && isBuiltinTemplate(q.data) && canEdit) return
     if (q.data && useStudio.getState().project?.id !== q.data.id) {
       useStudio.getState().load(q.data)
-      setBase(q.data.doc)
       localStorage.setItem(LAST_KEY, q.data.id)
       // new letter project: put the cursor straight into the body (05-review §1.2-2)
       const flow = q.data.doc.pages[0]?.elements.find((e) => e.type === 'flow_text')
@@ -207,7 +205,6 @@ function Editor() {
   }, [canEdit])
 
   useAutosave()
-  useCollaboration()
 
   const page = doc.pages[Math.min(view.page, doc.pages.length - 1)]
   const paperRef = pagePaperRef(doc, page)
@@ -334,7 +331,6 @@ function Editor() {
       }
       actions={
         <>
-          {compact ? null : <Collaborators />}
           {canEdit ? <PrimaryActions cmd={cmd} compact={compact} /> : null}
         </>
       }

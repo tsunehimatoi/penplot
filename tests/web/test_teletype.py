@@ -36,7 +36,7 @@ def test_typing_session_writes_and_holds_machine(client, app):
     assert st['active'] and st['cols'] == 22 and st['rows'] == 4 and st['mode'] == 'type'
     r = client.post('/api/v1/teletype/type', json={'text': 'Hi，A\x08B'}, headers=H)
     assert r.json()['echo'] == 'Hi,A\x08B'
-    fake = app.state.ctx.machine.fake
+    fake = app.state.ctx.machine.ctrl.ser
     wait_for(lambda: client.get('/api/v1/teletype/state').json()['pending'] == 0, 10)
     paper = client.get('/api/v1/teletype/state').json()['paper']
     chars = [(c[1], c[2], c[3], c[4]) for c in paper['chars']]

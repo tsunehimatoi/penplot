@@ -29,8 +29,6 @@ test.beforeAll(async () => {
       ...process.env,
       PENPLOT_DEV: '0',
       PENPLOT_DATA_DIR: dataDir,
-      PENPLOT_SERIAL_PORT: 'fake',
-      PENPLOT_FAKE_TIME_SCALE: '0.05',
       PENPLOT_PORT: String(PORT),
       PENPLOT_HOST: '127.0.0.1',
       PENPLOT_STATIC_DIR: STATIC_DIR,

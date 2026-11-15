@@ -23,7 +23,6 @@ import {
 import { machineAxes, makeShape, maxZ, originPoint, paperDims, sortedByZ, workAreaRect } from '../model'
 import { outputIndex, pagePolylines, useRender } from '../render-engine'
 import { currentPage, studio, useStudio } from '../store'
-import { useCollab } from '../collab'
 import { ElementView, useElementRender } from './element-view'
 import { Guides, HANDLES, handlePoint, OriginOverlay, RULER, Rulers, SelectionFrame, sx, sy, type Handle, type Viewport } from './overlays'
 import { StrokeAnimation } from './stroke-anim'
@@ -77,7 +76,6 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
   const [hover, setHover] = React.useState<string | null>(null)
   const [liveLabel, setLiveLabel] = React.useState<string | null>(null)
   const [originLabel, setOriginLabel] = React.useState<string | null>(null)
-  const peers = useCollab((s) => s.peers)
   const gesture = React.useRef<Gesture | null>(null)
   const pointers = React.useRef(new Map<number, Pt>())
 
@@ -723,21 +721,6 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
                 <rect x={sx(v, creating.box.x)} y={sy(v, creating.box.y)} width={creating.box.w * v.zoom} height={creating.box.h * v.zoom} fill="rgb(var(--accent) / 0.08)" stroke="rgb(var(--accent))" strokeDasharray={creating.tool === 'text' ? '4 3' : undefined} />
               )
             ) : null}
-            {Object.values(peers).filter((pr) => pr.page === st.view.page && st.view.sub === 0).flatMap((pr) =>
-              pr.selection.map((id) => {
-                const b = bounds.get(id)?.box
-                if (!b) return null
-                return (
-                  <g key={`${pr.client}-${id}`} className="pointer-events-none">
-                    <rect x={sx(v, b.x) - 3} y={sy(v, b.y) - 3} width={b.w * v.zoom + 6} height={b.h * v.zoom + 6} rx={3} fill="none" stroke={pr.color} strokeWidth={1.5} strokeDasharray="5 3" />
-                    <rect x={sx(v, b.x) - 3} y={sy(v, b.y) - 22} width={pr.name.length * 12 + 56} height={18} rx={4} fill={pr.color} />
-                    <text x={sx(v, b.x) + 3} y={sy(v, b.y) - 9} fontSize={12} fill="#fff">
-                      {pr.name} 正在编辑
-                    </text>
-                  </g>
-                )
-              }),
-            )}
             {selOverlay}
             {marquee ? (
               <rect x={sx(v, marquee.x)} y={sy(v, marquee.y)} width={marquee.w * v.zoom} height={marquee.h * v.zoom} fill="rgb(var(--accent) / 0.08)" stroke="rgb(var(--accent))" strokeWidth={1} className="pointer-events-none" />

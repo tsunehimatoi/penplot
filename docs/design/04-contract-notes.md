@@ -63,7 +63,7 @@ wrong password `401 bad_password`; lockout `429 rate_limited` with `detail.retry
 ## 4. MachineStatus (`GET /machine/status`, WS `status`)
 ```json
 {"connected": true, "connecting": false, "port": "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0",
- "baud": 115200, "fake": false, "firmware": "1.1f", "grbl_state": "Idle", "state_text": "空闲",
+ "baud": 115200, "firmware": "1.1f", "grbl_state": "Idle", "state_text": "空闲",
  "wpos": [12.5, -40.0, 0.0], "mpos": [112.5, -60.0, 0.0], "wco": [100.0, -20.0, 0.0],
  "feed": 0.0, "spindle": 0.0, "buf": {"planner": 15, "rx": 128}, "ov": [100, 100, 100], "pins": "",
  "pen": "up", "origin_valid": true, "last_alarm": null, "job_id": null, "busy": false,
@@ -391,8 +391,7 @@ Check ids: serial_present, serial_open, banner, status_latency, grbl_13/20/21/22
 wifi, disk, memory, temp, fonts, clock, data_dir. Status values are `ok|warn|fail|skip`.
 `GET /machine/recovery` → `{"ok":false,"situation":"origin_invalid","reasons":["alarm","origin_invalid","job_failed"],
 "machine":{MachineStatus},"last_job":{Job},"steps":[{"id":"unlock","title":"解锁","detail":"…","action":{"method":"POST","path":"/api/v1/machine/unlock","body":{}}}]}`.
-Dev/test: `POST /machine/fake/fault {"kind":"unplug|alarm|reset|reset_in_motion|garbage|slow_acks|error_every|error_next|clear","value":…}`
-(admin, simulator only); env `PENPLOT_FAKE_FAULTS="slow_acks=0.05,garbage=0.02,alarm_after=30"`.
+设备接口只连接真实串口；无设备时保持未连接。故障注入仅由测试中的串口替身提供，不暴露 HTTP 接口。
 
 ## 18. Placement preview
 `GET /render/{rid}/pages/{i}/placement?dx_mm=&dy_mm=` → `{"space":"machine","origin":[0,0],"work_area":[0,-300,300,0],

@@ -11,8 +11,7 @@ import penplot
 
 from . import errors
 from .config import Config
-from .deps import need
-from .routers import auth, collab, files, fonts, jobs, machine, papers, projects, render, system, teletype, ws
+from .routers import files, fonts, jobs, machine, papers, projects, render, system, teletype, ws
 from .static_files import SpaStatic
 
 log = logging.getLogger('penplot.web')
@@ -21,6 +20,9 @@ API = '/api/v1'
 
 def create_app(cfg: Config = None, start_services=True) -> FastAPI:
     cfg = cfg or Config.from_env()
+    from .mcp_server import build_mcp
+    mcp_srv = build_mcp(lambda: getattr(app.state, 'ctx', None))
+    mcp_http = mcp_srv.streamable_http_app(streamable_http_path='/mcp', host=cfg.host)
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
@@ -30,15 +32,15 @@ def create_app(cfg: Config = None, start_services=True) -> FastAPI:
             app.state.ctx = ctx
             await ctx.start()
             try:
-                yield
+                async with mcp_srv.session_manager.run():
+                    yield
             finally:
                 await ctx.stop()
         else:
             yield
 
-    app = FastAPI(title='penplot web workbench API', version=penplot.__version__,
-                  description='写字机 / 笔式绘图仪工作台 API。认证：Cookie 会话（不安全方法需加 '
-                              '`X-Penplot: 1`）或 `Authorization: Bearer ppt_<id>_<secret>`。'
+    app = FastAPI(title='penplot desktop workbench API', version=penplot.__version__,
+                  description='写字机 / 笔式绘图仪桌面工作台 API。'
                               '错误体：`{"error":{"code","message","detail"}}`。',
                   lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.cfg = cfg
@@ -57,21 +59,20 @@ def create_app(cfg: Config = None, start_services=True) -> FastAPI:
             access.warning('%s %s -> %d', request.method, request.url.path, resp.status_code)
         return resp
 
-    for r in (auth.router, auth.users, fonts.router, papers.router, projects.router, render.router,
-              files.router, jobs.router, collab.router, machine.router, system.router, teletype.router, ws.router):
+    for r in (fonts.router, papers.router, projects.router, render.router,
+              files.router, jobs.router, machine.router, system.router, teletype.router, ws.router):
         app.include_router(r, prefix=API)
 
+    app.router.routes.extend(mcp_http.routes)
+
     _install_openapi(app)
-    read_dep = need('read')
 
     @app.get(API + '/openapi.json', include_in_schema=False)
-    def openapi_json(request: Request):
-        read_dep(request)
+    def openapi_json():
         return JSONResponse(app.openapi())
 
     @app.get(API + '/docs', include_in_schema=False)
-    def swagger(request: Request):
-        read_dep(request)
+    def swagger():
         return get_swagger_ui_html(openapi_url=API + '/openapi.json', title='penplot API')
 
     static = SpaStatic(cfg.static_dir)

@@ -4,7 +4,6 @@ from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
-from ..deps import A, R
 from ..errors import ApiError
 from ..schemas import (FontConvert, FontCoverage, FontDetail, FontPatch, FontSummary, GlyphPage,
                        TaskRef)
@@ -15,32 +14,32 @@ MAX_FONT = 30 * 1024 * 1024
 
 
 @router.get('', response_model=list[FontSummary])
-def list_fonts(request: Request, p: R, q: Optional[str] = None, covers: Optional[str] = None,
+def list_fonts(request: Request, q: Optional[str] = None, covers: Optional[str] = None,
                format: Optional[str] = None, source: Optional[str] = None, hidden: bool = False):
     return request.app.state.ctx.fonts.list(q=q, covers=covers, fmt=format, source=source,
                                             include_hidden=hidden)
 
 
 @router.post('/reindex', response_model=TaskRef, status_code=202)
-async def reindex(request: Request, p: A):
+async def reindex(request: Request):
     c = request.app.state.ctx
     t = c.tasks.submit_local('font_index', c.fonts.reindex)
     return TaskRef(task_id=t.id, kind=t.kind, state=t.state)
 
 
 @router.get('/{font_id}', response_model=FontDetail)
-def get_font(font_id: str, request: Request, p: R):
+def get_font(font_id: str, request: Request):
     return request.app.state.ctx.fonts.detail(font_id)
 
 
 @router.get('/{font_id}/coverage', response_model=FontCoverage)
-def coverage(font_id: str, request: Request, p: R, text: Optional[str] = None):
+def coverage(font_id: str, request: Request, text: Optional[str] = None):
     return request.app.state.ctx.fonts.coverage(font_id, text)
 
 
 @router.get('/{font_id}/glyphs/{codepoint}.svg', response_class=Response,
             responses={200: {'content': {'image/svg+xml': {}}}})
-def glyph_svg(font_id: str, codepoint: str, request: Request, p: R):
+def glyph_svg(font_id: str, codepoint: str, request: Request):
     c = request.app.state.ctx
     try:
         cs = codepoint.lower()
@@ -55,7 +54,7 @@ def glyph_svg(font_id: str, codepoint: str, request: Request, p: R):
 
 
 @router.get('/{font_id}/glyphs', response_model=GlyphPage)
-def glyphs(font_id: str, request: Request, p: R, from_: int = Query(0, alias='from', ge=0),
+def glyphs(font_id: str, request: Request, from_: int = Query(0, alias='from', ge=0),
            count: int = 200, text: Optional[str] = None):
     """`from` is an index into the font's sorted codepoint list; with `text` only those chars."""
     return request.app.state.ctx.fonts.glyph_page(font_id, from_, min(max(count, 1), 500), text)
@@ -63,7 +62,7 @@ def glyphs(font_id: str, request: Request, p: R, from_: int = Query(0, alias='fr
 
 @router.get('/{font_id}/sample.svg', response_class=Response,
             responses={200: {'content': {'image/svg+xml': {}}}})
-async def sample(font_id: str, request: Request, p: R, text: Optional[str] = None,
+async def sample(font_id: str, request: Request, text: Optional[str] = None,
                  size_mm: float = 8.0, width_mm: Optional[float] = None):
     c = request.app.state.ctx
     key, svg, args = await run_in_threadpool(c.fonts.sample_job, font_id, (text or '')[:200], size_mm, width_mm)
@@ -85,7 +84,7 @@ async def sample(font_id: str, request: Request, p: R, text: Optional[str] = Non
 
 @router.post('', response_model=FontSummary, status_code=201,
              responses={202: {'model': TaskRef}})
-async def upload_font(request: Request, p: A, file: UploadFile = File(...),
+async def upload_font(request: Request, file: UploadFile = File(...),
                       mode: str = Form('skeleton'), charset: str = Form('gb2312-1'),
                       chars: Optional[str] = Form(None), size_px: int = Form(256),
                       simplify_tol: float = Form(1.2), face_index: int = Form(0),
@@ -115,7 +114,7 @@ async def upload_font(request: Request, p: A, file: UploadFile = File(...),
 
 @router.post('/{font_id}/convert', response_class=Response,
              responses={200: {'content': {'application/octet-stream': {}}}})
-async def convert(font_id: str, body: FontConvert, request: Request, p: R):
+async def convert(font_id: str, body: FontConvert, request: Request):
     c = request.app.state.ctx
     data, fname = await run_in_threadpool(c.fonts.convert, font_id, body.to)
     from urllib.parse import quote
@@ -124,11 +123,11 @@ async def convert(font_id: str, body: FontConvert, request: Request, p: R):
 
 
 @router.patch('/{font_id}', response_model=FontSummary)
-def patch_font(font_id: str, body: FontPatch, request: Request, p: A):
+def patch_font(font_id: str, body: FontPatch, request: Request):
     return request.app.state.ctx.fonts.patch(font_id, body.display_name, body.hidden)
 
 
 @router.delete('/{font_id}', status_code=204)
-def delete_font(font_id: str, request: Request, p: A):
+def delete_font(font_id: str, request: Request):
     request.app.state.ctx.fonts.delete(font_id)
     return Response(status_code=204)

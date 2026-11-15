@@ -6,7 +6,6 @@
 import { BellRing, CirclePause, ListChecks, Play, X } from 'lucide-react'
 import * as React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuthState } from '@/api/auth'
 import { api } from '@/api/client'
 import { refreshLive, runAction } from '@/api/machine'
 import { isJobActive, useLive } from '@/api/store'
@@ -25,10 +24,7 @@ import { useChrome } from './chrome'
 
 /** Mounted once by the shell. */
 export function AttentionEffects() {
-  const auth = useAuthState()
-  const me = auth.data?.user ?? null
-  const meRef = React.useRef(me)
-  meRef.current = me
+  const meRef = React.useRef<{ username?: string } | null>(null)
 
   React.useEffect(() => {
     installAudioUnlock()

@@ -4,7 +4,6 @@ import { api, errorMessage, isApiError } from '@/api/client'
 import { qk, queryClient } from '@/api/query'
 import type { Project, ProjectDoc } from '@/api/studio'
 import { toast } from '@/lib/toast'
-import { announceSaved, clearOwnEdits, getBase, merge3, setBase } from './collab'
 import { emptyDoc } from './model'
 import { useStudio } from './store'
 
@@ -30,10 +29,9 @@ export async function saveNow(opts: { force?: boolean } = {}): Promise<boolean> 
     try {
       const sent = s.doc!
       const p = await api.put<Project>(`/projects/${id}`, { doc: { ...sent, name }, rev, name })
-      afterSave(p, version, sent)
+      afterSave(p, version)
       return true
     } catch (e) {
-      if (isApiError(e) && e.status === 409 && (await tryMerge())) return true
       if (isApiError(e) && e.status === 409) useStudio.getState().setSaveState('conflict', e.message)
       else if (isApiError(e) && e.isOffline) useStudio.getState().setSaveState('offline', e.message)
       else useStudio.getState().setSaveState('error', errorMessage(e))
@@ -45,48 +43,9 @@ export async function saveNow(opts: { force?: boolean } = {}): Promise<boolean> 
   return saving
 }
 
-function afterSave(p: Project, version: number, sent: ProjectDoc) {
+function afterSave(p: Project, version: number) {
   useStudio.getState().markSaved(p.rev, version, p.updated_at)
-  setBase(sent)
-  if (useStudio.getState().version === version) clearOwnEdits()
-  announceSaved(p.rev)
   void queryClient.invalidateQueries({ queryKey: qk.projects.list() })
-}
-
-/** Rev conflict: 3-way merge with the server copy (non-destructive), then save again. */
-async function tryMerge(): Promise<boolean> {
-  const base = getBase()
-  const s = useStudio.getState()
-  if (!base || !s.project || !s.doc) return false
-  try {
-    const theirs = await api.get<Project>(`/projects/${s.project.id}`)
-    const { doc, conflicts } = merge3(base, s.doc, theirs.doc)
-    s.setProjectMeta({ rev: theirs.rev })
-    s.edit(() => doc)
-    const v = useStudio.getState().version
-    const p = await api.put<Project>(`/projects/${s.project.id}`, { doc, rev: theirs.rev, name: s.project.name })
-    afterSave(p, v, doc)
-    if (conflicts.length) {
-      toast.warning(`${conflicts.length} 个元素被他人同时修改`, {
-        description: '已保留你的版本，对方的修改没有丢失。',
-        duration: 15_000,
-        action: {
-          label: '改用对方版本',
-          onClick: () =>
-            useStudio.getState().edit((d) => {
-              for (const c of conflicts) {
-                for (const pg of d.pages) pg.elements = pg.elements.filter((e) => e.id !== c.id)
-                const pg = d.pages.find((x) => x.id === c.page_id) ?? d.pages[0]
-                pg.elements.push(c.theirs)
-              }
-            }),
-        },
-      })
-    } else toast.info('已合并他人的修改', { key: 'merge', ephemeral: true })
-    return true
-  } catch {
-    return false
-  }
 }
 
 /** Overwrite the server copy with ours (after a rev conflict). */
