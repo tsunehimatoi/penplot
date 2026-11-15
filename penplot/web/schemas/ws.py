@@ -126,6 +126,15 @@ class WsTask(WsEnvelope):
     data: TaskData
 
 
+class TasksClearedData(Model):
+    removed_ids: list[str]
+
+
+class WsTasksCleared(WsEnvelope):
+    type: Literal['tasks_cleared'] = 'tasks_cleared'
+    data: TasksClearedData
+
+
 class SystemData(Model):
     cpu: float
     temp_c: Optional[float] = None
@@ -217,7 +226,7 @@ class WsTeletype(WsEnvelope):
 
 
 WsServerMessage = Union[WsHello, WsStatus, WsProgress, WsJob, WsAlarm, WsError,
-                        WsLog, WsTask, WsSystem, WsNotice, WsGap, WsAck, WsPong, WsAttention,
+                        WsLog, WsTask, WsTasksCleared, WsSystem, WsNotice, WsGap, WsAck, WsPong, WsAttention,
                         WsProject, WsTeletype]
 
 

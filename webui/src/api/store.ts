@@ -63,6 +63,7 @@ export interface LiveState {
   applyJobEvent: (e: WsJobEvent) => void
   setCurrentJob: (j: Job | null) => void
   applyTask: (t: WsTaskEvent) => void
+  removeTasks: (ids: string[]) => void
   applyAlarm: (a: AlarmEvent | Alarm) => void
   clearAlarm: () => void
   applyFirmwareError: (e: FirmwareError) => void
@@ -196,6 +197,7 @@ export const useLive = create<LiveState>((set, get) => ({
     const job = e.job
     if (!job) {
       if (cur?.id === e.job_id) set({ job: null, progress: null })
+      if (e.to === 'deleted' && get().finished?.job.id === e.job_id) set({ finished: null })
       return
     }
     if (isJobActive(job)) {
@@ -208,6 +210,12 @@ export const useLive = create<LiveState>((set, get) => ({
   },
 
   setCurrentJob: (j) => set({ job: j, progress: progressFromJob(j) }),
+
+  removeTasks: (ids) => {
+    const tasks = { ...get().tasks }
+    for (const id of ids) delete tasks[id]
+    set({ tasks })
+  },
 
   applyTask: (t) => {
     const tasks = { ...get().tasks }

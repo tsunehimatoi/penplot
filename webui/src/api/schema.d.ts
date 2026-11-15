@@ -593,6 +593,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tasks/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear Tasks */
+        post: operations["clear_tasks_api_v1_tasks_clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/import/image": {
         parameters: {
             query?: never;
@@ -891,6 +908,23 @@ export interface paths {
         get: operations["current_job_api_v1_jobs_current_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear Jobs */
+        post: operations["clear_jobs_api_v1_jobs_clear_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2305,6 +2339,31 @@ export interface components {
              * @description free RX bytes (Bf)
              */
             rx?: number | null;
+        };
+        /** ClearJobs */
+        ClearJobs: {
+            /** Ids */
+            ids?: string[] | null;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "queued" | "history";
+        };
+        /**
+         * ClearRecords
+         * @description Omit ids (or null) for all eligible records; [] is a no-op.
+         */
+        ClearRecords: {
+            /** Ids */
+            ids?: string[] | null;
+        };
+        /** ClearedRecords */
+        ClearedRecords: {
+            /** Removed Ids */
+            removed_ids: string[];
+            /** Skipped Ids */
+            skipped_ids: string[];
         };
         /** CommandRequest */
         CommandRequest: {
@@ -5476,6 +5535,11 @@ export interface components {
              */
             state: "queued" | "running" | "done" | "failed" | "cancelled";
         };
+        /** TasksClearedData */
+        TasksClearedData: {
+            /** Removed Ids */
+            removed_ids: string[];
+        };
         /** TeletypeAction */
         TeletypeAction: {
             /**
@@ -6530,6 +6594,23 @@ export interface components {
             type: "task";
             data: components["schemas"]["TaskData"];
         };
+        /** WsTasksCleared */
+        WsTasksCleared: {
+            /**
+             * Seq
+             * @description per-connection sequence number
+             */
+            seq: number;
+            /** Ts */
+            ts: number;
+            /**
+             * Type
+             * @default tasks_cleared
+             * @constant
+             */
+            type: "tasks_cleared";
+            data: components["schemas"]["TasksClearedData"];
+        };
         /** WsTeletype */
         WsTeletype: {
             /**
@@ -6569,7 +6650,7 @@ export interface components {
          */
         WsTypes: {
             /** Server */
-            server: components["schemas"]["WsHello"] | components["schemas"]["WsStatus"] | components["schemas"]["WsProgress"] | components["schemas"]["WsJob"] | components["schemas"]["WsAlarm"] | components["schemas"]["WsError"] | components["schemas"]["WsLog"] | components["schemas"]["WsTask"] | components["schemas"]["WsSystem"] | components["schemas"]["WsNotice"] | components["schemas"]["WsGap"] | components["schemas"]["WsAck"] | components["schemas"]["WsPong"] | components["schemas"]["WsAttention"] | components["schemas"]["WsProject"] | components["schemas"]["WsTeletype"];
+            server: components["schemas"]["WsHello"] | components["schemas"]["WsStatus"] | components["schemas"]["WsProgress"] | components["schemas"]["WsJob"] | components["schemas"]["WsAlarm"] | components["schemas"]["WsError"] | components["schemas"]["WsLog"] | components["schemas"]["WsTask"] | components["schemas"]["WsTasksCleared"] | components["schemas"]["WsSystem"] | components["schemas"]["WsNotice"] | components["schemas"]["WsGap"] | components["schemas"]["WsAck"] | components["schemas"]["WsPong"] | components["schemas"]["WsAttention"] | components["schemas"]["WsProject"] | components["schemas"]["WsTeletype"];
             /** Client */
             client: components["schemas"]["WsSubscribe"] | components["schemas"]["WsCmd"] | components["schemas"]["WsPing"] | components["schemas"]["WsTtKeys"];
         };
@@ -6618,6 +6699,9 @@ export type BodyImportTextApiV1ImportTextPost = components['schemas']['Body_impo
 export type BodyUploadFileApiV1FilesPost = components['schemas']['Body_upload_file_api_v1_files_post'];
 export type BodyUploadFontApiV1FontsPost = components['schemas']['Body_upload_font_api_v1_fonts_post'];
 export type BufferState = components['schemas']['BufferState'];
+export type ClearJobs = components['schemas']['ClearJobs'];
+export type ClearRecords = components['schemas']['ClearRecords'];
+export type ClearedRecords = components['schemas']['ClearedRecords'];
 export type CommandRequest = components['schemas']['CommandRequest'];
 export type CommandResult = components['schemas']['CommandResult'];
 export type ConnectRequest = components['schemas']['ConnectRequest'];
@@ -6736,6 +6820,7 @@ export type TableImportResult = components['schemas']['TableImportResult'];
 export type Task = components['schemas']['Task'];
 export type TaskData = components['schemas']['TaskData'];
 export type TaskRef = components['schemas']['TaskRef'];
+export type TasksClearedData = components['schemas']['TasksClearedData'];
 export type TeletypeAction = components['schemas']['TeletypeAction'];
 export type TeletypeEvent = components['schemas']['TeletypeEvent'];
 export type TeletypeFont = components['schemas']['TeletypeFont'];
@@ -6775,6 +6860,7 @@ export type WsStatus = components['schemas']['WsStatus'];
 export type WsSubscribe = components['schemas']['WsSubscribe'];
 export type WsSystem = components['schemas']['WsSystem'];
 export type WsTask = components['schemas']['WsTask'];
+export type WsTasksCleared = components['schemas']['WsTasksCleared'];
 export type WsTeletype = components['schemas']['WsTeletype'];
 export type WsTtKeys = components['schemas']['WsTtKeys'];
 export type WsTypes = components['schemas']['WsTypes'];
@@ -8638,6 +8724,48 @@ export interface operations {
             };
         };
     };
+    clear_tasks_api_v1_tasks_clear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClearRecords"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearedRecords"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     import_image_api_v1_import_image_post: {
         parameters: {
             query?: never;
@@ -9520,6 +9648,48 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    clear_jobs_api_v1_jobs_clear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClearJobs"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearedRecords"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
             };
             /** @description Error */
             default: {

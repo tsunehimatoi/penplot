@@ -2741,6 +2741,58 @@
     }
    }
   },
+  "/api/v1/tasks/clear": {
+   "post": {
+    "tags": [
+     "render",
+     "tasks"
+    ],
+    "summary": "Clear Tasks",
+    "operationId": "clear_tasks_api_v1_tasks_clear_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ClearRecords"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ClearedRecords"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorBody"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorBody"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/import/image": {
    "post": {
     "tags": [
@@ -3962,6 +4014,57 @@
      },
      "204": {
       "description": "no active job"
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorBody"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/jobs/clear": {
+   "post": {
+    "tags": [
+     "jobs"
+    ],
+    "summary": "Clear Jobs",
+    "operationId": "clear_jobs_api_v1_jobs_clear_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ClearJobs"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ClearedRecords"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorBody"
+        }
+       }
+      }
      },
      "default": {
       "description": "Error",
@@ -8096,6 +8199,84 @@
     },
     "type": "object",
     "title": "BufferState"
+   },
+   "ClearJobs": {
+    "properties": {
+     "ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array",
+        "maxItems": 10000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ids"
+     },
+     "scope": {
+      "type": "string",
+      "enum": [
+       "queued",
+       "history"
+      ],
+      "title": "Scope"
+     }
+    },
+    "type": "object",
+    "required": [
+     "scope"
+    ],
+    "title": "ClearJobs"
+   },
+   "ClearRecords": {
+    "properties": {
+     "ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array",
+        "maxItems": 10000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ids"
+     }
+    },
+    "type": "object",
+    "title": "ClearRecords",
+    "description": "Omit ids (or null) for all eligible records; [] is a no-op."
+   },
+   "ClearedRecords": {
+    "properties": {
+     "removed_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Removed Ids"
+     },
+     "skipped_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Skipped Ids"
+     }
+    },
+    "type": "object",
+    "required": [
+     "removed_ids",
+     "skipped_ids"
+    ],
+    "title": "ClearedRecords"
    },
    "CommandRequest": {
     "properties": {
@@ -14604,6 +14785,22 @@
     "title": "TaskRef",
     "description": "Returned with HTTP 202 when work continues in the background."
    },
+   "TasksClearedData": {
+    "properties": {
+     "removed_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Removed Ids"
+     }
+    },
+    "type": "object",
+    "required": [
+     "removed_ids"
+    ],
+    "title": "TasksClearedData"
+   },
    "TeletypeAction": {
     "properties": {
      "action": {
@@ -16637,6 +16834,35 @@
     ],
     "title": "WsTask"
    },
+   "WsTasksCleared": {
+    "properties": {
+     "seq": {
+      "type": "integer",
+      "title": "Seq",
+      "description": "per-connection sequence number"
+     },
+     "ts": {
+      "type": "number",
+      "title": "Ts"
+     },
+     "type": {
+      "type": "string",
+      "const": "tasks_cleared",
+      "title": "Type",
+      "default": "tasks_cleared"
+     },
+     "data": {
+      "$ref": "#/components/schemas/TasksClearedData"
+     }
+    },
+    "type": "object",
+    "required": [
+     "seq",
+     "ts",
+     "data"
+    ],
+    "title": "WsTasksCleared"
+   },
    "WsTeletype": {
     "properties": {
      "seq": {
@@ -16724,6 +16950,9 @@
        },
        {
         "$ref": "#/components/schemas/WsTask"
+       },
+       {
+        "$ref": "#/components/schemas/WsTasksCleared"
        },
        {
         "$ref": "#/components/schemas/WsSystem"

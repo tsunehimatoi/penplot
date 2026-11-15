@@ -32,6 +32,16 @@ class Ok(Model):
     ok: bool = True
 
 
+class ClearRecords(Model):
+    """Omit ids (or null) for all eligible records; [] is a no-op."""
+    ids: Optional[list[str]] = Field(None, max_length=10000)
+
+
+class ClearedRecords(Model):
+    removed_ids: list[str]
+    skipped_ids: list[str]
+
+
 # ---------------------------------------------------------------- tasks
 TaskState = Literal['queued', 'running', 'done', 'failed', 'cancelled']
 

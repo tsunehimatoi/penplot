@@ -67,6 +67,10 @@ export function LiveEffects() {
       ws.on('task', (t) => {
         if (t.state === 'done' || t.state === 'failed') void qc.invalidateQueries({ queryKey: qk.tasks.detail(t.task_id) })
       }),
+      ws.on('tasks_cleared', ({ removed_ids }) => {
+        for (const id of removed_ids) qc.removeQueries({ queryKey: qk.tasks.detail(id), exact: true })
+        void qc.invalidateQueries({ queryKey: qk.tasks.all })
+      }),
     ]
     return () => {
       offs.forEach((o) => o())

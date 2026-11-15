@@ -2,7 +2,7 @@
  * Jobs, batches and job logs (03 §4.6, 04 §5). Pages-agent addition.
  */
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { api } from './client'
+import { api, isApiError } from './client'
 import { startJobGuarded } from './job-guard'
 import { queryClient, qk } from './query'
 import type { Job, JobStatus } from './types'
@@ -70,6 +70,12 @@ export function useJobLog(id: string | null | undefined, enabled = true) {
 const invalidate = () => queryClient.invalidateQueries({ queryKey: qk.jobs.all })
 
 export function useJobActions() {
+  const clear = useMutation({
+    mutationFn: (body: { ids?: string[]; scope: 'queued' | 'history' }) =>
+      api.post<{ removed_ids: string[]; skipped_ids: string[] }>('/jobs/clear', body),
+    meta: { errorTitle: '清理任务失败' },
+    onSettled: invalidate,
+  })
   const start = useMutation({
     // pen_unknown / out_of_work_area are handled interactively (./job-guard); null = cancelled
     mutationFn: ({ id, set_zero }: { id: string; set_zero?: boolean }) => startJobGuarded(id, set_zero == null ? {} : { set_zero }),
@@ -77,7 +83,14 @@ export function useJobActions() {
     onSettled: invalidate,
   })
   const remove = useMutation({
-    mutationFn: (id: string) => api.delete(`/jobs/${id}`),
+    mutationFn: async (id: string) => {
+      try {
+        return await api.delete(`/jobs/${id}`)
+      } catch (error) {
+        // A bulk clear or another window may delete it during the undo delay.
+        if (!isApiError(error) || error.status !== 404) throw error
+      }
+    },
     meta: { errorTitle: '删除任务失败' },
     onSettled: invalidate,
   })
@@ -105,5 +118,5 @@ export function useJobActions() {
     meta: { errorTitle: '重命名失败' },
     onSettled: invalidate,
   })
-  return { start, remove, retry, frame, startNext, removeBatch, rename }
+  return { start, remove, retry, frame, startNext, removeBatch, rename, clear }
 }

@@ -68,6 +68,7 @@ class Task:
         self.cancel_flag = False
         self.riders = 1            # requests waiting on this task (shared identical renders)
         self.key = None
+        self.cleared_at = None
 
     def to_dict(self, with_result=True):
         return {'id': self.id, 'kind': self.kind, 'state': self.state, 'progress': round(self.progress, 3),
@@ -239,11 +240,29 @@ class TaskRunner:
         return t
 
     def list(self, state=None):
-        return [t.to_dict(with_result=False) for t in reversed(self.tasks.values())
-                if state is None or t.state == state][:100]
+        with self._lock:
+            return [t.to_dict(with_result=False) for t in reversed(self.tasks.values())
+                    if t.cleared_at is None and (state is None or t.state == state)][:100]
+
+    def clear(self, ids=None):
+        """Hide terminal history, retaining results for clients awaiting completion."""
+        removed, skipped = [], []
+        with self._lock:
+            candidates = list(self.tasks) if ids is None else list(dict.fromkeys(ids))
+            for task_id in candidates:
+                t = self.tasks.get(task_id)
+                if t is None or t.cleared_at is not None or t.state not in ('done', 'failed', 'cancelled'):
+                    skipped.append(task_id)
+                    continue
+                t.cleared_at = time.time()
+                removed.append(task_id)
+            if removed:
+                self.ctx.bus.publish_threadsafe('tasks_cleared', {'removed_ids': removed}, topic='task')
+        return {'removed_ids': removed, 'skipped_ids': skipped}
 
     def active_list(self):
-        return [t.to_dict(with_result=False) for t in self.tasks.values() if t.state in ('queued', 'running')]
+        with self._lock:
+            return [t.to_dict(with_result=False) for t in self.tasks.values() if t.state in ('queued', 'running')]
 
     def cancel(self, task_id):
         t = self.get(task_id)
@@ -286,11 +305,16 @@ class TaskRunner:
 
     # ------------------------------------------------------------ internals
     def _gc(self):
-        while len(self.tasks) > 200:
-            k, old = next(iter(self.tasks.items()))
-            if old.state in ('queued', 'running'):
-                break
-            self.tasks.pop(k)
+        now = time.time()
+        for k, old in list(self.tasks.items()):
+            # waitForTask polls for up to ten minutes. Clearing history must not
+            # invalidate that result, even when >200 subsequent tasks arrive.
+            if old.state in ('queued', 'running') or not old.finished_at:
+                continue
+            if now - max(old.finished_at, old.cleared_at or 0) < REUSE_DONE_S:
+                continue
+            if old.cleared_at is not None or len(self.tasks) > 200:
+                self.tasks.pop(k)
 
     def _cancel(self, t):
         if t.state == 'queued':
@@ -478,15 +502,16 @@ class TaskRunner:
             except Exception as e:
                 log.exception('on_done %s', t.id)
                 state, error = 'failed', {'code': 'task_failed', 'message': str(e), 'detail': None}
-        t.state = state
-        t.result = result
-        t.error = error
-        t.progress = 1.0 if state == 'done' else t.progress
-        t.finished_at = time.time()
-        if state == 'failed':
-            log.warning('task %s (%s) failed: %s', t.id, t.kind, error)
-        t.done_ev.set()
-        self._publish(t)
+        with self._lock:
+            t.state = state
+            t.result = result
+            t.error = error
+            t.progress = 1.0 if state == 'done' else t.progress
+            t.finished_at = time.time()
+            if state == 'failed':
+                log.warning('task %s (%s) failed: %s', t.id, t.kind, error)
+            t.done_ev.set()
+            self._publish(t)
 
     def _publish(self, t):
         if getattr(t, 'quiet', False):

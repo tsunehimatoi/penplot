@@ -58,6 +58,7 @@ export interface WsServerEvents {
   error: FirmwareError
   log: S['LogData']
   task: WsTaskEvent
+  tasks_cleared: { removed_ids: string[] }
   system: SystemMetricsEvent
   notice: Notice
   gap: S['WsGap']

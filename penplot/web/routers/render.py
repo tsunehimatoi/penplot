@@ -5,6 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..schemas import FileInfo, PlacementInfo, RenderExport, RenderResult, RenderSave, RenderTextRequest, Task, TaskRef
+from ..schemas import ClearRecords, ClearedRecords
 from ._util import attachment, wait_or_202
 
 router = APIRouter(tags=['render'])
@@ -95,6 +96,11 @@ def list_tasks(request: Request, state: Optional[str] = None):
 @router.get('/tasks/{task_id}', response_model=Task, tags=['tasks'])
 def get_task(task_id: str, request: Request):
     return request.app.state.ctx.tasks.get(task_id).to_dict()
+
+
+@router.post('/tasks/clear', response_model=ClearedRecords, tags=['tasks'])
+def clear_tasks(body: ClearRecords, request: Request):
+    return request.app.state.ctx.tasks.clear(body.ids)
 
 
 @router.delete('/tasks/{task_id}', response_model=Task, tags=['tasks'])

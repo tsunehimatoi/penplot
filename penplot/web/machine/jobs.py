@@ -409,8 +409,12 @@ class JobService:
         return self.get(job_id)
 
     def delete(self, job_id):
+        with self._lock:
+            self._delete(job_id)
+
+    def _delete(self, job_id):
         r = self._row(job_id)
-        if r['status'] in ACTIVE:
+        if r['status'] not in ('queued', *TERMINAL) or (self.active is not None and self.active.id == job_id):
             raise ApiError(409, 'job_active', '任务进行中，不能删除')
         self.db.execute('DELETE FROM jobs WHERE id=?', (job_id,))
         self.db.execute('DELETE FROM job_events WHERE job_id=?', (job_id,))
@@ -420,6 +424,31 @@ class JobService:
             except OSError:
                 pass
         self._publish(job_id, r['status'], 'deleted')
+
+    def clear(self, ids, scope):
+        """Remove queue/history entries only; never stop a machine job or delete its source render."""
+        removed, skipped = [], []
+        if scope not in ('queued', 'history'):
+            raise ApiError(400, 'bad_input', '清理范围必须是 queued 或 history')
+        allowed = ('queued',) if scope == 'queued' else TERMINAL
+        with self._lock:
+            candidates = ([r['id'] for r in self.db.all(
+                'SELECT id FROM jobs WHERE status IN (%s) ORDER BY created_at DESC' % ','.join('?' * len(allowed)),
+                allowed)]
+                          if ids is None else list(dict.fromkeys(ids)))
+            for job_id in candidates:
+                try:
+                    if self._row(job_id)['status'] not in allowed:
+                        skipped.append(job_id)
+                        continue
+                    self._delete(job_id)
+                except ApiError as e:
+                    if e.status not in (404, 409):
+                        raise
+                    skipped.append(job_id)
+                else:
+                    removed.append(job_id)
+        return {'removed_ids': removed, 'skipped_ids': skipped}
 
     def gcode_path(self, job_id):
         r = self._row(job_id)
@@ -506,6 +535,11 @@ class JobService:
         with self._lock:
             if self.active is not None:
                 raise ApiError(409, 'job_active', '已有任务在进行', {'job_id': self.active.id})
+            # Analysis yields to other requests; a queued job may have been
+            # cleared in the meantime. Revalidate before touching the machine.
+            r = self._row(job_id)
+            if r['status'] != 'queued':
+                raise ApiError(409, 'bad_state', '任务不再排队，不能开始')
             a = ActiveJob(r, lines, an)
             a.zero_z = zero_z
             a.stop_on_error = ov.get('stop_on_error', True) is not False

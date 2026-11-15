@@ -46,7 +46,7 @@ export default defineConfig({
       name: 'desktop-chromium',
       dependencies: ['setup'],
       testIgnore: /.*\.setup\.ts/,
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, storageState: STORAGE_STATE },
+      use: { ...devices['Desktop Chrome'], ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}), viewport: { width: 1440, height: 900 }, storageState: STORAGE_STATE },
     },
     {
       name: 'mobile-webkit',

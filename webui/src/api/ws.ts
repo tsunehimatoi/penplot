@@ -269,6 +269,9 @@ class PenplotSocket {
       case 'task':
         live.applyTask(p)
         break
+      case 'tasks_cleared':
+        live.removeTasks((payload as WsServerEvents['tasks_cleared']).removed_ids)
+        break
       case 'system':
         live.applySystem(p)
         break

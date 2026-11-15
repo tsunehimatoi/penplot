@@ -15,6 +15,7 @@ import { cn } from '@/lib/cn'
 import { formatDuration } from '@/lib/format'
 import { toast } from '@/lib/toast'
 import { JobStatusBadge, formatDateTime, jobDuration, jobOutcome, sourceInfo } from './shared'
+import { useJobSelection } from './bulk-actions'
 
 type Filter = 'all' | 'done' | 'failed' | 'aborted'
 
@@ -88,7 +89,7 @@ export function JobMenu({ job, onDeleted }: { job: Job; onDeleted?: () => void }
 
 export function HistorySection({ compact }: { compact?: boolean }) {
   const navigate = useNavigate()
-  const q = useJobs()
+  const q = useJobs({ status: TERMINAL_JOB_STATUSES.join(',') })
   const [filter, setFilter] = React.useState<Filter>('all')
   const [search, setSearch] = React.useState('')
   const pending = usePendingDeletes((s) => s.ids)
@@ -100,6 +101,7 @@ export function HistorySection({ compact }: { compact?: boolean }) {
       .filter((j) => !s || j.name.toLowerCase().includes(s) || j.id.includes(s))
       .sort((a, b) => (b.finished_at ?? b.created_at) - (a.finished_at ?? a.created_at))
   }, [q.data, filter, search, pending])
+  const selection = useJobSelection(rows, 'history')
 
   return (
     <section className="flex flex-col gap-3" aria-labelledby="jobs-history">
@@ -121,6 +123,7 @@ export function HistorySection({ compact }: { compact?: boolean }) {
         />
         <SearchField value={search} onValueChange={setSearch} placeholder="搜索任务" className={cn(compact ? 'w-full' : 'w-52')} />
       </div>
+      {!q.isLoading && !q.error && selection.toolbar}
       {q.isLoading ? (
         <SkeletonList rows={5} />
       ) : q.error ? (
@@ -146,6 +149,7 @@ export function HistorySection({ compact }: { compact?: boolean }) {
               onKeyDown={(e) => e.key === 'Enter' && navigate(`/jobs/${j.id}`)}
               className="focus-ring flex min-h-14 items-center gap-3 px-4 py-2 active:bg-tertiary-fill [&+&]:hairline-t"
             >
+              {selection.checkbox(j)}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-body text-label">{j.name}</div>
                 <div className="truncate text-footnote text-secondary-label tabular-nums">
@@ -162,6 +166,7 @@ export function HistorySection({ compact }: { compact?: boolean }) {
           <table className="w-full table-fixed text-left">
             <thead className="hairline-b text-footnote text-secondary-label">
               <tr>
+                <th className="w-10 px-3 py-2"><span className="sr-only">选择</span></th>
                 <th className="w-[34%] px-4 py-2 font-medium">名称</th>
                 <th className="w-[16%] px-2 py-2 font-medium">来源</th>
                 <th className="w-[15%] px-2 py-2 font-medium">开始</th>
@@ -180,6 +185,7 @@ export function HistorySection({ compact }: { compact?: boolean }) {
                     onClick={() => navigate(`/jobs/${j.id}`)}
                     className="cursor-default text-body hover:bg-quaternary-fill [&+&]:hairline-t"
                   >
+                    <td className="px-3 py-2">{selection.checkbox(j)}</td>
                     <td className="px-4 py-2">
                       <button type="button" className="focus-ring block w-full truncate rounded-sm text-left text-label" onClick={() => navigate(`/jobs/${j.id}`)}>
                         {j.name}

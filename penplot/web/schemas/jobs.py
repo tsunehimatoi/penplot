@@ -4,7 +4,11 @@ from typing import Any, Literal, Optional
 
 from pydantic import Field
 
-from .common import Model, OriginSpec, PrintOverrides
+from .common import ClearRecords, Model, OriginSpec, PrintOverrides
+
+
+class ClearJobs(ClearRecords):
+    scope: Literal['queued', 'history']
 
 JobStatus = Literal['queued', 'preparing', 'running', 'paused', 'stopping',
                     'done', 'failed', 'aborted']

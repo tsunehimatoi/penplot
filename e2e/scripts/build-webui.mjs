@@ -18,7 +18,7 @@ if (process.env.E2E_SKIP_BUILD === '1' && fs.existsSync(path.join(out, 'index.ht
   process.exit(0)
 }
 console.log('[e2e] building webui ->', out)
-execFileSync(path.join(webui, 'node_modules/.bin/vite'), ['build', '--outDir', out, '--emptyOutDir', '--logLevel', 'warn'], {
+execFileSync(process.execPath, [path.join(webui, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', out, '--emptyOutDir', '--logLevel', 'warn'], {
   cwd: webui,
   stdio: 'inherit',
 })

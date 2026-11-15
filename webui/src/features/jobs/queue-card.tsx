@@ -12,6 +12,8 @@ import {
 import { useMachineGate } from '@/features/machine/gate'
 import { confirm } from '@/lib/confirm'
 import { formatDuration } from '@/lib/format'
+import { useJobSelection } from './bulk-actions'
+import type { ReactNode } from 'react'
 
 export async function confirmStart(job: Job, origin_valid: boolean | undefined) {
   return confirm({
@@ -38,7 +40,7 @@ function groups(jobs: Job[]) {
     .sort((a, b) => a.jobs[0].created_at - b.jobs[0].created_at)
 }
 
-function QueueRow({ job, canStart, inBatch }: { job: Job; canStart: boolean; inBatch: boolean }) {
+function QueueRow({ job, canStart, inBatch, selection }: { job: Job; canStart: boolean; inBatch: boolean; selection: ReactNode }) {
   const navigate = useNavigate()
   const { start, remove, frame } = useJobActions()
   const originValid = useLive((s) => s.machine?.origin_valid)
@@ -46,6 +48,7 @@ function QueueRow({ job, canStart, inBatch }: { job: Job; canStart: boolean; inB
   const admin = useRole() === 'admin'
   return (
     <div className="flex min-h-[var(--row-h)] items-center gap-3 px-4 py-1.5">
+      {selection}
       <button type="button" className="focus-ring min-w-0 flex-1 rounded-sm text-left" onClick={() => navigate(`/jobs/${job.id}`)}>
         <span className="block truncate text-body text-label">{inBatch && job.seq ? `第 ${job.seq} 页 · ` : ''}{job.name}</span>
         <span className="flex items-center gap-1.5 truncate text-footnote text-secondary-label tabular-nums">
@@ -106,6 +109,7 @@ export function QueueCard({ className }: { className?: string }) {
   const blocked = useMachineGate().leaseBlocked
   const canStart = !busy && !!machine?.connected && !blocked
   const data = q.data ?? []
+  const selection = useJobSelection(data, 'queued')
 
   return (
     <Card className={className}>
@@ -113,6 +117,7 @@ export function QueueCard({ className }: { className?: string }) {
         title={`队列${data.length ? `（${data.length}）` : ''}`}
         subtitle={busy ? '当前任务结束后可开始下一个' : !machine?.connected ? '机器未连接' : '任务不会自动开始，换纸后手动开始'}
       />
+      {!q.isLoading && !q.error && <div className="px-4 pb-3">{selection.toolbar}</div>}
       {q.isLoading ? (
         <SkeletonList rows={3} className="mx-4 mb-4 shadow-none" />
       ) : q.error ? (
@@ -143,7 +148,7 @@ export function QueueCard({ className }: { className?: string }) {
                 </div>
               ) : null}
               {g.jobs.map((j) => (
-                <QueueRow key={j.id} job={j} canStart={canStart} inBatch={!!g.batch} />
+                <QueueRow key={j.id} job={j} canStart={canStart && !selection.clearing} inBatch={!!g.batch} selection={selection.checkbox(j)} />
               ))}
             </div>
           ))}

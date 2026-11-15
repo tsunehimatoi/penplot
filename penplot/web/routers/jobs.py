@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from ..schemas import (BatchInfo, Job, JobCreate, JobFrame, JobPatch, JobPause, JobRetry, JobStart,
                        LogSlice)
 from ._util import attachment
+from ..schemas import ClearJobs, ClearedRecords
 
 router = APIRouter(tags=['jobs'])
 
@@ -28,6 +29,11 @@ def current_job(request: Request):
     if j is None:
         return Response(status_code=204)
     return j
+
+
+@router.post('/jobs/clear', response_model=ClearedRecords)
+def clear_jobs(body: ClearJobs, request: Request):
+    return request.app.state.ctx.jobs.clear(body.ids, body.scope)
 
 
 @router.get('/jobs/{job_id}', response_model=Job)
