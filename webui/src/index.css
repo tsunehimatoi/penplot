@@ -674,3 +674,50 @@
   font-size: var(--fs-caption);
   line-height: 16px;
 }
+
+/* ---------- Canvas ruled direct-writing layer (.studio-ruled-editor) ---------- */
+.studio-ruled-editor p,
+.studio-ruled-editor div {
+  margin: 0;
+  padding: 0;
+  line-height: var(--ruled-lh);
+  min-height: var(--ruled-lh);
+}
+.studio-ruled-editor p {
+  text-indent: var(--ruled-indent, 0px);
+}
+.studio-ruled-editor p[style*='text-align: center'],
+.studio-ruled-editor p[style*='text-align:center'],
+.studio-ruled-editor p[style*='text-align: right'],
+.studio-ruled-editor p[style*='text-align:right'] {
+  text-indent: 0;
+}
+.studio-ruled-editor h1,
+.studio-ruled-editor h2,
+.studio-ruled-editor h3,
+.studio-ruled-editor h4,
+.studio-ruled-editor h5,
+.studio-ruled-editor h6 {
+  margin: 0;
+  padding: 0;
+  text-indent: 0;
+  line-height: var(--ruled-lh);
+  min-height: var(--ruled-lh);
+}
+.studio-ruled-editor h1 {
+  line-height: var(--ruled-h1-lh, var(--ruled-lh));
+  min-height: var(--ruled-h1-lh, var(--ruled-lh));
+}
+.studio-ruled-editor ul,
+.studio-ruled-editor ol,
+.studio-ruled-editor li,
+.studio-ruled-editor blockquote,
+.studio-ruled-editor pre,
+.studio-ruled-editor hr {
+  margin: 0;
+  line-height: var(--ruled-lh);
+  min-height: var(--ruled-lh);
+}
+.studio-ruled-editor ::selection {
+  background: rgb(var(--accent) / 0.22);
+}

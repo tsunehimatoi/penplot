@@ -107,11 +107,13 @@ function MoveHandle({
   el,
   left,
   top,
+  width,
   onStartMove,
 }: {
   el: Element
   left: number
   top: number
+  width: number
   onStartMove: (el: Element, e: React.PointerEvent) => void
 }) {
   const label = `移动${el.type === 'flow_text' ? '文本框' : '自由文本框'}`
@@ -125,8 +127,8 @@ function MoveHandle({
       onClick={(e) => e.stopPropagation()}
       className="pointer-events-auto absolute z-30 flex h-5 items-center gap-0.5 rounded-t border border-b-0 border-separator/70 bg-bg-elevated/92 px-1.5 text-[11px] font-medium text-secondary-label shadow-sm backdrop-blur-sm transition-colors hover:border-accent hover:text-label active:cursor-grabbing"
       style={{
-        left,
-        top: Math.max(2, top - 20),
+        left: left + Math.max(0, width / 2 - 26),
+        top: Math.max(2, top - 22),
         cursor: 'grab',
       }}
     >
@@ -167,7 +169,15 @@ function FlowDirectEditor({
   const width = activeBox.w_mm * v.zoom
   const height = activeBox.h_mm * v.zoom
   const lineH = (activeBox.h_mm / Math.max(1, lineNum)) * v.zoom
-  const fontSize = Math.max(6, lineH * (el.props.text_size || 0.72))
+  const fontSize = Math.max(6, lineH * (el.props.text_size || 1) * 0.72)
+  const spe1 = el.props.paragraph?.spe_type === 1 ? (el.props.paragraph.spe_value ?? 0) * v.zoom : 0
+  const headingScale = el.props.rich_style?.heading_scale ?? 1.35
+  const h1Lines = headingScale >= 1.3 ? 2 : 1
+  const ruledVars: Record<string, string> = {
+    '--ruled-lh': `${lineH}px`,
+    '--ruled-indent': `${spe1}px`,
+    '--ruled-h1-lh': `${lineH * h1Lines}px`,
+  }
   const textAlign = ALIGN_CSS[el.props.align] ?? 'left'
   const padLeft = (el.props.paragraph?.left ?? 0) * v.zoom
   const padRight = (el.props.paragraph?.right ?? 0) * v.zoom
@@ -215,7 +225,7 @@ function FlowDirectEditor({
 
   return (
     <>
-      <MoveHandle el={el} left={left} top={top} onStartMove={onStartMove} />
+      <MoveHandle el={el} left={left} top={top} width={editorW} onStartMove={onStartMove} />
       <div
         data-inline-editor={el.id}
         data-page-sub={sub}
@@ -290,20 +300,25 @@ function FlowDirectEditor({
             paddingLeft: padLeft,
             paddingRight: padRight,
           }}
-          editorStyle={{
-            fontSize,
-            lineHeight: `${lineH}px`,
-            textAlign,
-            ...(mode === 'visual'
-              ? {
-                  color: 'transparent',
-                  background: 'transparent',
-                  caretColor: 'rgb(var(--accent))',
-                }
-              : {
-                  color: 'rgb(var(--ink))',
-                }),
-          }}
+          editorClassName="studio-ruled-editor"
+          editorStyle={
+            {
+              fontSize,
+              lineHeight: `${lineH}px`,
+              letterSpacing: `${(el.props.char_space ?? 0) * v.zoom}px`,
+              textAlign,
+              ...ruledVars,
+              ...(mode === 'visual'
+                ? {
+                    color: 'transparent',
+                    background: 'transparent',
+                    caretColor: 'rgb(var(--accent))',
+                  }
+                : {
+                    color: 'rgb(var(--ink))',
+                  }),
+            } as React.CSSProperties
+          }
           onCommit={(nextText, nextFmt, coalesce) =>
             commitProps({ text: nextText, format: nextFmt }, coalesce ? 'text' : undefined)
           }
@@ -324,8 +339,8 @@ function TextDirectEditor({
   focused: boolean
   onStartMove: (el: Element, e: React.PointerEvent) => void
 }) {
-  const sc = el.transform.scale || 1
-  const fontSize = Math.max(8, el.props.size_mm * v.zoom * sc)
+  const lineHeight = el.props.size_mm * el.props.line_height * v.zoom
+  const fontSize = Math.max(6, el.props.size_mm * v.zoom * 0.78)
   const align = ALIGN_CSS[el.props.align] ?? 'left'
   const left = sx(v, el.transform.x)
   const top = sy(v, el.transform.y)
@@ -334,7 +349,7 @@ function TextDirectEditor({
 
   return (
     <>
-      <MoveHandle el={el} left={left} top={top} onStartMove={onStartMove} />
+      <MoveHandle el={el} left={left} top={top} width={width} onStartMove={onStartMove} />
       <div
         data-inline-editor={el.id}
         className={cn('pointer-events-auto absolute', focused ? 'z-20' : 'z-10')}
@@ -356,6 +371,7 @@ function TextDirectEditor({
           role="textbox"
           aria-multiline="true"
           aria-label="文本框内容"
+          spellCheck={false}
           value={el.props.text}
           onFocus={() => {
             const st = useStudio.getState()
@@ -382,7 +398,8 @@ function TextDirectEditor({
           )}
           style={{
             fontSize,
-            lineHeight: el.props.line_height,
+            lineHeight: `${lineHeight}px`,
+            padding: 0,
             textAlign: align,
             color: 'transparent',
             background: 'transparent',

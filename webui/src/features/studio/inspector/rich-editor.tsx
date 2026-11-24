@@ -1252,6 +1252,7 @@ export function WysiwygSurface({
             aria-label="文本框内容"
             contentEditable
             suppressContentEditableWarning
+            spellCheck={false}
             data-empty={isEmptyVisual ? 'true' : undefined}
             data-placeholder="像 Word 一样直接输入或粘贴 Word / Markdown / 网页内容，支持选中行居中、插空行、表格、公式与图表…"
             style={editorStyle}

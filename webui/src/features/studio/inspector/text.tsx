@@ -153,18 +153,21 @@ export function TextContent({ el, autoFocus }: { el: TextElement | FlowTextEleme
                 size="sm"
                 variant="gray"
                 icon={<FileUp />}
+                className="min-w-0 flex-1"
+                title="导入 MD / Word / HTML / TXT"
                 onClick={() => fileRef.current?.click()}
               >
-                导入 MD / Word / HTML
+                <span className="truncate">导入文档</span>
               </Button>
               <Button
                 type="button"
                 size="sm"
                 variant="gray"
                 icon={<Maximize2 />}
+                className="min-w-0 flex-1"
                 onClick={() => setExpanded(true)}
               >
-                打开大窗编辑器
+                <span className="truncate">大窗编辑</span>
               </Button>
             </div>
           </>
