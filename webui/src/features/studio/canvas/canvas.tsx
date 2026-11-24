@@ -20,7 +20,7 @@ import {
   aabb, boxTargets, contains, corners, frameBox, intersects, localBox, paperTargets, rot, scaleOf, snapBox, toFrame,
   travelD, union, type Box, type Pt, type SnapLine,
 } from '../geometry'
-import { elementOnPage, machineAxes, makeShape, maxZ, originPoint, paperDims, sortedByZ, workAreaRect } from '../model'
+import { boxLineNum, elementOnPage, machineAxes, makeShape, maxZ, originPoint, paperDims, sortedByZ, workAreaRect } from '../model'
 import { outputIndex, pagePolylines, useRender } from '../render-engine'
 import { usePagination } from '../pagination'
 import { currentPage, studio, useStudio } from '../store'
@@ -295,7 +295,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
           studio.get().checkpoint()
         }
         const boxes = els.filter((x) => !x.hidden).map((x) => ({ box: elementAABB(x, paper), label: '元素角' }))
-        if (cbox) boxes.push({ box: cbox, label: els.some((el) => el.type === 'flow_text' && !el.hidden) ? '信笺元素角' : '内容角' })
+        if (cbox) boxes.push({ box: cbox, label: els.some((el) => el.type === 'flow_text' && !el.hidden) ? '文本框元素角' : '内容角' })
         const sn = snapOn(e) ? snapOrigin(p, originSnapPoints(paper, boxes, bg), originSnapLines(paper), 8 / z.zoom) : { p, label: null }
         applyOriginOffsets(origin, offsetsAt(origin, pw, ph, sn.p, cbox), true)
         setOriginLabel(sn.label)
@@ -663,7 +663,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
                 vectorEffect="non-scaling-stroke"
                 className="pointer-events-none"
               />
-              {flowEl && !flowEl.hidden ? <Ruling paper={paper} el={flowEl} /> : null}
+              {flowEl && !flowEl.hidden ? <Ruling paper={paper} el={flowEl} zoom={v.zoom} /> : null}
               {/* elements */}
               <g opacity={align ? 0.35 : undefined} pointerEvents={align ? 'none' : undefined}>
               {els.map((el) =>
@@ -825,11 +825,54 @@ function resizePatch(g: Extract<Gesture, { kind: 'resize' }>, p: Pt, keepAspect:
   return { transform: { ...t, ...pos, sx: nsx, sy: nsy } }
 }
 
-/** Faint ruling lines of the letter (flow_text) layout inside the margin box. */
-function Ruling({ paper, el }: { paper: PaperBase; el: Element }) {
+/** Faint ruling lines and multi-box layout frames of the flow_text element. */
+function Ruling({ paper, el, zoom }: { paper: PaperBase; el: Element; zoom: number }) {
+  const overrideLineNum = el.type === 'flow_text' ? el.props.line_num : null
+  const boxes = paper.layout_boxes
+  if (boxes?.length) {
+    const ox = el.transform.x
+    const oy = el.transform.y
+    return (
+      <g className="pointer-events-none">
+        {boxes.map((box, i) => {
+          const bx = box.x_mm + ox
+          const by = box.y_mm + oy
+          const n = boxLineNum(paper, box, overrideLineNum)
+          const pitch = box.h_mm / n
+          const badge = Math.min(5.5, Math.max(2.2, 15 / zoom), box.w_mm * 0.35, box.h_mm * 0.35)
+          return (
+            <g key={box.id || i}>
+              <rect
+                x={bx}
+                y={by}
+                width={box.w_mm}
+                height={box.h_mm}
+                fill="rgb(var(--accent) / 0.02)"
+                stroke="rgb(var(--accent))"
+                strokeOpacity={0.32}
+                strokeDasharray="3 2.5"
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+              />
+              <g stroke="rgb(var(--accent))" strokeOpacity={0.14} strokeWidth={0.75}>
+                {Array.from({ length: n }, (_, j) => {
+                  const y = by + pitch * (j + 1)
+                  return <line key={j} x1={bx} x2={bx + box.w_mm} y1={y} y2={y} vectorEffect="non-scaling-stroke" />
+                })}
+              </g>
+              <rect x={bx} y={by} width={badge} height={badge} rx={badge * 0.22} fill="rgb(var(--accent))" fillOpacity={0.78} />
+              <text x={bx + badge / 2} y={by + badge / 2} textAnchor="middle" dominantBaseline="central" fontSize={badge * 0.68} fontWeight={700} fill="#fff">
+                {i + 1}
+              </text>
+            </g>
+          )
+        })}
+      </g>
+    )
+  }
   const { w, h } = paperDims(paper)
   const m = paper.margins
-  const n = (el.type === 'flow_text' && el.props.line_num) || paper.ruling?.line_num || 0
+  const n = overrideLineNum || paper.ruling?.line_num || 0
   if (!n) return null
   const top = m.t + el.transform.y
   const bh = h - m.t - m.b

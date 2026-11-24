@@ -133,7 +133,7 @@ export function ModeSwitch() {
     <Segmented
       value={letter ? 'letter' : 'free'}
       onValueChange={(v) => setMode(v)}
-      options={[{ value: 'free', label: '自由' }, { value: 'letter', label: '信笺' }]}
+      options={[{ value: 'free', label: '自由' }, { value: 'letter', label: '文本框' }]}
       size="sm"
       aria-label="文档模式"
     />
@@ -255,7 +255,7 @@ export function PrimaryActions({ cmd, compact }: { cmd: StudioCommands; compact:
             <CompactBgItems />
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setMode(isLetterMode(useStudio.getState().doc!) ? 'free' : 'letter')} icon={<Pencil />}>
-              切换 自由 / 信笺
+              切换 自由 / 文本框
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={cmd.openProjects} icon={<FolderOpen />}>
               项目与模板…

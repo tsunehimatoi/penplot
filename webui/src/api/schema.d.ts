@@ -3725,6 +3725,26 @@ export interface components {
              */
             seq?: number | null;
         };
+        /** LayoutBox */
+        LayoutBox: {
+            /**
+             * Id
+             * @default
+             */
+            id?: string;
+            /** Name */
+            name?: string | null;
+            /** X Mm */
+            x_mm: number;
+            /** Y Mm */
+            y_mm: number;
+            /** W Mm */
+            w_mm: number;
+            /** H Mm */
+            h_mm: number;
+            /** Line Num */
+            line_num?: number | null;
+        };
         /** LogData */
         LogData: {
             /** Lines */
@@ -4164,6 +4184,8 @@ export interface components {
              *     }
              */
             ruling: components["schemas"]["Ruling"];
+            /** Layout Boxes */
+            layout_boxes?: components["schemas"]["LayoutBox"][];
         };
         /**
          * PaperRef
@@ -4217,6 +4239,8 @@ export interface components {
              *     }
              */
             ruling: components["schemas"]["Ruling"];
+            /** Layout Boxes */
+            layout_boxes?: components["schemas"]["LayoutBox"][];
             /** Id */
             id: string;
             /**
@@ -6755,6 +6779,7 @@ export type JobRetry = components['schemas']['JobRetry'];
 export type JobSource = components['schemas']['JobSource'];
 export type JobStart = components['schemas']['JobStart'];
 export type JogRequest = components['schemas']['JogRequest'];
+export type LayoutBox = components['schemas']['LayoutBox'];
 export type LogData = components['schemas']['LogData'];
 export type LogEntry = components['schemas']['LogEntry'];
 export type LogLine = components['schemas']['LogLine'];

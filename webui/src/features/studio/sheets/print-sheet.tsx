@@ -160,7 +160,7 @@ export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: f
   const frame = previewPage ? letterFrame(previewPage.elements, paper) : null
   const cbox: ContentBox = frame ? { ...frame, x: frame.x + placement.dx, y: frame.y + placement.dy } : bbox ? { x: bbox[0], y: bbox[1], w: bbox[2] - bbox[0], h: bbox[3] - bbox[1] } : null
   const cornerName = ['左上', '右上', '左下', '右下'][origin.corner]
-  const parkLine = originAnchor(origin) === 'content' ? `开始前：把笔（抬起状态）停在${frame ? '信笺元素' : '要写内容'}的${cornerName}角` : `开始前：把笔（抬起状态）停在纸张${cornerName}角`
+  const parkLine = originAnchor(origin) === 'content' ? `开始前：把笔（抬起状态）停在${frame ? '文本框元素' : '要写内容'}的${cornerName}角` : `开始前：把笔（抬起状态）停在纸张${cornerName}角`
   const overriddenKeys = (Object.keys(pr) as (keyof PrintOverrides)[]).filter((k) => k !== 'origin' && pr[k] != null)
   const connected = !!machine?.connected
   const busyMachine = !!machine?.busy

@@ -34,7 +34,7 @@ export function ProjectsSheet({ open, onOpenChange }: { open: boolean; onOpenCha
       let p
       if (typeof kind === 'object') p = await createProject(`${kind.name}（副本）`, undefined, kind.template)
       else {
-        const doc = emptyDoc(kind === 'letter' ? '新信笺' : '未命名项目')
+        const doc = emptyDoc(kind === 'letter' ? '新文档' : '未命名项目')
         if (kind === 'letter') doc.pages[0].elements.push({ ...makeFlow(defaultFontId(), ''), z: 0 })
         p = await createProject(doc.name, doc)
       }

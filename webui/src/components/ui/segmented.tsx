@@ -13,7 +13,7 @@ export interface SegmentOption<T extends string> {
 
 /**
  * Segmented control (single selection, never empty).
- *   <Segmented value={mode} onValueChange={setMode} options={[{value:'free',label:'自由'},{value:'letter',label:'信笺'}]} />
+ *   <Segmented value={mode} onValueChange={setMode} options={[{value:'free',label:'自由'},{value:'letter',label:'文本框'}]} />
  */
 export function Segmented<T extends string>({
   value, onValueChange, options, className, size = 'md', block, 'aria-label': ariaLabel,

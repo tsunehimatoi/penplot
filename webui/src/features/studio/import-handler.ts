@@ -78,7 +78,7 @@ registerImportHandler({
 
 registerImportHandler({
   id: 'studio.letter-text',
-  label: '作为信笺正文',
+  label: '填充到文本框',
   description: '跨页自动排版',
   icon: ScrollText,
   priority: 40,

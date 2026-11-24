@@ -53,14 +53,23 @@ export function PaperPreview({ paper, size = 44 }: { paper: PaperBase; size?: nu
   const bw = Math.max(0, w - ml - mr) * s
   const bh = Math.max(0, h - mt - mb) * s
   const n = size >= 80 ? Math.min(paper.ruling?.line_num ?? 0, 40) : 0
+  const boxes = paper.layout_boxes ?? []
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden className="shrink-0 overflow-visible">
       <g transform={`translate(${(size - pw) / 2} ${(size - ph) / 2})`}>
         <rect width={pw} height={ph} rx={1.5} className="fill-canvas-paper" style={{ filter: 'drop-shadow(0 0.5px 1px rgb(0 0 0 / 0.25))' }} />
-        <rect x={ml * s} y={mt * s} width={bw} height={bh} fill="none" className="stroke-guide" strokeWidth={0.75} strokeDasharray="2 1.5" />
-        {Array.from({ length: n }, (_, i) => (
-          <line key={i} x1={ml * s} x2={ml * s + bw} y1={mt * s + ((i + 1) * bh) / (n + 1)} y2={mt * s + ((i + 1) * bh) / (n + 1)} className="stroke-guide" strokeOpacity={0.45} strokeWidth={0.5} />
-        ))}
+        {boxes.length ? (
+          boxes.map((b, i) => (
+            <rect key={b.id || i} x={b.x_mm * s} y={b.y_mm * s} width={b.w_mm * s} height={b.h_mm * s} fill="rgb(var(--accent) / 0.1)" className="stroke-accent" strokeWidth={0.75} />
+          ))
+        ) : (
+          <>
+            <rect x={ml * s} y={mt * s} width={bw} height={bh} fill="none" className="stroke-guide" strokeWidth={0.75} strokeDasharray="2 1.5" />
+            {Array.from({ length: n }, (_, i) => (
+              <line key={i} x1={ml * s} x2={ml * s + bw} y1={mt * s + ((i + 1) * bh) / (n + 1)} y2={mt * s + ((i + 1) * bh) / (n + 1)} className="stroke-guide" strokeOpacity={0.45} strokeWidth={0.5} />
+            ))}
+          </>
+        )}
       </g>
     </svg>
   )
@@ -73,7 +82,8 @@ function fmtMM(n: number | undefined) {
 function paperSubtitle(p: PaperSpec) {
   const { w, h } = dims(p)
   const m = p.margins ?? {}
-  return `${fmtMM(w)} × ${fmtMM(h)} mm · 边距 ${fmtMM(m.t)}/${fmtMM(m.r)}/${fmtMM(m.b)}/${fmtMM(m.l)} · ${p.ruling?.line_num ?? 0} 行`
+  const boxInfo = p.layout_boxes?.length ? ` · ${p.layout_boxes.length} 框` : ''
+  return `${fmtMM(w)} × ${fmtMM(h)} mm · 边距 ${fmtMM(m.t)}/${fmtMM(m.r)}/${fmtMM(m.b)}/${fmtMM(m.l)} · ${p.ruling?.line_num ?? 0} 行${boxInfo}`
 }
 
 function Num({ id, label, value, onChange, unit = 'mm', min = 0, max = 2000, step = 0.1 }: { id: string; label: string; value: number | undefined; onChange: (v: number) => void; unit?: string; min?: number; max?: number; step?: number }) {
@@ -167,7 +177,7 @@ function PaperDialog({ open, onOpenChange, initial }: { open: boolean; onOpenCha
                   </div>
                 </fieldset>
                 <fieldset>
-                  <legend className="mb-1.5 text-footnote font-medium text-secondary-label">行格（信笺模式）</legend>
+                  <legend className="mb-1.5 text-footnote font-medium text-secondary-label">行格（文本框排版）</legend>
                   <div className="grid grid-cols-3 gap-2">
                     <Num id="r-n" label="行数" value={r.line_num} onChange={(v) => setR('line_num', Math.round(v))} unit="行" min={0} max={200} step={1} />
                     <Num id="r-gap" label="行距" value={r.line_gap} onChange={(v) => setR('line_gap', v)} min={0} max={100} />
@@ -280,7 +290,7 @@ export function PapersSection({ onActions }: { onActions?: (n: React.ReactNode) 
 
   return (
     <div className="flex flex-col gap-6">
-      <SectionIntro description={<>纸张决定页面尺寸、边距和信笺行格，在创作台选纸张时可以直接使用。<HelpLink topic="paper" className="ml-1" /></>} />
+      <SectionIntro description={<>纸张决定页面尺寸、边距和文本框行格，在创作台选纸张时可以直接使用。<HelpLink topic="paper" className="ml-1" /></>} />
       {papers.isPending ? (
         <SkeletonList rows={5} />
       ) : papers.isError ? (

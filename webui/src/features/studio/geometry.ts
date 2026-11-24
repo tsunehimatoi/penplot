@@ -24,6 +24,14 @@ export function localBox(el: Element, paper: PaperBase, rendered?: [number, numb
       return fromRendered({ x: 0, y: 0, w: 40, h: el.props.size_mm * el.props.line_height })
     }
     case 'flow_text': {
+      const boxes = paper.layout_boxes
+      if (boxes?.length) {
+        const minX = Math.min(...boxes.map((b) => b.x_mm))
+        const minY = Math.min(...boxes.map((b) => b.y_mm))
+        const maxX = Math.max(...boxes.map((b) => b.x_mm + b.w_mm))
+        const maxY = Math.max(...boxes.map((b) => b.y_mm + b.h_mm))
+        return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) }
+      }
       const { w, h } = paperDims(paper)
       const m = paper.margins
       return { x: m.l, y: m.t, w: Math.max(1, w - m.l - m.r), h: Math.max(1, h - m.t - m.b) }

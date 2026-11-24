@@ -16,6 +16,7 @@ import { toast } from '@/lib/toast'
 import { elementAABB } from '../actions'
 import { usePapers } from '../data'
 import { contains } from '../geometry'
+import { PaperLayoutEditor } from '../inspector/document'
 import { FALLBACK_PAPER, fromUnit, paperDims, toUnit, type Unit } from '../model'
 import { useStudio } from '../store'
 
@@ -135,7 +136,10 @@ export function PaperSheet({ open, onOpenChange, current, currentRef }: { open: 
   const marginPreset = Object.entries(MARGIN_PRESETS).find(([, m]) => JSON.stringify(m) === JSON.stringify(s.margins))?.[0] ?? 'custom'
 
   const saveMine = useMutation({
-    mutationFn: (name: string) => api.post<PaperSpec>('/papers', { ...s, name }),
+    mutationFn: (name: string) => {
+      const { id: _id, builtin: _b, ...clean } = s as PaperBase & { id?: string; builtin?: boolean }
+      return api.post<PaperSpec>('/papers', { ...clean, name })
+    },
     meta: { errorTitle: '保存纸张失败' },
     onSuccess: (p) => {
       void queryClient.invalidateQueries({ queryKey: qk.papers.all })
@@ -167,13 +171,12 @@ export function PaperSheet({ open, onOpenChange, current, currentRef }: { open: 
     if (out.length) toast.warning(`${out.length} 个元素超出纸张`, { action: { label: '查看', onClick: () => useStudio.setState({ selection: out.map((e) => e.id) }) } })
   }
 
-  const k = 1 / 1
   const u = (v: number) => Math.round(toUnit(v, unit) * 1000) / 1000
   const step = unit === 'in' ? 0.01 : 0.5
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="xl" onOpenAutoFocus={(e) => e.preventDefault()} className={cn(compact ? 'h-[100dvh] max-h-none w-screen max-w-none rounded-none' : 'h-[min(600px,calc(100dvh-32px))] max-w-[820px]')}>
+      <DialogContent size="xl" onOpenAutoFocus={(e) => e.preventDefault()} className={cn(compact ? 'h-[100dvh] max-h-none w-screen max-w-none rounded-none' : 'h-[min(640px,calc(100dvh-32px))] max-w-[900px]')}>
         <div className="flex h-full min-h-0 flex-col">
           <div className="hairline-b flex shrink-0 items-center gap-3 px-5 py-3 pr-12">
             <DialogTitle>选择纸张</DialogTitle>
@@ -220,7 +223,15 @@ export function PaperSheet({ open, onOpenChange, current, currentRef }: { open: 
                           aria-pressed={!!sel}
                         >
                           <span className="flex h-[68px] items-center justify-center">
-                            <span className="bg-canvas-paper shadow-paper" style={{ width: c.w * kk, height: c.h * kk }} />
+                            <span className="relative bg-canvas-paper shadow-paper" style={{ width: c.w * kk, height: c.h * kk }}>
+                              {c.spec.layout_boxes?.map((b, bi) => (
+                                <span
+                                  key={b.id || bi}
+                                  className="absolute border border-accent/65 bg-accent/10"
+                                  style={{ left: b.x_mm * kk, top: b.y_mm * kk, width: b.w_mm * kk, height: b.h_mm * kk }}
+                                />
+                              ))}
+                            </span>
                           </span>
                           <span className="w-full truncate text-center text-footnote font-medium text-label">{c.name}</span>
                           <span className="text-caption tabular-nums text-secondary-label">
@@ -247,7 +258,7 @@ export function PaperSheet({ open, onOpenChange, current, currentRef }: { open: 
               )}
             </div>
             {/* custom */}
-            <aside className={cn('flex shrink-0 flex-col gap-2 p-4', compact ? 'hairline-t' : 'hairline-l w-64 overflow-y-auto')}>
+            <aside className={cn('flex shrink-0 flex-col gap-2 p-4', compact ? 'hairline-t' : 'hairline-l w-72 overflow-y-auto')}>
               <div className="flex items-center justify-between">
                 <h3 className="truncate text-headline text-label">{s.name}</h3>
                 <Segmented value={unit} onValueChange={(v) => useStudio.getState().setOverlay('unit', v)} options={[{ value: 'mm' as Unit, label: 'mm' }, { value: 'in' as Unit, label: 'in' }]} size="sm" />
@@ -299,13 +310,9 @@ export function PaperSheet({ open, onOpenChange, current, currentRef }: { open: 
                 block
                 aria-label="边距预设"
               />
-              <div className="flex justify-center py-2" aria-hidden>
-                <span className="relative bg-canvas-paper shadow-paper" style={{ width: dims.w * (110 / Math.max(dims.w, dims.h)) * k, height: dims.h * (110 / Math.max(dims.w, dims.h)) }}>
-                  <span
-                    className="absolute border border-dashed border-gray/70"
-                    style={{ left: `${(s.margins.l / dims.w) * 100}%`, right: `${(s.margins.r / dims.w) * 100}%`, top: `${(s.margins.t / dims.h) * 100}%`, bottom: `${(s.margins.b / dims.h) * 100}%` }}
-                  />
-                </span>
+              <div className="hairline-t mt-1 pt-2">
+                <span className="mb-1.5 block text-footnote font-semibold text-secondary-label">纸张文本框排版</span>
+                <PaperLayoutEditor paper={s} onChange={(layout_boxes) => setSpec({ layout_boxes })} />
               </div>
               <SaveMine onSave={(n) => saveMine.mutate(n)} busy={saveMine.isPending} defaultName={s.name.replace(/^自定义（基于 (.*)）$/, '$1 自定义')} />
             </aside>

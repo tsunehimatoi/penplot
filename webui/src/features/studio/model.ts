@@ -1,6 +1,6 @@
 /** Composition model helpers (03-backend §3.3, 04 §8). Pure functions — no React. */
 import type {
-  DocPage, Element, ElementType, Jitter, Margins, OriginSpec, PaperBase, PaperRef, PaperSpec, ProjectDoc, Transform,
+  DocPage, Element, ElementType, Jitter, LayoutBox, Margins, OriginSpec, PaperBase, PaperRef, PaperSpec, ProjectDoc, Transform,
 } from '@/api/studio'
 import { uid } from '@/lib/id'
 
@@ -23,7 +23,7 @@ export const JITTER_PRESETS: JitterPreset[] = [
 ]
 
 export const TYPE_LABEL: Record<ElementType, string> = {
-  text: '文本框', flow_text: '信笺正文', image: '图片', svg: 'SVG', dxf: 'DXF', shape: '形状', gcode: 'G 代码',
+  text: '自由文本框', flow_text: '文本框', image: '图片', svg: 'SVG', dxf: 'DXF', shape: '形状', gcode: 'G 代码',
 }
 export const SHAPE_LABEL: Record<string, string> = { rect: '矩形', ellipse: '椭圆', line: '直线', polygon: '多边形', grid: '格线' }
 
@@ -34,7 +34,7 @@ export function elementOnPage(el: Element, sub: number): boolean {
 
 export function elementName(el: Element): string {
   if (el.name) return el.name
-  if (el.type === 'text') return (el.props.text || '文本框').replace(/\s+/g, ' ').slice(0, 16) || '文本框'
+  if (el.type === 'text') return (el.props.text || '自由文本框').replace(/\s+/g, ' ').slice(0, 16) || '自由文本框'
   if (el.type === 'shape') return SHAPE_LABEL[el.props.kind] ?? '形状'
   const fn = (el.props as { file_name?: string }).file_name
   return fn || TYPE_LABEL[el.type]
@@ -66,6 +66,134 @@ export function resolvePaper(ref: PaperRef | null | undefined, papers: PaperSpec
 
 export function pagePaperRef(doc: ProjectDoc, page: DocPage): PaperRef {
   return page.paper ?? doc.paper
+}
+
+export type NormalizedLayoutBox = {
+  id: string
+  name?: string | null
+  x_mm: number
+  y_mm: number
+  w_mm: number
+  h_mm: number
+  line_num?: number | null
+}
+
+export type LayoutPreset = 'single' | 'two-col' | 'two-row' | 'grid-2x2' | 'three-col'
+
+const round1 = (v: number) => Math.round(v * 10) / 10
+
+/** Compute effective flow_text layout boxes on a paper (falls back to the margin box when empty). */
+export function effectiveLayoutBoxes(paper: PaperBase): NormalizedLayoutBox[] {
+  const boxes = paper.layout_boxes
+  if (boxes?.length) {
+    return boxes.map((b, i) => ({
+      id: b.id || `box-${i + 1}`,
+      name: b.name ?? null,
+      x_mm: Number.isFinite(b.x_mm) ? Math.max(0, b.x_mm) : 0,
+      y_mm: Number.isFinite(b.y_mm) ? Math.max(0, b.y_mm) : 0,
+      w_mm: Number.isFinite(b.w_mm) ? Math.max(1, b.w_mm) : 1,
+      h_mm: Number.isFinite(b.h_mm) ? Math.max(1, b.h_mm) : 1,
+      line_num: b.line_num != null && b.line_num > 0 ? Math.round(b.line_num) : null,
+    }))
+  }
+  const { w, h } = paperDims(paper)
+  const m = paper.margins ?? DEFAULT_MARGINS
+  return [{
+    id: 'default',
+    name: '主文本框',
+    x_mm: m.l,
+    y_mm: m.t,
+    w_mm: Math.max(1, w - m.l - m.r),
+    h_mm: Math.max(1, h - m.t - m.b),
+    line_num: paper.ruling?.line_num ?? 20,
+  }]
+}
+
+/** Resolve effective ruled line count for a layout box (proportional to margin body height when omitted). */
+export function boxLineNum(paper: PaperBase, box: { h_mm: number; line_num?: number | null }, overrideLineNum?: number | null): number {
+  if (box.line_num != null && box.line_num > 0) return Math.round(box.line_num)
+  const { h } = paperDims(paper)
+  const m = paper.margins ?? DEFAULT_MARGINS
+  const bodyH = Math.max(10, h - m.t - m.b)
+  const baseLineNum = Math.max(1, overrideLineNum || paper.ruling?.line_num || 20)
+  return Math.max(1, Math.round((baseLineNum * box.h_mm) / bodyH))
+}
+
+/** Generate standard multi-box layout presets inside the paper's margin area. */
+export function makeLayoutPreset(paper: PaperBase, preset: LayoutPreset, gapMm = 8): LayoutBox[] {
+  if (preset === 'single') return []
+  const { w, h } = paperDims(paper)
+  const m = paper.margins ?? DEFAULT_MARGINS
+  const bx = m.l
+  const by = m.t
+  const bw = Math.max(1, w - m.l - m.r)
+  const bh = Math.max(1, h - m.t - m.b)
+  const baseLines = Math.max(1, paper.ruling?.line_num || 20)
+  const autoLines = (boxH: number) => Math.max(1, Math.round((baseLines * boxH) / Math.max(10, bh)))
+
+  if (preset === 'two-col') {
+    const gap = Math.max(0, Math.min(gapMm, bw * 0.4))
+    const cw = Math.max(1, round1((bw - gap) / 2))
+    return [
+      { id: newId('box'), name: '左栏', x_mm: round1(bx), y_mm: round1(by), w_mm: cw, h_mm: round1(bh), line_num: null },
+      { id: newId('box'), name: '右栏', x_mm: round1(bx + bw - cw), y_mm: round1(by), w_mm: cw, h_mm: round1(bh), line_num: null },
+    ]
+  }
+  if (preset === 'two-row') {
+    const gap = Math.max(0, Math.min(gapMm, bh * 0.4))
+    const ch = Math.max(1, round1((bh - gap) / 2))
+    const ln = autoLines(ch)
+    return [
+      { id: newId('box'), name: '上框', x_mm: round1(bx), y_mm: round1(by), w_mm: round1(bw), h_mm: ch, line_num: ln },
+      { id: newId('box'), name: '下框', x_mm: round1(bx), y_mm: round1(by + bh - ch), w_mm: round1(bw), h_mm: ch, line_num: ln },
+    ]
+  }
+  if (preset === 'grid-2x2') {
+    const gx = Math.max(0, Math.min(gapMm, bw * 0.4))
+    const gy = Math.max(0, Math.min(gapMm, bh * 0.4))
+    const cw = Math.max(1, round1((bw - gx) / 2))
+    const ch = Math.max(1, round1((bh - gy) / 2))
+    const ln = autoLines(ch)
+    const x2 = round1(bx + bw - cw)
+    const y2 = round1(by + bh - ch)
+    return [
+      { id: newId('box'), name: '左上', x_mm: round1(bx), y_mm: round1(by), w_mm: cw, h_mm: ch, line_num: ln },
+      { id: newId('box'), name: '右上', x_mm: x2, y_mm: round1(by), w_mm: cw, h_mm: ch, line_num: ln },
+      { id: newId('box'), name: '左下', x_mm: round1(bx), y_mm: y2, w_mm: cw, h_mm: ch, line_num: ln },
+      { id: newId('box'), name: '右下', x_mm: x2, y_mm: y2, w_mm: cw, h_mm: ch, line_num: ln },
+    ]
+  }
+  // three-col
+  const gap = Math.max(0, Math.min(gapMm, bw * 0.3))
+  const cw = Math.max(1, round1((bw - gap * 2) / 3))
+  return [
+    { id: newId('box'), name: '左栏', x_mm: round1(bx), y_mm: round1(by), w_mm: cw, h_mm: round1(bh), line_num: null },
+    { id: newId('box'), name: '中栏', x_mm: round1(bx + cw + gap), y_mm: round1(by), w_mm: cw, h_mm: round1(bh), line_num: null },
+    { id: newId('box'), name: '右栏', x_mm: round1(bx + bw - cw), y_mm: round1(by), w_mm: cw, h_mm: round1(bh), line_num: null },
+  ]
+}
+
+/** Identify whether a paper's current layout_boxes matches a built-in preset. */
+export function detectLayoutPreset(paper: PaperBase): LayoutPreset | 'custom' {
+  const boxes = paper.layout_boxes
+  if (!boxes?.length) return 'single'
+  const presets: LayoutPreset[] = ['two-col', 'two-row', 'grid-2x2', 'three-col']
+  for (const p of presets) {
+    const sample = makeLayoutPreset(paper, p)
+    if (sample.length !== boxes.length) continue
+    const match = sample.every((s, i) => {
+      const b = boxes[i]
+      return (
+        Math.abs(s.x_mm - b.x_mm) <= 0.15 &&
+        Math.abs(s.y_mm - b.y_mm) <= 0.15 &&
+        Math.abs(s.w_mm - b.w_mm) <= 0.15 &&
+        Math.abs(s.h_mm - b.h_mm) <= 0.15 &&
+        (s.line_num ?? null) === (b.line_num ?? null)
+      )
+    })
+    if (match) return p
+  }
+  return 'custom'
 }
 
 // ------------------------------------------------------------------ origin
@@ -188,11 +316,11 @@ export const DEFAULT_RICH_STYLE = {
   code_box: true,
 }
 
-export function makeFlow(fontId: string | null, text = '', format: 'plain' | 'markdown' | 'html' = 'markdown'): Element {
+export function makeFlow(fontId: string | null, text = '', format: 'plain' | 'markdown' | 'html' = 'html'): Element {
   return {
     ...base('flow_text', 0, 0, 0),
     type: 'flow_text',
-    name: '正文',
+    name: '文本框',
     props: {
       text, format, rich_style: { ...DEFAULT_RICH_STYLE }, font_id: fontId, font_mix: null, text_size: 1, char_space: 0, align: 'L',
       paragraph: { spe_type: 1, spe_value: 8, left: 0, right: 0 }, line_num: null, jitter: { ...NO_JITTER },
@@ -320,7 +448,7 @@ export function usedVariables(doc: ProjectDoc): string[] {
 
 /** Stable key of what affects an element's local paths (transform excluded — 03 §3.3). */
 export function elementKey(el: Element, paper: PaperBase, vars: Record<string, string>): string {
-  const p = el.type === 'flow_text' ? JSON.stringify([paper.width_mm, paper.height_mm, paper.orientation, paper.margins, paper.ruling]) : ''
+  const p = el.type === 'flow_text' ? JSON.stringify([paper.width_mm, paper.height_mm, paper.orientation, paper.margins, paper.ruling, paper.layout_boxes ?? []]) : ''
   const usesVars = (el.type === 'text' || el.type === 'flow_text') && el.props.text.includes('{{')
   // Invalidate persisted rich-text paths from the former offset-copy bold renderer.
   const version = el.type === 'flow_text' ? 'single-pass-v1|' : ''

@@ -13,7 +13,7 @@ import { ArrangeSection } from './arrange'
 import { BackgroundSection } from '../sheets/background-panel'
 import { Note } from './controls'
 import { Help } from '../ext'
-import { LetterSection, OriginSection, PaperCard, VariablesSection } from './document'
+import { OriginSection, PaperCard, PaperLayoutSection, TextBoxSection, VariablesSection } from './document'
 import { GcodeSection, ImageSection, ShapeSection, VectorSection } from './element-sections'
 import { SvgTextSection } from '../inspector-svg-text'
 import { Handwriting, TextContent, TextStyle } from './text'
@@ -63,7 +63,7 @@ function groupsFor(el: Element): { value: Group; label: string }[] {
     case 'text':
       return [{ value: 'main', label: '文本' }, { value: 'style', label: '手写' }, { value: 'arrange', label: '排列' }]
     case 'flow_text':
-      return [{ value: 'main', label: '信笺' }, { value: 'style', label: '手写' }, { value: 'arrange', label: '位置' }]
+      return [{ value: 'main', label: '文本框' }, { value: 'style', label: '手写' }, { value: 'arrange', label: '位置' }]
     case 'image':
       return [{ value: 'main', label: '转换' }, { value: 'arrange', label: '排列' }]
     case 'gcode':
@@ -147,7 +147,7 @@ function DocumentInspector({ paper, origin, originOverridden, profileName, onOpe
       </div>
       <div className="px-3 pt-3">
         <Note tone="blue" icon={<Crosshair />}>
-          开始前：把笔（抬起状态）停在{originAnchor(origin) === 'content' ? (flow && !flow.hidden ? '信笺元素的' : '要写内容的') : '纸张'}<b className="font-semibold">{['左上', '右上', '左下', '右下'][origin.corner]}角</b>（原点）。写字机没有回零开关，每次开工都以笔所在的位置为起点。 <Help topic="原点" />
+          开始前：把笔（抬起状态）停在{originAnchor(origin) === 'content' ? (flow && !flow.hidden ? '文本框元素的' : '要写内容的') : '纸张'}<b className="font-semibold">{['左上', '右上', '左下', '右下'][origin.corner]}角</b>（原点）。写字机没有回零开关，每次开工都以笔所在的位置为起点。 <Help topic="原点" />
         </Note>
       </div>
       {warn ? (
@@ -162,8 +162,9 @@ function DocumentInspector({ paper, origin, originOverridden, profileName, onOpe
           <div className="px-3 pt-3">
             <PaperCard paper={paper} onOpen={onOpenPaper} pageOverride={!!page?.paper} />
           </div>
+          <PaperLayoutSection paper={paper} />
           <BackgroundSection />
-          {flow ? <LetterSection onSelectFlow={() => useStudio.getState().select([flow.id])} /> : null}
+          {flow ? <TextBoxSection onSelectFlow={() => useStudio.getState().select([flow.id])} /> : null}
         </>
       ) : null}
       {group === 'origin' ? <OriginSection origin={origin} overridden={originOverridden} paper={paper} profileName={profileName} onOpenPosition={onOpenPosition} /> : null}

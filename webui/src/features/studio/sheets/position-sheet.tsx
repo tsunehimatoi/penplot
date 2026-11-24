@@ -45,7 +45,7 @@ export function PositionSheet({ open, onOpenChange, paper, origin, workArea: wa 
   const job: Box | null = design ? { ...design, x: design.x + placement.dx, y: design.y + placement.dy } : null
   const anchorFrame = page ? originBox(page.elements, paper, view.sub) : null
   const anchor = anchorFrame ? { ...anchorFrame, x: anchorFrame.x + placement.dx, y: anchorFrame.y + placement.dy } : null
-  const anchorName = page?.elements.some((el) => el.type === 'flow_text' && !el.hidden) ? '信笺元素' : '内容'
+  const anchorName = page?.elements.some((el) => el.type === 'flow_text' && !el.hidden) ? '文本框元素' : '内容'
   const anchored = originAnchor(origin) === 'content'
   const work = workArea ? workAreaRect(origin, pw, ph, workArea.w_mm, workArea.h_mm, anchor) : null
   const o = originPoint(origin, pw, ph, anchor)

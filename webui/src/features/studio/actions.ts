@@ -162,7 +162,7 @@ export async function addFiles(files: File[], as: 'element' | 'letter' = 'elemen
       } else if (r.kind === 'document') {
         setLetterText(r.data.content, r.data.format)
         if (r.data.warnings?.length) toast.warning(`${f.name}`, { description: r.data.warnings.join('；') })
-        else toast.success(`已导入信笺正文：${f.name}`)
+        else toast.success(`已导入文本框内容：${f.name}`)
         continue
       }
       if (el) {
@@ -198,7 +198,7 @@ export function setLetterText(text: string, format?: 'plain' | 'markdown' | 'htm
       flow.props.text = text
       if (format) flow.props.format = format
     } else {
-      page.elements = normalizeZ([{ ...makeFlow(defaultFontId(), text, format ?? 'markdown'), z: -1 }, ...page.elements])
+      page.elements = normalizeZ([{ ...makeFlow(defaultFontId(), text, format ?? 'html'), z: -1 }, ...page.elements])
     }
   })
 }
@@ -221,7 +221,7 @@ export function setMode(mode: 'free' | 'letter') {
       for (const p of d.pages) p.elements = normalizeZ(p.elements.filter((e) => e.type !== 'flow_text'))
     })
     useStudio.setState({ selection: [] })
-    toast({ title: '已移除信笺正文', action: { label: '撤销', onClick: () => useStudio.getState().undo() }, duration: 5000 })
+    toast({ title: '已移除文本框', action: { label: '撤销', onClick: () => useStudio.getState().undo() }, duration: 5000 })
   }
 }
 

@@ -142,20 +142,20 @@ function PageItem({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onSelect={() => addPage(index)}>{count > 1 ? '在信笺后插入空白页' : '在后面插入空白页'}</ContextMenuItem>
+        <ContextMenuItem onSelect={() => addPage(index)}>{count > 1 ? '在文本框后插入空白页' : '在后面插入空白页'}</ContextMenuItem>
         <ContextMenuItem onSelect={() => duplicatePage(index)}>
-          <Copy className="size-4" /> {count > 1 ? `复制信笺（共 ${count} 页）` : '复制页面'}
+          <Copy className="size-4" /> {count > 1 ? `复制文本框（共 ${count} 页）` : '复制页面'}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
           disabled={!canDelete}
           className="text-red"
           onSelect={async () => {
-            if (page.elements.length && !(await confirm({ title: `删除第 ${firstNumber} 页${count > 1 ? `及其后 ${count - 1} 页信笺` : ''}？`, description: `页面上的 ${page.elements.length} 个元素也会被删除（可撤销）。`, confirmLabel: '删除', destructive: true }))) return
+            if (page.elements.length && !(await confirm({ title: `删除第 ${firstNumber} 页${count > 1 ? `及其后 ${count - 1} 页文本框` : ''}？`, description: `页面上的 ${page.elements.length} 个元素也会被删除（可撤销）。`, confirmLabel: '删除', destructive: true }))) return
             deletePage(index)
           }}
         >
-          <Trash2 className="size-4" /> {count > 1 ? `删除信笺（共 ${count} 页）` : '删除页面'}
+          <Trash2 className="size-4" /> {count > 1 ? `删除文本框（共 ${count} 页）` : '删除页面'}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
