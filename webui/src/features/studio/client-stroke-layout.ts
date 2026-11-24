@@ -433,7 +433,7 @@ function parseHtmlToBlocks(html: string): RichBlock[] {
       if (tag === 'ul' || tag === 'ol') {
         flushInline()
         const ordered = tag === 'ol'
-        const start = Number(el.getAttribute('start') || '1') || 1
+        const start = ordered ? (el as HTMLOListElement).start : 1
         const items: { runs: TextRun[]; children: RichBlock[] }[] = []
         for (let j = 0; j < el.children.length; j++) {
           const li = el.children[j]

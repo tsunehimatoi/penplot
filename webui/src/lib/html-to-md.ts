@@ -482,7 +482,7 @@ export function htmlToMarkdown(rawHtml: string): string {
         if (isEmptyList(el)) return ''
         const ordered = tag === 'ol'
         const items: string[] = []
-        let idx = 1
+        let idx = ordered ? (el as HTMLOListElement).start : 1
         for (const child of el.children) {
           if (child.tagName.toLowerCase() !== 'li') continue
           const pad = '  '.repeat(listDepth)

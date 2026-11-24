@@ -630,7 +630,7 @@ class _RichHTMLParser(HTMLParser):
         self.pre_lang = ''
         self.pre_buf: list[str] = []
         self.quote_stack: list[list[Block]] = []
-        self.list_stack: list[tuple[bool, list[ListItem]]] = []
+        self.list_stack: list[ListBlock] = []
         self.table_stack: list[dict[str, Any]] = []
         self.block_stack: list[dict[str, Any]] = []
         self.math_mode: Optional[str] = None
@@ -659,8 +659,8 @@ class _RichHTMLParser(HTMLParser):
             if self.table_stack and self.table_stack[-1]['in_cell'] is not None:
                 self.table_stack[-1]['in_cell'].append(InlineMath(blk.latex, blk.border, source_length=1))
                 return
-            if self.list_stack and self.list_stack[-1][1]:
-                self.list_stack[-1][1][-1].children.append(blk)
+            if self.list_stack and self.list_stack[-1].items:
+                self.list_stack[-1].items[-1].children.append(blk)
                 return
         self._target_blocks().append(blk)
 
@@ -732,7 +732,7 @@ class _RichHTMLParser(HTMLParser):
                 tbl['in_cell'].extend(final_runs)
                 return
         if self.list_stack and not self.heading_level:
-            _, items = self.list_stack[-1]
+            items = self.list_stack[-1].items
             if items:
                 item = items[-1]
                 if item.children:
@@ -834,11 +834,18 @@ class _RichHTMLParser(HTMLParser):
         elif tag in ('ul', 'ol'):
             self._flush_runs()
             self._mark_block_output()
-            self.list_stack.append((tag == 'ol', []))
+            ordered = tag == 'ol'
+            start = 1
+            if ordered and attrs.get('start'):
+                try:
+                    start = int(attrs['start'])
+                except ValueError:
+                    pass
+            self.list_stack.append(ListBlock(ordered=ordered, items=[], start=start))
         elif tag == 'li':
             if self.list_stack:
                 self._flush_runs()
-                self.list_stack[-1][1].append(ListItem([]))
+                self.list_stack[-1].items.append(ListItem([]))
         elif tag == 'table':
             self._flush_runs()
             self._mark_block_output()
@@ -943,11 +950,11 @@ class _RichHTMLParser(HTMLParser):
                 self.style_stack.pop()
         elif tag in ('ul', 'ol') and self.list_stack:
             self._flush_runs()
-            ordered, items = self.list_stack.pop()
-            if self.list_stack and self.list_stack[-1][1]:
-                self.list_stack[-1][1][-1].children.append(ListBlock(ordered=ordered, items=items))
+            listing = self.list_stack.pop()
+            if self.list_stack and self.list_stack[-1].items:
+                self.list_stack[-1].items[-1].children.append(listing)
             else:
-                self._emit_block(ListBlock(ordered=ordered, items=items))
+                self._emit_block(listing)
         elif tag == 'li':
             self._flush_runs()
         elif tag in ('th', 'td') and self.table_stack:

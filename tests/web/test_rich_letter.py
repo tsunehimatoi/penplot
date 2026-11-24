@@ -7,7 +7,7 @@ import zipfile
 from penplot.compose import flow_text_pages
 from penplot.rich_text import (
     ChartBlock, HeadingBlock, InlineMath, ListBlock, MathBlock, PageBreakBlock,
-    ParagraphBlock, TableBlock, parse_html, parse_markdown,
+    ParagraphBlock, TableBlock, parse_editor_document, parse_html, parse_markdown,
 )
 
 
@@ -50,6 +50,23 @@ $$
     assert isinstance(blocks[5], ChartBlock) and blocks[5].spec['type'] == 'bar'
     assert isinstance(blocks[6], PageBreakBlock)
     assert isinstance(blocks[7], ParagraphBlock)
+
+
+def test_html_and_editor_document_keep_ordered_list_start():
+    html = ('<ol><li>First</li></ol><ol start="2"><li>Second'
+            '<ol start="0"><li>Nested</li></ol></li><li>Third</li></ol>')
+    first, second = parse_html(html)
+    nested, = second.items[0].children
+    assert [first.start, second.start, nested.start] == [1, 2, 0]
+    assert len(second.items) == 2
+
+    blocks = parse_editor_document({'blocks': [{
+        'kind': 'numberedList',
+        'attributes': {'start': '2'},
+        'children': [{'kind': 'listItem', 'children': [{'kind': 'text', 'text': 'Second'}]}],
+    }]})
+    listing, = blocks
+    assert listing.start == 2
 
 
 def test_markdown_keeps_line_boundaries_around_unclosed_math_and_list_continuations():

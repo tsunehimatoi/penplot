@@ -108,6 +108,21 @@ test('paste omits empty clipboard list shells and preserves real lists', async (
 
   await canvas.getByRole('radio', { name: '可视化' }).click()
   await expect(editor.locator('ol > li')).toHaveText(['第一项', '第二项'])
+
+  const report = `<ol><li><strong>容量滴定法测定 <span class="math-inline">${latex}</span></strong><br>① 采样</li></ol>` +
+    '<ol start="2"><li><strong>气体检测仪操作方法</strong><br>① 长按开机键</li></ol>'
+  const plainReport = '1. 容量滴定法测定\n① 采样\n2. 气体检测仪操作方法\n① 长按开机键'
+  const markdownReport = `1. **容量滴定法测定 $${latex}$**<br>① 采样\n\n2. **气体检测仪操作方法**<br>① 长按开机键`
+  await paste(editor, plainReport, report)
+  await expect(editor.locator('ol')).toHaveCount(2)
+  await expect(editor.locator('ol').nth(1)).toHaveAttribute('start', '2')
+  await canvas.getByRole('radio', { name: '源码' }).click()
+  await expect(source).toHaveValue(markdownReport)
+  await paste(source, plainReport, report)
+  await expect(source).toHaveValue(markdownReport)
+  await canvas.getByRole('radio', { name: '可视化' }).click()
+  await expect(editor.locator('ol').nth(1)).toHaveAttribute('start', '2')
+
   await paste(editor, '普通文本\n下一行')
   await expect(editor.locator('ol')).toHaveCount(0)
   await expect(editor.locator('p')).toHaveText(['普通文本', '下一行'])
