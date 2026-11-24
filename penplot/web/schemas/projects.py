@@ -16,6 +16,16 @@ class Ruling(Model):
     base_line: float = 1.0
 
 
+class LayoutBox(Model):
+    id: str = ''
+    name: Optional[str] = None
+    x_mm: float = Field(ge=0, le=2000)
+    y_mm: float = Field(ge=0, le=2000)
+    w_mm: float = Field(gt=0, le=2000)
+    h_mm: float = Field(gt=0, le=2000)
+    line_num: Optional[int] = Field(None, ge=1, le=200)
+
+
 class PaperBase(Model):
     name: str = Field(min_length=1, max_length=80)
     width_mm: float = Field(gt=0, le=2000, description='sheet width as entered (portrait)')
@@ -25,6 +35,7 @@ class PaperBase(Model):
         'portrait', description='landscape swaps width/height for layout')
     rotation: Literal[0, 90, 180, 270] = Field(0, description='page rotation onto the machine')
     ruling: Ruling = Ruling()
+    layout_boxes: list[LayoutBox] = Field(default_factory=list)
 
 
 class PaperSpec(PaperBase):

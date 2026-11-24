@@ -548,7 +548,7 @@ _VOID_TAGS = {'br', 'hr', 'img', 'input', 'meta', 'link', 'col'}
 
 
 def _parse_align_attr(attrs: dict[str, str]) -> Optional[str]:
-    align = (attrs.get('align') or '').lower()
+    align = (attrs.get('align') or '').strip().lower()
     style = (attrs.get('style') or '').lower()
     m = re.search(r'text-align\s*:\s*(left|center|right|justify)', style)
     if m:
@@ -561,7 +561,8 @@ def _has_page_break(attrs: dict[str, str]) -> bool:
     cls = (attrs.get('class') or '').lower()
     return ('page-break-before' in style and 'always' in style) or \
            ('page-break-after' in style and 'always' in style) or \
-           'pagebreak' in cls
+           'pagebreak' in cls or \
+           attrs.get('data-pagebreak', '').strip().lower() in ('true', '1', 'yes')
 
 
 class _RichHTMLParser(HTMLParser):
@@ -581,6 +582,7 @@ class _RichHTMLParser(HTMLParser):
         self.quote_stack: list[list[Block]] = []
         self.list_stack: list[tuple[bool, list[ListItem]]] = []
         self.table_stack: list[dict[str, Any]] = []
+        self.block_stack: list[dict[str, Any]] = []
         self.math_mode: Optional[str] = None
         self.math_buf: list[str] = []
 
@@ -595,6 +597,55 @@ class _RichHTMLParser(HTMLParser):
         if self.quote_stack:
             return self.quote_stack[-1]
         return self.blocks
+
+    def _mark_block_output(self):
+        if self.block_stack:
+            self.block_stack[-1]['has_output'] = True
+
+    def _emit_block(self, blk: Block):
+        self._mark_block_output()
+        self._target_blocks().append(blk)
+
+    def _sync_block_state(self):
+        if self.block_stack:
+            top = self.block_stack[-1]
+            self.cur_align = top['align']
+            self.heading_level = top['heading_level']
+        else:
+            self.cur_align = None
+            self.heading_level = 0
+
+    def _push_block(self, tag: str, attrs: dict[str, str], heading_level: int = 0, has_output: bool = False):
+        self._mark_block_output()
+        explicit_align = _parse_align_attr(attrs)
+        parent_align = self.block_stack[-1]['align'] if self.block_stack else None
+        eff_align = explicit_align if explicit_align is not None else parent_align
+        self.block_stack.append({
+            'tag': tag,
+            'align': eff_align,
+            'heading_level': heading_level,
+            'has_output': has_output,
+        })
+        self._sync_block_state()
+
+    def _pop_block(self, tag: str):
+        idx = -1
+        for i in range(len(self.block_stack) - 1, -1, -1):
+            if self.block_stack[i]['tag'] == tag:
+                idx = i
+                break
+        if idx < 0:
+            self._sync_block_state()
+            return
+        while len(self.block_stack) > idx:
+            frame = self.block_stack.pop()
+            if (frame['tag'] in ('p', 'div')
+                    and not frame['has_output']
+                    and not self.table_stack
+                    and not self.list_stack
+                    and not self.in_pre):
+                self._target_blocks().append(ParagraphBlock([], align=frame['align']))
+        self._sync_block_state()
 
     def _flush_runs(self, as_paragraph=True):
         if not self.runs:
@@ -626,9 +677,9 @@ class _RichHTMLParser(HTMLParser):
                 items[-1].runs.extend(final_runs)
                 return
         if self.heading_level:
-            self._target_blocks().append(HeadingBlock(self.heading_level, final_runs, self.cur_align))
+            self._emit_block(HeadingBlock(self.heading_level, final_runs, self.cur_align))
         elif as_paragraph:
-            self._target_blocks().append(ParagraphBlock(final_runs, self.cur_align))
+            self._emit_block(ParagraphBlock(final_runs, self.cur_align))
 
     def handle_starttag(self, tag: str, attrs_list: list[tuple[str, Optional[str]]]):
         tag = tag.lower()
@@ -642,6 +693,7 @@ class _RichHTMLParser(HTMLParser):
 
         if tag == 'svg':
             self._flush_runs()
+            self._mark_block_output()
             self.in_svg = 1
             attr_s = ''.join(f' {k}="{v}"' for k, v in attrs_list)
             self.svg_buf = [f'<svg{attr_s}>']
@@ -653,22 +705,28 @@ class _RichHTMLParser(HTMLParser):
         if self.skip_depth:
             return
 
-        if _has_page_break(attrs):
+        page_break = _has_page_break(attrs)
+        if page_break:
             self._flush_runs()
-            self._target_blocks().append(PageBreakBlock())
+            self._emit_block(PageBreakBlock())
 
         # Chart container
         if 'data-chart' in attrs and attrs['data-chart']:
             self._flush_runs()
             spec = _parse_chart_spec(attrs['data-chart'])
             if spec:
-                self._target_blocks().append(ChartBlock(spec))
+                self._emit_block(ChartBlock(spec))
+            else:
+                self._mark_block_output()
+            if tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div'):
+                self._push_block(tag, attrs, heading_level=0, has_output=True)
             return
 
         # Math container
         cls = attrs.get('class', '').lower()
         if 'math-display' in cls or tag == 'math':
             self._flush_runs()
+            self._mark_block_output()
             self.math_mode = 'block'
             self.math_buf = []
             return
@@ -679,21 +737,24 @@ class _RichHTMLParser(HTMLParser):
 
         if tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
             self._flush_runs()
-            self.heading_level = int(tag[1])
-            self.cur_align = _parse_align_attr(attrs)
+            self._push_block(tag, attrs, heading_level=int(tag[1]), has_output=page_break)
         elif tag in ('p', 'div'):
             self._flush_runs()
-            self.cur_align = _parse_align_attr(attrs)
+            if tag == 'p' and self.block_stack and self.block_stack[-1]['tag'] == 'p':
+                self._pop_block('p')
+            self._push_block(tag, attrs, heading_level=0, has_output=page_break)
         elif tag == 'br':
             self.runs.append(TextRun('\n', **self._cur_style()))
         elif tag == 'hr':
             self._flush_runs()
-            self._target_blocks().append(HrBlock())
+            self._emit_block(HrBlock())
         elif tag == 'blockquote':
             self._flush_runs()
+            self._mark_block_output()
             self.quote_stack.append([])
         elif tag == 'pre':
             self._flush_runs()
+            self._mark_block_output()
             self.in_pre = True
             self.pre_lang = ''
             self.pre_buf = []
@@ -706,6 +767,7 @@ class _RichHTMLParser(HTMLParser):
                 self.style_stack.append({'code': True})
         elif tag in ('ul', 'ol'):
             self._flush_runs()
+            self._mark_block_output()
             self.list_stack.append((tag == 'ol', []))
         elif tag == 'li':
             if self.list_stack:
@@ -713,6 +775,7 @@ class _RichHTMLParser(HTMLParser):
                 self.list_stack[-1][1].append(ListItem([]))
         elif tag == 'table':
             self._flush_runs()
+            self._mark_block_output()
             self.table_stack.append({'headers': [], 'rows': [], 'cur_row': None, 'in_cell': None, 'is_header_row': False})
         elif tag == 'tr' and self.table_stack:
             self.table_stack[-1]['cur_row'] = []
@@ -751,7 +814,7 @@ class _RichHTMLParser(HTMLParser):
                 else:
                     raw_svg = ''
                 if '<svg' in raw_svg.lower():
-                    self._target_blocks().append(SvgBlock(raw_svg))
+                    self._emit_block(SvgBlock(raw_svg))
             elif alt:
                 self.runs.append(TextRun(f'[{alt}]', **self._cur_style()))
 
@@ -761,7 +824,7 @@ class _RichHTMLParser(HTMLParser):
             self.svg_buf.append(f'</{tag}>')
             self.in_svg -= 1
             if self.in_svg == 0:
-                self._target_blocks().append(SvgBlock(''.join(self.svg_buf)))
+                self._emit_block(SvgBlock(''.join(self.svg_buf)))
                 self.svg_buf = []
             return
         if tag in _SKIP_TAGS and self.skip_depth:
@@ -772,7 +835,7 @@ class _RichHTMLParser(HTMLParser):
         if self.math_mode and (tag in ('span', 'div', 'math')):
             latex = ''.join(self.math_buf).strip().strip('$')
             if self.math_mode == 'block':
-                self._target_blocks().append(MathBlock(latex))
+                self._emit_block(MathBlock(latex))
             else:
                 self.runs.append(InlineMath(latex))
             self.math_mode = None
@@ -781,15 +844,14 @@ class _RichHTMLParser(HTMLParser):
 
         if tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
             self._flush_runs()
-            self.heading_level = 0
-            self.cur_align = None
+            self._pop_block(tag)
         elif tag in ('p', 'div'):
             self._flush_runs()
-            self.cur_align = None
+            self._pop_block(tag)
         elif tag == 'blockquote' and self.quote_stack:
             self._flush_runs()
             qblocks = self.quote_stack.pop()
-            self._target_blocks().append(QuoteBlock(qblocks))
+            self._emit_block(QuoteBlock(qblocks))
         elif tag == 'pre' and self.in_pre:
             self.in_pre = False
             code = ''.join(self.pre_buf).strip('\n')
@@ -797,12 +859,12 @@ class _RichHTMLParser(HTMLParser):
             if self.pre_lang in ('chart', 'plot', 'echarts'):
                 spec = _parse_chart_spec(code)
                 if spec:
-                    self._target_blocks().append(ChartBlock(spec))
+                    self._emit_block(ChartBlock(spec))
                     return
             if self.pre_lang in ('math', 'latex', 'tex'):
-                self._target_blocks().append(MathBlock(code))
+                self._emit_block(MathBlock(code))
                 return
-            self._target_blocks().append(CodeBlock(code, self.pre_lang))
+            self._emit_block(CodeBlock(code, self.pre_lang))
         elif tag == 'code' and not self.in_pre:
             if len(self.style_stack) > 1:
                 self.style_stack.pop()
@@ -812,7 +874,7 @@ class _RichHTMLParser(HTMLParser):
             if self.list_stack and self.list_stack[-1][1]:
                 self.list_stack[-1][1][-1].children.append(ListBlock(ordered=ordered, items=items))
             else:
-                self._target_blocks().append(ListBlock(ordered=ordered, items=items))
+                self._emit_block(ListBlock(ordered=ordered, items=items))
         elif tag == 'li':
             self._flush_runs()
         elif tag in ('th', 'td') and self.table_stack:
@@ -844,7 +906,7 @@ class _RichHTMLParser(HTMLParser):
                 for r in rows:
                     while len(r) < ncols:
                         r.append([])
-                self._target_blocks().append(TableBlock(headers=headers, rows=rows, aligns=['L'] * ncols))
+                self._emit_block(TableBlock(headers=headers, rows=rows, aligns=['L'] * ncols))
         elif tag in ('b', 'strong', 'i', 'em', 'u', 'ins', 's', 'del', 'strike', 'sup', 'sub', 'a'):
             if len(self.style_stack) > 1:
                 self.style_stack.pop()
@@ -873,7 +935,7 @@ class _RichHTMLParser(HTMLParser):
                     continue
                 if (pt.startswith('$$') and pt.endswith('$$')) or (pt.startswith('\\[') and pt.endswith('\\]')):
                     self._flush_runs()
-                    self._target_blocks().append(MathBlock(pt[2:-2].strip()))
+                    self._emit_block(MathBlock(pt[2:-2].strip()))
                 else:
                     self.runs.append(TextRun(pt, **self._cur_style()))
             return

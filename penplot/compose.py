@@ -172,7 +172,8 @@ def _flow_text_pages(el, paper, res, variables, settings, warn):
     fmt = ParagraphFormat(int(para.get('spe_type', 0)), float(para.get('spe_value', 0.0)),
                           float(para.get('left', 0.0)), float(para.get('right', 0.0)))
     rich_fmt = pr.get('format') or 'plain'
-    if rich_fmt in ('markdown', 'html'):
+    layout_boxes = paper.get('layout_boxes') or None
+    if rich_fmt in ('markdown', 'html') or layout_boxes:
         from .rich_layout import RichTextDocument
         rdoc = RichTextDocument(
             page, font, _fonts_set(pr.get('jitter')), settings=settings,
@@ -182,6 +183,7 @@ def _flow_text_pages(el, paper, res, variables, settings, warn):
             font_roles=roles,
             missing_glyph=pr.get('missing_glyph', 'box'),
             rich_style=pr.get('rich_style'),
+            layout_boxes=layout_boxes,
         )
         out = rdoc.layout_and_render(text, fmt_name=rich_fmt, para_fmt=fmt,
                                      align=pr.get('align', 'L'))
@@ -945,9 +947,17 @@ def render_document(doc, papers, res, mc, origin=None, work_area=None, opts=None
             w, h = paper_dims(paper)
             m = paper.get('margins') or {}
             frame = Path()
-            frame.rect(m.get('l', 0), m.get('t', 0),
-                       max(1, w - m.get('l', 0) - m.get('r', 0)),
-                       max(1, h - m.get('t', 0) - m.get('b', 0)))
+            boxes = paper.get('layout_boxes') or []
+            if boxes:
+                minx = min(float(b['x_mm']) for b in boxes)
+                miny = min(float(b['y_mm']) for b in boxes)
+                maxx = max(float(b['x_mm']) + float(b['w_mm']) for b in boxes)
+                maxy = max(float(b['y_mm']) + float(b['h_mm']) for b in boxes)
+                frame.rect(minx, miny, max(0.1, maxx - minx), max(0.1, maxy - miny))
+            else:
+                frame.rect(m.get('l', 0), m.get('t', 0),
+                           max(1, w - m.get('l', 0) - m.get('r', 0)),
+                           max(1, h - m.get('t', 0) - m.get('b', 0)))
             apply_transform([frame], letter.get('transform'))
             placement = opts.get('placement') or {}
             translate_all([frame], float(placement.get('dx_mm') or 0), float(placement.get('dy_mm') or 0))
