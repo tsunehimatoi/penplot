@@ -68,6 +68,8 @@ class JobCreate(Model):
     name: Optional[str] = None
     profile_id: Optional[str] = None
     overrides: Optional[PrintOverrides] = None
+    batch_id: Optional[str] = None
+    seq: Optional[int] = Field(None, ge=1)
     start: bool = False
     allow_out_of_bounds: bool = Field(False, description='admin only, with start=true')
 
@@ -96,6 +98,7 @@ class JobFrame(Model):
 
 class JobRetry(Model):
     from_line: Optional[int] = Field(None, ge=1)
+    in_place: bool = False
 
 
 class LogLine(Model):

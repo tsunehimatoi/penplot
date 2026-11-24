@@ -301,3 +301,66 @@ def test_print_reuses_preview_render_and_cached_analysis(client, app):
     r = client.post('/api/v1/jobs/%s/start' % j['id'], json={}, headers=H)
     assert r.status_code == 200, r.text
     assert job_wait(client, j['id'], timeout=60)['status'] == 'done'
+
+
+def test_create_jobs_with_explicit_batch_id_and_seq(client):
+    f1 = gcode_file(client, square_gcode(3), 'p1.gcode')['file']['id']
+    f2 = gcode_file(client, square_gcode(4), 'p2.gcode')['file']['id']
+    f3 = gcode_file(client, square_gcode(5), 'p3.gcode')['file']['id']
+    bid = 'bcustom01'
+    # Create out of seq order to verify GET /batches/{batch_id} sorts by seq
+    j3 = client.post('/api/v1/jobs', json={'source': {'file_id': f3}, 'batch_id': bid, 'seq': 3}, headers=H).json()
+    j1 = client.post('/api/v1/jobs', json={'source': {'file_id': f1}, 'batch_id': bid, 'seq': 1}, headers=H).json()
+    j2 = client.post('/api/v1/jobs', json={'source': {'file_id': f2}, 'batch_id': bid, 'seq': 2}, headers=H).json()
+    assert j1['batch_id'] == bid and j1['seq'] == 1
+    assert j2['batch_id'] == bid and j2['seq'] == 2
+    assert j3['batch_id'] == bid and j3['seq'] == 3
+
+    b = client.get('/api/v1/batches/' + bid).json()
+    assert b['id'] == bid
+    assert [j['seq'] for j in b['jobs']] == [1, 2, 3]
+    assert [j['id'] for j in b['jobs']] == [j1['id'], j2['id'], j3['id']]
+    assert b['next_job_id'] == j1['id']
+
+
+def test_retry_in_place_resets_existing_job(client, app):
+    app.state.ctx.machine.ctrl.ser.fail_lines['X7.500Y-2.000'] = 'error:20'
+    f = gcode_file(client, square_gcode(40))
+    j = client.post('/api/v1/jobs', json={
+        'source': {'file_id': f['file']['id']},
+        'batch_id': 'bretry01',
+        'seq': 2,
+        'start': True,
+    }, headers=H).json()
+    failed = job_wait(client, j['id'])
+    assert failed['status'] == 'failed' and failed['reason'] == 'gcode_error'
+    assert failed['errors']
+
+    before_count = len(client.get('/api/v1/jobs?limit=5000').json())
+    events = []
+    app.state.ctx.bus.listeners.append(lambda m: events.append(m) if m['type'] == 'job' else None)
+
+    r = client.post('/api/v1/jobs/%s/retry' % j['id'], json={'in_place': True}, headers=H)
+    assert r.status_code == 201, r.text
+    retried = r.json()
+
+    assert retried['id'] == failed['id']
+    assert retried['batch_id'] == 'bretry01'
+    assert retried['seq'] == 2
+    assert retried['created_at'] == failed['created_at']
+    assert retried['status'] == 'queued'
+    assert retried['reason'] is None
+    assert retried['acked_line'] == 0
+    assert retried['sent_line'] == 0
+    assert retried['percent'] == 0.0
+    assert retried['elapsed_s'] == 0.0
+    assert retried['eta_s'] is not None and retried['eta_s'] > 0
+    assert retried['errors'] == []
+    assert retried['started_at'] is None
+    assert retried['finished_at'] is None
+    assert retried['pause_mode'] is None
+
+    after_count = len(client.get('/api/v1/jobs?limit=5000').json())
+    assert after_count == before_count
+    assert client.get('/api/v1/jobs/%s/gcode' % j['id']).status_code == 200
+    assert any(e['data']['job_id'] == j['id'] and e['data']['to'] == 'queued' for e in events)

@@ -82,7 +82,11 @@ async def estop_job(job_id: str, request: Request):
 
 @router.post('/jobs/{job_id}/retry', response_model=Job, status_code=201)
 async def retry_job(job_id: str, request: Request, body: Optional[JobRetry] = None):
-    return await request.app.state.ctx.jobs.retry(job_id, (body or JobRetry()).from_line)
+    return await request.app.state.ctx.jobs.retry(
+        job_id,
+        (body or JobRetry()).from_line,
+        in_place=bool(body and body.in_place),
+    )
 
 
 @router.get('/jobs/{job_id}/log', response_model=LogSlice)

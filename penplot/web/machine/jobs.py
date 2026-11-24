@@ -330,9 +330,10 @@ class JobService:
         copies = int(overrides.get('copies') or 1)
         if copies > 1 and (overrides.get('copy_mode') or 'repeat_same') == 'repeat_same':
             pages = [(g, s, suf + ('（%d/%d）' % (k + 1, copies)), sp) for g, s, suf, sp in pages for k in range(copies)]
-        batch_id = 'b' + secrets.token_hex(4) if len(pages) > 1 else None
+        batch_id = (body.batch_id.strip() if body.batch_id else '') or ('b' + secrets.token_hex(4) if len(pages) > 1 else None)
         ids = []
-        for seq, (text, s, suffix, sp) in enumerate(pages, 1):
+        for idx, (text, s, suffix, sp) in enumerate(pages, 1):
+            seq = body.seq if (len(pages) == 1 and body.seq is not None) else idx
             ids.append(await self._insert(text, s, (name or '任务') + suffix, prof, overrides, batch_id, seq,
                                           src_path=sp))
         if body.start:
@@ -821,11 +822,20 @@ class JobService:
             self._finish(a, 'aborted', reason)
 
     # ------------------------------------------------------------ retry
-    async def retry(self, job_id, from_line=None):
+    async def retry(self, job_id, from_line=None, in_place=False):
         r = self._row(job_id)
-        if r['status'] in ACTIVE:
+        if r['status'] in ACTIVE or (self.active is not None and self.active.id == job_id):
             raise ApiError(409, 'job_active', '任务仍在进行')
         path = os.path.join(self.cfg.jobs_dir, job_id + '.gcode')
+        if not os.path.exists(path):
+            raise not_found('任务 G 代码')
+        if in_place and (not from_line or from_line <= 1):
+            self._set_status(
+                job_id, r['status'], 'queued', None,
+                acked_line=0, elapsed_s=0.0, errors='[]',
+                started_at=None, finished_at=None,
+            )
+            return self.get(job_id)
         with open(path, encoding='utf-8', errors='replace') as fh:
             text = fh.read()
         prof = self.ctx.profiles.get(r['profile_id']) if r['profile_id'] and \
