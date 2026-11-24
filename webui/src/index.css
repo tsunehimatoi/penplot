@@ -676,6 +676,17 @@
 }
 
 /* ---------- Canvas ruled direct-writing layer (.studio-ruled-editor) ---------- */
+.studio-page-editor textarea {
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  resize: none;
+  scrollbar-width: none;
+}
+.studio-page-editor > .flex {
+  height: 100%;
+}
+
 .studio-ruled-editor {
   caret-color: transparent !important;
 }

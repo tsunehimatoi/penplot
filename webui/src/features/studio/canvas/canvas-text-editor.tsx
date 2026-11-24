@@ -593,10 +593,12 @@ function FlowDirectEditor({
   const ox = el.transform.x
   const oy = el.transform.y
 
-  const left = sx(v, activeBox.x_mm + ox)
-  const top = sy(v, activeBox.y_mm + oy)
-  const width = activeBox.w_mm * v.zoom
-  const height = activeBox.h_mm * v.zoom
+  const boxLeft = Math.min(...layoutBoxes.map((box) => box.x_mm))
+  const boxTop = Math.min(...layoutBoxes.map((box) => box.y_mm))
+  const left = sx(v, boxLeft + ox)
+  const top = sy(v, boxTop + oy)
+  const width = (Math.max(...layoutBoxes.map((box) => box.x_mm + box.w_mm)) - boxLeft) * v.zoom
+  const height = (Math.max(...layoutBoxes.map((box) => box.y_mm + box.h_mm)) - boxTop) * v.zoom
   const lineH = (activeBox.h_mm / Math.max(1, lineNum)) * v.zoom
   const fontSize = Math.max(6, lineH * (el.props.text_size || 1) * 0.72)
   const spe1 = el.props.paragraph?.spe_type === 1 ? (el.props.paragraph.spe_value ?? 0) * v.zoom : 0
@@ -652,6 +654,20 @@ function FlowDirectEditor({
     return computeCaretAndSelection(selRange.start, selRange.end, pageCharBoxes, pageLineAnchors)
   }, [focused, mode, selRange, pageCharBoxes, pageLineAnchors])
 
+  React.useLayoutEffect(() => {
+    if (!focused || mode !== 'visual' || !selRange || cmpBC(selRange.start, selRange.end) !== 0 || caretGeom?.caret) return
+    const ed = containerRef.current?.querySelector('[role="textbox"]')
+    if (document.activeElement !== ed) return
+    const { blockIdx, charIdx } = selRange.end
+    const anchor = clientText.lineAnchors.find((line) =>
+      line.blockIdx === blockIdx && charIdx >= line.startCharIdx && charIdx <= line.endCharIdx,
+    )
+    const state = useStudio.getState()
+    if (anchor && anchor.page !== sub && state.focusedTextId === el.id) {
+      state.setView({ ...state.view, sub: anchor.page }, true)
+    }
+  }, [caretGeom, clientText.lineAnchors, el.id, focused, mode, selRange, sub])
+
   const commitProps = React.useCallback(
     (patch: Record<string, unknown>, coalesce?: string) => {
       studio.setProps(el.id, patch, coalesce)
@@ -685,9 +701,7 @@ function FlowDirectEditor({
     }
   }
 
-  const safeTop = Math.max(0, top)
-  const maxEditorH = Math.max(80, Math.min(height, v.height - safeTop - 72))
-  const editorW = Math.max(120, width)
+  const editorW = width
   const maxToolbarW = Math.max(220, v.width - 24)
   const toolbarW = Math.min(maxToolbarW, Math.max(editorW, 480))
   const toolbarLeft = Math.max(12 - left, Math.min(0, v.width - 12 - left - toolbarW))
@@ -712,7 +726,7 @@ function FlowDirectEditor({
 
     if (mode !== 'visual' || e.button !== 0) return
     const ed = containerRef.current?.querySelector('[role="textbox"]') as HTMLElement | null
-    if (!ed || !ed.contains(e.target as Node)) return
+    if (!ed || (e.target as HTMLElement).closest('button, input, textarea')) return
 
     e.preventDefault()
     ed.focus({ preventScroll: true })
@@ -754,12 +768,12 @@ function FlowDirectEditor({
         ref={containerRef}
         data-inline-editor={el.id}
         data-page-sub={sub}
-        className={cn('pointer-events-auto absolute select-text', focused ? 'z-20' : 'z-10')}
+        className={cn('studio-page-editor pointer-events-auto absolute select-text', focused ? 'z-20' : 'z-10')}
         style={{
           left,
           top,
           width: editorW,
-          height: maxEditorH,
+          height,
         }}
         onPointerDown={handleEditorPointerDown}
         onInput={() => requestAnimationFrame(syncSelection)}
@@ -808,7 +822,7 @@ function FlowDirectEditor({
             zIndex: 30,
           }}
           wrapperClassName={cn(
-            '!min-h-0 !shadow-none',
+            '!min-h-0 !overflow-clip !shadow-none',
             mode === 'visual' && 'studio-transparent-text',
             mode === 'source'
               ? 'bg-bg-elevated/92 ring-2 ring-accent'
@@ -817,8 +831,8 @@ function FlowDirectEditor({
                 : '!bg-transparent !ring-0',
           )}
           wrapperStyle={{
-            height: maxEditorH,
-            maxHeight: maxEditorH,
+            height,
+            maxHeight: height,
             paddingTop: 0,
             paddingBottom: 0,
             paddingLeft: padLeft,
@@ -837,6 +851,7 @@ function FlowDirectEditor({
                     color: 'transparent',
                     background: 'transparent',
                     caretColor: 'transparent',
+                    opacity: 0,
                   }
                 : {
                     color: 'rgb(var(--ink))',

@@ -13,7 +13,8 @@ import type {
   TextElement,
 } from '@/api/studio'
 import { markdownToHtml } from '@/lib/html-to-md'
-import { pickFontForChar } from './glyph-cache'
+import { defaultFontId } from './actions'
+import { pickFontForChar, useGlyphCache } from './glyph-cache'
 import { boxLineNum, effectiveLayoutBoxes, NO_JITTER } from './model'
 
 export interface CharBox {
@@ -205,6 +206,7 @@ function randPair(pair: readonly [number, number] | number[] | undefined, rng: (
 const f2 = (v: number): string => (Math.round(v * 100) / 100).toFixed(2)
 
 class PageCollector {
+  hasLines = false
   chunks: string[] = []
   minX = Infinity
   minY = Infinity
@@ -539,10 +541,12 @@ function parseRichBlocks(text: string, format: 'plain' | 'markdown' | 'html' | u
     return blocks.length ? blocks : [{ kind: 'paragraph', runs: [{ text: '' }] }]
   }
   // Plain text: each line is a paragraph
-  return text.split(/\r?\n/).map((line) => ({
-    kind: 'paragraph',
-    runs: [{ text: line }],
-  }))
+  const blocks: RichBlock[] = []
+  text.split('\f').forEach((part, index) => {
+    if (index) blocks.push({ kind: 'pagebreak' })
+    for (const line of part.split(/\r\n?|\n/)) blocks.push({ kind: 'paragraph', runs: [{ text: line }] })
+  })
+  return blocks
 }
 
 // ------------------------------------------------------------------ Glyph placement & line emitter
@@ -574,6 +578,7 @@ interface LayoutOpts {
   fontMix?: FontMixEntry[] | null
   jitter: Jitter
   rng: () => number
+  lineRng: () => number
   textSize: number
   charSpace: number
   pageSpace: number
@@ -761,6 +766,7 @@ function emitLineItems(
   let off = 0
   if (align === 'R') off = Math.max(0, availW - contentW)
   else if (align === 'C') off = Math.max(0, (availW - contentW) * 0.5)
+  if (opts.jitter.randomFirstPos) off += opts.lineRng() * opts.jitter.randomFirstPos
 
   let extra = 0
   if (align === 'D' && items.length > 1) {
@@ -847,13 +853,35 @@ function drawPlainString(
 
 // ------------------------------------------------------------------ FlowText layout engine
 
+const flowLayouts = new WeakMap<FlowTextElement['props'], {
+  geometry: string
+  rawText: string
+  glyphVersion: number
+  result: ClientFlowLayoutResult
+}>()
+
 export function layoutFlowStrokes(
   el: FlowTextElement,
   paper: PaperBase,
   vars: Record<string, string>,
 ): ClientFlowLayoutResult {
+  const rawText = substituteVars(el.props.text ?? '', vars)
+  const geometry = JSON.stringify([
+    paper.width_mm, paper.height_mm, paper.orientation, paper.margins,
+    paper.ruling?.line_num, paper.layout_boxes, el.id, defaultFontId(),
+  ])
+  const glyphVersion = useGlyphCache.getState().version
+  const cached = flowLayouts.get(el.props)
+  if (cached?.geometry === geometry && cached.rawText === rawText && cached.glyphVersion === glyphVersion) {
+    return cached.result
+  }
+  const result = buildFlowLayout(el, paper, rawText)
+  flowLayouts.set(el.props, { geometry, rawText, glyphVersion, result })
+  return result
+}
+
+function buildFlowLayout(el: FlowTextElement, paper: PaperBase, rawText: string): ClientFlowLayoutResult {
   const pr = el.props
-  const rawText = substituteVars(pr.text ?? '', vars)
   const seed = pr.seed != null ? Math.trunc(pr.seed) : crc32Utf8(el.id)
   const rng = makeRng(seed)
 
@@ -870,6 +898,7 @@ export function layoutFlowStrokes(
     fontMix: pr.font_mix,
     jitter,
     rng,
+    lineRng: makeRng(seed),
     textSize: Number(pr.text_size ?? 1.0) || 1.0,
     charSpace: Number(pr.char_space ?? 0.0) || 0.0,
     pageSpace: 1.0,
@@ -884,8 +913,8 @@ export function layoutFlowStrokes(
     return {
       leftMm: b.x_mm,
       topMm: b.y_mm,
-      bodyW: Math.max(10, b.w_mm),
-      bodyH: Math.max(10, b.h_mm),
+      bodyW: b.w_mm,
+      bodyH: b.h_mm,
       lineNum: ln,
       lineH: Math.max(1, b.h_mm) / ln,
     }
@@ -925,6 +954,7 @@ export function layoutFlowStrokes(
   }
 
   const advanceLines = (count = 1) => {
+    curPage.hasLines = true
     lineIdx += count
     if (lineIdx >= curBox().lineNum) nextBox()
   }
@@ -1006,8 +1036,8 @@ export function layoutFlowStrokes(
         const run = runs[runIdx]
         const text = run.text
         while (charIdx < text.length) {
-          const ch = text[charIdx]
-          charIdx++
+          const ch = String.fromCodePoint(text.codePointAt(charIdx)!)
+          charIdx += ch.length
           if (ch === '\r') continue
           if (ch === '\n') {
             const lineEndChar = charCursor.val
@@ -1020,7 +1050,8 @@ export function layoutFlowStrokes(
             break
           }
           const item = buildCharRunItem(ch, run, curLh, scaleMult, opts)
-          const thisCharIdx = charCursor.val++
+          const thisCharIdx = charCursor.val
+          charCursor.val += ch.length
           item.charIdx = thisCharIdx
           if (cur.length > 0 && curW + item.adv > avail && !NO_LINE_START.has(ch)) {
             advanceCursor()
@@ -1435,7 +1466,8 @@ export function layoutFlowStrokes(
   const blocks = parseRichBlocks(rawText, pr.format)
   layoutBlocks(blocks)
 
-  while (pages.length > 1 && pages[pages.length - 1].strokes === 0) {
+  while (pages.length > 1 && !pages[pages.length - 1].hasLines &&
+         !pages[pages.length - 1].strokes && lineAnchors.at(-1)?.page !== pages.length - 1) {
     pages.pop()
   }
 
@@ -1473,6 +1505,7 @@ export function layoutTextBoxStrokes(el: TextElement, vars: Record<string, strin
     fontMix: pr.font_mix,
     jitter,
     rng,
+    lineRng: makeRng(seed),
     textSize: 1.0 / lh,
     charSpace: Number(pr.char_space ?? 0.0) || 0.0,
     pageSpace: 1.0,

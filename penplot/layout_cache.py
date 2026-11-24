@@ -15,7 +15,7 @@ import tempfile
 
 from .geometry import Path
 
-VERSION = 2
+VERSION = 3
 MAX_BYTES = 256 * 1024 * 1024
 MAX_ENTRIES = 16
 _MAGIC = b'PPLC\x01'

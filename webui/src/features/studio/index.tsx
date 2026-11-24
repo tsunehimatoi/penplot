@@ -219,9 +219,10 @@ function Editor() {
   const originOverridden = !!(page.origin ?? doc.print?.origin)
   const workArea = hasTravel(profile?.doc.work_area) ? profile!.doc.work_area! : null
   const vars = React.useMemo(() => variableValues(doc), [doc])
+  const focusedTextId = useStudio((s) => s.focusedTextId)
 
   // element-local renders (keys computed synchronously so the canvas can read them this render)
-  // Regular & rich text render 100% on client via glyph-cache + client-stroke-layout; only LaTeX/charts/SVG hit /preview.
+  // Ordinary text uses instant client paths during editing. The settled preview uses print geometry.
   const items = React.useMemo(() => {
     const out: RenderItem[] = []
     for (const p of doc.pages) {
@@ -230,12 +231,12 @@ function Editor() {
       for (const el of p.elements) {
         const key = elementKey(el, pp, vars)
         lastKeys.set(el.id, key)
-        if ((el.type === 'flow_text' || el.type === 'text') && !needsBackendRich(el, vars)) continue
+        if ((el.type === 'flow_text' || el.type === 'text') && el.id === focusedTextId && !needsBackendRich(el, vars)) continue
         out.push({ key, el, paper: ref })
       }
     }
     return out
-  }, [doc, papers.data, vars])
+  }, [doc, papers.data, vars, focusedTextId])
   React.useEffect(() => {
     if (papers.data) requestElements(project.id, items, vars)
   }, [items, project.id, vars, papers.data])
@@ -348,7 +349,7 @@ function Editor() {
     preview: () => {
       const s = useStudio.getState()
       if (s.animate) return s.setAnimate(false)
-      void renderDocNow(project.id, s.doc!, s.version, vars).then(() => useStudio.getState().setAnimate(true))
+        s.setAnimate(true)
     },
     openInspector: () => setSheet('inspector'),
     openLayers: () => setSheet('layers'),

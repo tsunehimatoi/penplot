@@ -99,7 +99,8 @@ export function StrokeAnimation({ rid, index, v, origin }: { rid: string; index:
     const css = getComputedStyle(document.documentElement)
     const rgb = (n: string) => `rgb(${css.getPropertyValue(n).trim().split(/\s+/).join(',')})`
     const setT_ = (ctx: CanvasRenderingContext2D) => ctx.setTransform(dpr * v.zoom, 0, 0, dpr * v.zoom, dpr * v.panX, dpr * v.panY)
-    if (drawn.current.key !== key || k < drawn.current.upto) {
+    const reset = drawn.current.key !== key || k < drawn.current.upto
+    if (reset) {
       ictx.setTransform(1, 0, 0, 1, 0, 0)
       ictx.clearRect(0, 0, W, H)
       drawn.current = { upto: 0, key }
@@ -109,6 +110,17 @@ export function StrokeAnimation({ rid, index, v, origin }: { rid: string; index:
     ictx.lineWidth = Math.max(0.9, 0.3 * v.zoom) / v.zoom
     ictx.lineCap = 'round'
     ictx.lineJoin = 'round'
+    if (reset) {
+      // Reference ink comes from the same output paths as the animated strokes.
+      ictx.globalAlpha = 0.18
+      ictx.beginPath()
+      for (const line of prep.lines) {
+        ictx.moveTo(line[0], line[1])
+        for (let j = 2; j < line.length; j += 2) ictx.lineTo(line[j], line[j + 1])
+      }
+      ictx.stroke()
+      ictx.globalAlpha = 1
+    }
     ictx.beginPath()
     for (let i = drawn.current.upto; i < k; i++) {
       const l = prep.lines[i]

@@ -559,6 +559,8 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
   // ---------------------------------------------------------------- page render overlays
   const pageRender = useRender((s) => s.page)
   const outIdx = outputIndex(pageRender.result, st.view.page, st.view.sub)
+  const animation = st.animate && pageRender.status === 'ok' && pageRender.version === st.version &&
+    outIdx != null && pageRender.result ? { rid: pageRender.result.rid, index: outIdx } : null
   const [travel, setTravel] = React.useState<string | null>(null)
   React.useEffect(() => {
     setTravel(null)
@@ -719,7 +721,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
                     paper={paper}
                     zoom={v.zoom}
                     sub={st.view.sub}
-                    dim={st.animate}
+                    hideInk={!!animation}
                     showSource={st.overlays.source}
                     outPaper={!!bounds.get(el.id)?.outPaper}
                     outWork={!!bounds.get(el.id)?.outWork}
@@ -759,7 +761,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
             els={els}
             sub={st.view.sub}
             focusedTextId={st.focusedTextId}
-            readOnly={st.readOnly}
+            readOnly={st.readOnly || st.animate}
             onStartMove={startElementMove}
           />
           <svg
@@ -800,7 +802,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
             <Guides v={v} lines={guides} />
             {st.overlays.rulers && !touch ? <Rulers v={v} highlight={selBox} /> : null}
           </svg>
-          {st.animate && pageRender.result && pageRender.status !== 'running' && (pageRender.version === 0 || pageRender.version === st.version) && outIdx != null ? <StrokeAnimation key={`${pageRender.result.rid}/${outIdx}`} rid={pageRender.result.rid} index={outIdx} v={v} origin={originPoint(origin, pw, ph, cbox)} /> : null}
+          {animation ? <StrokeAnimation key={`${animation.rid}/${animation.index}`} {...animation} v={v} origin={originPoint(origin, pw, ph, cbox)} /> : null}
         </div>
       </ContextMenuTrigger>
       <CanvasMenu />

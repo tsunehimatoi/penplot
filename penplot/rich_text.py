@@ -960,4 +960,9 @@ def parse_rich(content: str, fmt: str = 'markdown') -> list[Block]:
         return parse_html(content)
     if fmt == 'markdown':
         return parse_markdown(content)
-    return [ParagraphBlock([TextRun(line)]) for line in content.replace('\r\n', '\n').split('\n')]
+    blocks: list[Block] = []
+    for index, part in enumerate(content.replace('\r\n', '\n').replace('\r', '\n').split('\f')):
+        if index:
+            blocks.append(PageBreakBlock())
+        blocks.extend(ParagraphBlock([TextRun(line)]) for line in part.split('\n'))
+    return blocks

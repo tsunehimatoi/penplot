@@ -15,14 +15,13 @@ import { svgTransform } from '../geometry'
 import { elementOnPage, elementName, pagePaperRef, paperDims, resolvePaper, sortedByZ } from '../model'
 import { usePagination } from '../pagination'
 import { RenderProgress } from '../render-progress'
-import { useElementRender } from '../element-render'
+import { useElementPreview } from '../text-preview'
 import { studio, useStudio } from '../store'
 
 export const TYPE_ICON: Record<ElementType, typeof Type> = { text: Type, flow_text: ScrollText, image: ImageIcon, svg: PenTool, dxf: PenTool, shape: Shapes, gcode: FileCode2 }
 
-function ThumbEl({ el, sub }: { el: Element; sub: number }) {
-  const { r } = useElementRender(el)
-  const d = el.type === 'flow_text' ? r?.pages?.[sub]?.d : elementOnPage(el, sub) ? r?.d : undefined
+function ThumbEl({ el, paper, sub }: { el: Element; paper: PaperBase; sub: number }) {
+  const { d } = useElementPreview(el, paper, sub)
   if (!d || el.hidden) return null
   return <path d={d} transform={svgTransform(el.transform)} fill="none" stroke="rgb(var(--ink))" strokeWidth={0.8} vectorEffect="non-scaling-stroke" />
 }
@@ -33,7 +32,7 @@ export const PageThumb = React.memo(function PageThumb({ page, paper, sub = 0, s
   const k = size / Math.max(w, h)
   return (
     <svg ref={ref} width={w * k} height={h * k} viewBox={`0 0 ${w} ${h}`} className="block bg-canvas-paper shadow-paper" aria-hidden>
-      {visible && sortedByZ(page.elements).map((e) => (!elementOnPage(e, sub) ? null : <ThumbEl key={e.id} el={e} sub={sub} />))}
+      {visible && sortedByZ(page.elements).map((e) => (!elementOnPage(e, sub) || e.hidden ? null : <ThumbEl key={e.id} el={e} paper={paper} sub={sub} />))}
     </svg>
   )
 })

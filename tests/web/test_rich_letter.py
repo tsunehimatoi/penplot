@@ -312,6 +312,40 @@ def test_html_blank_lines_containers_pagebreaks_and_alignment():
     assert bb_left[0] >= 17.9
 
 
+def test_flow_prefix_and_blank_continuation_match_print():
+    from penplot.compose import Resolver, compose_pages, encode_paths, render_document
+    from penplot.settings import MachineConfig
+
+    paper = {
+        'width_mm': 150.0, 'height_mm': 80.0,
+        'margins': {'l': 0, 'r': 0, 't': 0, 'b': 0},
+        'ruling': {'line_num': 10},
+    }
+    props = {
+        'text': 'AA\nB', 'format': 'plain', 'line_num': 2, 'text_size': 0.45, 'seed': 42,
+        'jitter': {'randomFirstPos': 2, 'randomFontSize': [0.8, 1.2], 'randomY': 0.03},
+    }
+    el = {'id': 'letter', 'type': 'flow_text', 'props': props}
+    doc = {'pages': [{'elements': [el]}]}
+    res = Resolver()
+    mc = MachineConfig()
+    original = compose_pages(doc, [paper], res, mc)
+    assert len(original) == 1
+
+    props.update(text='<p>AA</p><p>BC</p><p><br></p>', format='html')
+    preview = compose_pages(doc, [paper], res, mc)
+    assert len(preview) == 2
+    assert encode_paths(preview[0][2][:len(original[0][2])]) == encode_paths(original[0][2])
+    assert preview[1][2] == []
+
+    props['text'] = '<p>AA</p><p>BC</p><p>D</p>'
+    preview = compose_pages(doc, [paper], res, mc)
+    rendered = render_document(doc, [paper], res, mc, opts={'optimize': False})
+    assert len(rendered) == 2
+    assert preview[1][2]
+    assert [encode_paths(p.page_paths) for p in rendered] == [encode_paths(p[2]) for p in preview]
+
+
 def test_multibox_flow_same_page_then_expand_pages():
     from penplot.geometry import bbox_of
     from penplot.settings import Settings

@@ -6,11 +6,13 @@ import { usePapers } from './data'
 import { useGlyphCache } from './glyph-cache'
 import { pagePaperRef, resolvePaper, variableValues } from './model'
 import { useRender } from './render-engine'
+import { useStudio } from './store'
 
 /** Physical pages in print order; instant client-side single-stroke layout with backend override for LaTeX/charts/SVG. */
 export function usePagination(doc: ProjectDoc | null) {
   const renders = useRender((s) => s.els)
   const glyphVersion = useGlyphCache((s) => s.version)
+  const focusedTextId = useStudio((s) => s.focusedTextId)
   const papers = usePapers()
 
   return useMemo(() => {
@@ -27,7 +29,8 @@ export function usePagination(doc: ProjectDoc | null) {
         }
         const key = lastKeys.get(el.id)
         const exactRender = key ? renders[key] : undefined
-        if (needsBackendRich(el, vars) && exactRender?.status === 'ok' && exactRender.pages?.length) {
+        if (exactRender?.status === 'ok' && exactRender.pages?.length &&
+            (el.id !== focusedTextId || needsBackendRich(el, vars))) {
           count = Math.max(count, exactRender.pages.length)
         } else {
           const clientPages = layoutFlowStrokes(el, paper, vars)
@@ -36,5 +39,5 @@ export function usePagination(doc: ProjectDoc | null) {
       }
       return Array.from({ length: count }, (_, sub) => ({ page: index, sub }))
     })
-  }, [doc, renders, glyphVersion, papers.data])
+  }, [doc, renders, glyphVersion, papers.data, focusedTextId])
 }

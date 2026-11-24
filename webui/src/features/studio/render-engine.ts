@@ -112,14 +112,15 @@ export function requestElements(pid: string, items: RenderItem[], variables: Rec
   lastItems = items
   wanted = new Set(items.map((i) => i.key))
   for (const ctl of new Set(controllers.values())) {
-    if (![...controllers].some(([k, c]) => c === ctl && wanted.has(k))) ctl.abort()
+    if (![...controllers].some(([k, c]) => c === ctl && wanted.has(k))) ctl.abort('superseded')
   }
   const els = useRender.getState().els
   let added = false
   const fresh: string[] = []
   for (const it of items) {
     const cur = els[it.key]
-    if (cur && (cur.status !== 'error' || cur.code === 'cancelled' || Date.now() - cur.at < 15_000)) continue
+    if (cur && (cur.status !== 'error' || cur.code === 'cancelled' ||
+                (cur.code !== 'superseded' && Date.now() - cur.at < 15_000))) continue
     if (!cur) fresh.push(it.key)
     if (!queue.has(it.key)) {
       queue.set(it.key, it)
@@ -262,6 +263,7 @@ async function renderBatch(pid: string, batch: RenderItem[]): Promise<void> {
     void cachePutMany(out)
   } catch (e) {
     const cancelled = ctl.signal.aborted || (e as DOMException)?.name === 'AbortError'
+    const superseded = ctl.signal.reason === 'superseded'
     if (!cancelled && batch.length > 1 && !(isApiError(e) && e.isOffline)) {
       for (const it of batch) await renderBatch(pid, [it])
       return
@@ -269,9 +271,12 @@ async function renderBatch(pid: string, batch: RenderItem[]): Promise<void> {
     for (const it of batch) out[it.key] = {
       ...useRender.getState().els[it.key], status: 'error',
       error: cancelled ? '已取消预览' : errorMessage(e),
-      code: cancelled ? 'cancelled' : isApiError(e) ? e.code : undefined, at: Date.now(),
+      code: superseded ? 'superseded' : cancelled ? 'cancelled' : isApiError(e) ? e.code : undefined, at: Date.now(),
     }
     useRender.getState().setMany(out)
+    if (superseded) {
+      for (const it of batch) if (wanted.has(it.key)) queue.set(it.key, it)
+    }
     if (!cancelled) scheduleRetry(batch.map(it => it.key))
   } finally {
     for (const it of batch) if (controllers.get(it.key) === ctl) controllers.delete(it.key)

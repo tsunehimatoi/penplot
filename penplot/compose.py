@@ -172,43 +172,41 @@ def _flow_text_pages(el, paper, res, variables, settings, warn):
     fmt = ParagraphFormat(int(para.get('spe_type', 0)), float(para.get('spe_value', 0.0)),
                           float(para.get('left', 0.0)), float(para.get('right', 0.0)))
     rich_fmt = pr.get('format') or 'plain'
-    layout_boxes = paper.get('layout_boxes') or None
-    if rich_fmt in ('markdown', 'html') or layout_boxes:
-        from .rich_layout import RichTextDocument
-        rdoc = RichTextDocument(
-            page, font, _fonts_set(pr.get('jitter')), settings=settings,
-            rng=random.Random(_seed(pr, el.get('id'))),
-            text_size=float(pr.get('text_size', 1.0)),
-            char_space=float(pr.get('char_space', 0.0)), font_mix=mix,
-            font_roles=roles,
-            missing_glyph=pr.get('missing_glyph', 'box'),
-            rich_style=pr.get('rich_style'),
-            layout_boxes=layout_boxes,
-        )
-        out = rdoc.layout_and_render(text, fmt_name=rich_fmt, para_fmt=fmt,
-                                     align=pr.get('align', 'L'))
-        warn['missing'] |= rdoc.missing
+    layout_boxes = paper.get('layout_boxes')
+    if rich_fmt == 'legacy' and not layout_boxes:
+        doc = TextDocument(page, font, _fonts_set(pr.get('jitter')), settings=settings,
+                           rng=random.Random(_seed(pr, el.get('id'))),
+                           text_size=float(pr.get('text_size', 1.0)),
+                           char_space=float(pr.get('char_space', 0.0)), font_mix=mix,
+                           font_roles=roles)
+        doc.missing_glyph = pr.get('missing_glyph', 'box')
+        align = ALIGN.get(pr.get('align', 'L'), LineAlign.LEFT)
+        k = 25.4 / settings.dpi
+        out = []
+        for pi in range(len(doc.layout(text, fmt))):
+            paths = doc.entities(text, align=align, fmt=fmt, page_index=pi)
+            for path in paths:
+                for i in range(len(path.coords)):
+                    path.coords[i] *= k
+            out.append(paths)
+        warn['missing'] |= doc.missing
         return out or [[]]
 
-    doc = TextDocument(page, font, _fonts_set(pr.get('jitter')), settings=settings,
-                       rng=random.Random(_seed(pr, el.get('id'))),
-                       text_size=float(pr.get('text_size', 1.0)),
-                       char_space=float(pr.get('char_space', 0.0)), font_mix=mix,
-                       font_roles=roles)
-    doc.missing_glyph = pr.get('missing_glyph', 'box')
-    align = ALIGN.get(pr.get('align', 'L'), LineAlign.LEFT)
-    pages = doc.layout(text, fmt)
-    k = 25.4 / settings.dpi
-    out = []
-    for pi in range(len(pages)):
-        ents = doc.entities(text, align=align, fmt=fmt, page_index=pi)
-        for p in ents:
-            c = p.coords
-            for i in range(len(c)):
-                c[i] = c[i] * k
-        out.append(ents)
-    warn['missing'] |= doc.missing
-    return out or [[]]
+    from .rich_layout import RichTextDocument
+    rdoc = RichTextDocument(
+        page, font, _fonts_set(pr.get('jitter')), settings=settings,
+        rng=random.Random(_seed(pr, el.get('id'))),
+        text_size=float(pr.get('text_size', 1.0)),
+        char_space=float(pr.get('char_space', 0.0)), font_mix=mix,
+        font_roles=roles,
+        missing_glyph=pr.get('missing_glyph', 'box'),
+        rich_style=pr.get('rich_style'),
+        layout_boxes=layout_boxes,
+    )
+    out = rdoc.layout_and_render(text, fmt_name=rich_fmt, para_fmt=fmt,
+                                 align=pr.get('align', 'L'))
+    warn['missing'] |= rdoc.missing
+    return out
 
 
 def text_box_paths(el, res, variables, settings, warn):
@@ -797,7 +795,7 @@ def _element_paths(el, paper, res, variables, mc, warn):
     t = el.get('type')
     pr = el.get('props') or {}
     if t == 'text':
-        key = {'props': pr, 'text': substitute(pr.get('text', ''), variables), 'id': el.get('id'),
+        key = {'layout_version': 2, 'props': pr, 'text': substitute(pr.get('text', ''), variables), 'id': el.get('id'),
                'fonts': _font_idents(pr, res), 'settings': mc.settings}
         return _cached_element(res, t, key, lambda w: text_box_paths(el, res, variables, mc.settings, w),
                                warn)

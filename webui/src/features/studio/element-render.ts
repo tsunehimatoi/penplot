@@ -22,3 +22,8 @@ export function resolveElementRender(id: string, r: ElRender | undefined): { r: 
   return { r, stale: false }
 }
 
+export function renderedElementPage(el: Element, sub: number, r?: ElRender) {
+  if (el.type === 'flow_text' && r?.pages) return r.pages[sub]
+  if (sub === (el.type === 'flow_text' ? 0 : el.page_offset ?? 0)) return r
+}
+

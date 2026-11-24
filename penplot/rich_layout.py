@@ -48,6 +48,8 @@ class RichTextDocument:
         self.fs = fonts_set or FontsSet()
         self.settings = settings
         self.rng = rng or random.Random()
+        self._line_rng = random.Random(0)
+        self._line_rng_state = self.rng.getstate()
         self.text_size = float(text_size or 1.0)
         self.char_space = float(char_space or 0.0)
         self.font_mix = font_mix
@@ -69,8 +71,8 @@ class RichTextDocument:
         base_line_num = max(1, int(page.lineNum or 20))
         base_top = float(page.topGap)
         base_left = float(page.leftGap)
-        base_body_w = max(10.0, float(page.pageWidth - page.leftGap - page.rightGap))
-        base_body_h = max(10.0, float(page.pageHeight - page.topGap - page.bottomGap))
+        base_body_w = max(1.0, float(page.pageWidth - page.leftGap - page.rightGap))
+        base_body_h = max(1.0, float(page.pageHeight - page.topGap - page.bottomGap))
         base_line_h = base_body_h / base_line_num
 
         if layout_boxes:
@@ -86,7 +88,7 @@ class RichTextDocument:
                     gln = getattr(box, 'line_num', None)
                 bw = max(1.0, float(gw))
                 bh = max(1.0, float(gh))
-                bln = max(1, int(gln)) if gln is not None else max(1, round(base_line_num * bh / base_body_h))
+                bln = max(1, int(gln)) if gln is not None else max(1, math.floor(base_line_num * bh / max(10, base_body_h) + 0.5))
                 self._boxes.append({
                     'left_mm': float(gx),
                     'top_mm': float(gy),
@@ -243,6 +245,8 @@ class RichTextDocument:
         self._cur_page = self._pages[0]
         self._box_idx = 0
         self._line_idx = 0
+        self._used_pages = 1
+        self._line_rng.setstate(self._line_rng_state)
         self._sync_box_attrs()
 
     def _new_page(self):
@@ -265,6 +269,7 @@ class RichTextDocument:
             self._next_box()
 
     def _advance_lines(self, count: int = 1):
+        self._used_pages = len(self._pages)
         self._line_idx += count
         if self._line_idx >= self.line_num:
             self._next_box()
@@ -451,6 +456,8 @@ class RichTextDocument:
             off = max(0.0, (avail_w - content_w) * 0.5)
         else:
             off = 0.0
+        if self.fs.randomFirstPos:
+            off += self._line_rng.random() * self.fs.randomFirstPos
 
         extra = 0.0
         if align == 'D' and len(items) > 1:
@@ -828,7 +835,7 @@ class RichTextDocument:
         self._reset_pages()
         blocks = parse_rich(content, fmt_name)
         self._layout_blocks(blocks, para_fmt or ParagraphFormat(), align)
-        # Drop trailing empty page if previous pages exist
-        while len(self._pages) > 1 and not self._pages[-1]:
+        # Keep laid-out blank lines, including a continuation page ready for typing.
+        while len(self._pages) > self._used_pages and not self._pages[-1]:
             self._pages.pop()
         return self._pages or [[]]

@@ -124,8 +124,9 @@ class RenderService:
         return self.ctx.tasks.submit('render_project', args, slot=slot, on_done=self._on_done)
 
     def submit_text(self, body, slot=None):
+        # The standalone text API shares the CLI's layout and stroke order.
         el = {'id': 'text', 'type': 'flow_text', 'transform': {}, 'z': 0, 'hidden': False,
-              'props': {'text': body.text, 'font_id': body.font_id,
+              'props': {'text': body.text, 'format': 'legacy', 'font_id': body.font_id,
                         'font_mix': [m.model_dump() for m in body.font_mix] if body.font_mix else None,
                         'text_size': body.text_size, 'char_space': body.char_space, 'align': body.align,
                         'paragraph': body.paragraph.model_dump(), 'jitter': body.jitter.model_dump(),

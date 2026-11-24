@@ -89,7 +89,7 @@ export interface StudioState {
   undo: () => void
   redo: () => void
 
-  setView: (v: PageView) => void
+  setView: (v: PageView, keepTextFocus?: boolean) => void
   select: (ids: string[]) => void
   toggleSelect: (id: string) => void
   setTool: (t: Tool) => void
@@ -260,7 +260,7 @@ export const useStudio = create<StudioState>((set, get) => ({
     })
   },
 
-  setView: (v) => {
+  setView: (v, keepTextFocus = false) => {
     const prev = get().view
     const pageChanged = v.page !== prev.page
     const viewChanged = pageChanged || v.sub !== prev.sub
@@ -268,7 +268,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       view: v,
       selection: !pageChanged ? get().selection.filter((id) => get().doc?.pages[v.page]?.elements.some((e) => e.id === id && elementOnPage(e, v.sub))) : [],
       ...(pageChanged ? { bgCalib: null } : {}),
-      ...(viewChanged ? { focusedTextId: null } : {}),
+      ...(viewChanged && !keepTextFocus ? { focusedTextId: null } : {}),
     })
   },
   select: (ids) => {
@@ -295,7 +295,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       /* ignore */
     }
   },
-  setAnimate: (b) => set({ animate: b }),
+  setAnimate: (b) => set(b ? { animate: true, focusedTextId: null } : { animate: false }),
   setEditText: (id) => set(id ? { editTextOf: id, focusedTextId: id } : { editTextOf: null }),
   setFocusedTextId: (id) => set({ focusedTextId: id }),
   bgAlign: false,

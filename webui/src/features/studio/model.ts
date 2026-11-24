@@ -116,6 +116,7 @@ export function boxLineNum(paper: PaperBase, box: { h_mm: number; line_num?: num
   const m = paper.margins ?? DEFAULT_MARGINS
   const bodyH = Math.max(10, h - m.t - m.b)
   const baseLineNum = Math.max(1, overrideLineNum || paper.ruling?.line_num || 20)
+  if (!paper.layout_boxes?.length) return baseLineNum
   return Math.max(1, Math.round((baseLineNum * box.h_mm) / bodyH))
 }
 
@@ -323,7 +324,7 @@ export function makeFlow(fontId: string | null, text = '', format: 'plain' | 'ma
     name: '文本框',
     props: {
       text, format, rich_style: { ...DEFAULT_RICH_STYLE }, font_id: fontId, font_mix: null, text_size: 1, char_space: 0, align: 'L',
-      paragraph: { spe_type: 1, spe_value: 8, left: 0, right: 0 }, line_num: null, jitter: { ...NO_JITTER },
+      paragraph: { spe_type: 0, spe_value: 0, left: 0, right: 0 }, line_num: null, jitter: { ...NO_JITTER },
       seed: Math.floor(Math.random() * 10000), missing_glyph: 'box',
     },
   } as Element
@@ -450,9 +451,10 @@ export function usedVariables(doc: ProjectDoc): string[] {
 export function elementKey(el: Element, paper: PaperBase, vars: Record<string, string>): string {
   const p = el.type === 'flow_text' ? JSON.stringify([paper.width_mm, paper.height_mm, paper.orientation, paper.margins, paper.ruling, paper.layout_boxes ?? []]) : ''
   const usesVars = (el.type === 'text' || el.type === 'flow_text') && el.props.text.includes('{{')
-  // Invalidate persisted rich-text paths from the former offset-copy bold renderer.
-  const version = el.type === 'flow_text' ? 'single-pass-v1|' : ''
-  return `${version}${el.type}|${JSON.stringify(el.props)}|${p}|${usesVars ? JSON.stringify(vars) : ''}`
+  const textRenderKey = el.type === 'flow_text' || el.type === 'text'
+    ? `text-layout-v3|${el.props.seed == null ? el.id : ''}|`
+    : ''
+  return `${textRenderKey}${el.type}|${JSON.stringify(el.props)}|${p}|${usesVars ? JSON.stringify(vars) : ''}`
 }
 
 export function variableValues(doc: ProjectDoc): Record<string, string> {

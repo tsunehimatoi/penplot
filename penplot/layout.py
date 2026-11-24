@@ -147,6 +147,7 @@ class TextDocument:
         self.fs = fonts_set or FontsSet()
         self.settings = settings
         self.rng = rng or random.Random()
+        self._line_rng_state = self.rng.getstate()
         self.text_size = text_size
         self.char_space = char_space
         # font_mix: [(font, weight), ...] - per-char weighted random font
@@ -339,11 +340,14 @@ class TextDocument:
         line_w = self._mm2px(page.pageWidth - page.leftGap - page.rightGap)
         fmt = fmt or ParagraphFormat()
         out = []
+        line_rng = random.Random(0)
+        line_rng.setstate(self._line_rng_state)
         for pi, lines in enumerate(pages):
-            if page_index is not None and pi != page_index:
-                continue
             for li, line in enumerate(lines):
                 if not line.chars:
+                    continue
+                first_offset = line_rng.random() * self.fs.randomFirstPos
+                if page_index is not None and pi != page_index:
                     continue
                 first_of_para = line.first
                 indent = fmt.spe_value if (first_of_para and fmt.spe_type == 1) or \
@@ -357,7 +361,7 @@ class TextDocument:
                     off = (line_w - content - g - h) / 2.0
                 else:                                          # Left / Disperse
                     off = g
-                off += self.rng.random() * self.fs.randomFirstPos   # j.b.c: [0, v]
+                off += self._mm2px(first_offset)
                 extra = 0.0
                 if align == LineAlign.DISPERSE:
                     # Java: denominator = (n-1) - #zero-advance chars;
