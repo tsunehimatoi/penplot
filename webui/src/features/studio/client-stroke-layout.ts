@@ -16,6 +16,29 @@ import { markdownToHtml } from '@/lib/html-to-md'
 import { pickFontForChar } from './glyph-cache'
 import { boxLineNum, effectiveLayoutBoxes, NO_JITTER } from './model'
 
+export interface CharBox {
+  blockIdx: number
+  charIdx: number
+  page: number
+  boxIdx: number
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface LineAnchor {
+  blockIdx: number
+  page: number
+  boxIdx: number
+  x: number
+  y: number
+  h: number
+  endX: number
+  startCharIdx: number
+  endCharIdx: number
+}
+
 export interface ClientRenderedPage {
   d: string
   bbox: [number, number, number, number] | null
@@ -26,6 +49,8 @@ export interface ClientFlowLayoutResult {
   pages: ClientRenderedPage[]
   missing: string[]
   overflow: boolean
+  charBoxes: CharBox[]
+  lineAnchors: LineAnchor[]
 }
 
 export interface ClientTextLayoutResult {
@@ -34,6 +59,8 @@ export interface ClientTextLayoutResult {
   strokes: number
   missing: string[]
   overflow: boolean
+  charBoxes: CharBox[]
+  lineAnchors: LineAnchor[]
 }
 
 const NO_LINE_START = new Set([
@@ -298,9 +325,10 @@ function isPageBreakElement(el: Element): boolean {
 
 function collectRuns(node: Node, style: Omit<TextRun, 'text'> = {}): TextRun[] {
   const out: TextRun[] = []
-  const walk = (n: Node, cur: Omit<TextRun, 'text'>) => {
+  const walk = (n: Node, cur: Omit<TextRun, 'text'>, inPre = false) => {
     if (n.nodeType === 3) {
-      const txt = n.textContent ?? ''
+      const raw = n.textContent ?? ''
+      const txt = inPre ? raw : raw.replace(/[ \t\r\n]+/g, ' ')
       if (txt) out.push({ text: txt, ...cur })
       return
     }
@@ -323,8 +351,9 @@ function collectRuns(node: Node, style: Omit<TextRun, 'text'> = {}): TextRun[] {
     if (st.includes('text-decoration') && st.includes('underline')) next.underline = true
     if (st.includes('text-decoration') && st.includes('line-through')) next.strike = true
 
+    const nextInPre = inPre || tag === 'pre'
     for (let i = 0; i < el.childNodes.length; i++) {
-      walk(el.childNodes[i], next)
+      walk(el.childNodes[i], next, nextInPre)
     }
   }
   walk(node, style)
@@ -348,20 +377,22 @@ function parseHtmlToBlocks(html: string): RichBlock[] {
 
   const processChildren = (parent: Node, target: RichBlock[]) => {
     let inlineAcc: TextRun[] = []
+    let hasExplicitBr = false
     const flushInline = () => {
       if (inlineAcc.length > 0) {
         const textOnly = inlineAcc.map((r) => r.text).join('')
-        if (textOnly.trim() || textOnly.includes('\n')) {
+        if (textOnly.trim().length > 0 || hasExplicitBr) {
           target.push({ kind: 'paragraph', runs: inlineAcc })
         }
         inlineAcc = []
+        hasExplicitBr = false
       }
     }
 
     for (let i = 0; i < parent.childNodes.length; i++) {
       const node = parent.childNodes[i]
       if (node.nodeType === 3) {
-        const txt = node.textContent ?? ''
+        const txt = (node.textContent ?? '').replace(/[ \t\r\n]+/g, ' ')
         if (txt) inlineAcc.push({ text: txt })
         continue
       }
@@ -476,6 +507,9 @@ function parseHtmlToBlocks(html: string): RichBlock[] {
         continue
       }
       // Inline element at block level
+      if (tag === 'br' || el.querySelector('br') !== null) {
+        hasExplicitBr = true
+      }
       inlineAcc.push(...collectRuns(el))
     }
     flushInline()
@@ -519,6 +553,7 @@ interface RichItem {
   isSpace: boolean
   underline: boolean
   strike: boolean
+  charIdx?: number
 }
 
 interface BoxGeom {
@@ -694,6 +729,18 @@ function buildCharRunItem(ch: string, run: TextRun, lineH: number, scaleMult: nu
   return item
 }
 
+interface EmitGeomOut {
+  charBoxes: CharBox[]
+  lineAnchors: LineAnchor[]
+  blockIdx: number
+  page: number
+  boxIdx: number
+  startCharIdx: number
+  endCharIdx: number
+  anchorY?: number
+  anchorH?: number
+}
+
 function emitLineItems(
   collector: PageCollector,
   items: RichItem[],
@@ -704,6 +751,7 @@ function emitLineItems(
   align: AlignType,
   scaleMult: number,
   opts: LayoutOpts,
+  geomOut?: EmitGeomOut,
 ): void {
   let contentW = 0
   for (const it of items) contentW += it.step
@@ -736,7 +784,33 @@ function emitLineItems(
       const sy = baselineY - lineH * opts.textSize * scaleMult * 0.28
       collector.addLine(x, sy, x + it.step, sy)
     }
-    rel += it.step + extra
+    const stepW = it.step + extra
+    if (geomOut && it.charIdx !== undefined) {
+      geomOut.charBoxes.push({
+        blockIdx: geomOut.blockIdx,
+        charIdx: it.charIdx,
+        page: geomOut.page,
+        boxIdx: geomOut.boxIdx,
+        x,
+        y: geomOut.anchorY ?? yTop,
+        w: stepW,
+        h: geomOut.anchorH ?? lineH,
+      })
+    }
+    rel += stepW
+  }
+  if (geomOut) {
+    geomOut.lineAnchors.push({
+      blockIdx: geomOut.blockIdx,
+      page: geomOut.page,
+      boxIdx: geomOut.boxIdx,
+      x: xStart + off,
+      y: geomOut.anchorY ?? yTop,
+      h: geomOut.anchorH ?? lineH,
+      endX: xStart + off + rel,
+      startCharIdx: geomOut.startCharIdx,
+      endCharIdx: geomOut.endCharIdx,
+    })
   }
 }
 
@@ -816,14 +890,18 @@ export function layoutFlowStrokes(
 
   const pages: PageCollector[] = [new PageCollector()]
   let curPage = pages[0]
+  let curPageIdx = 0
   let boxIdx = 0
   let lineIdx = 0
+  const charBoxes: CharBox[] = []
+  const lineAnchors: LineAnchor[] = []
 
   const curBox = () => boxes[boxIdx]
 
   const newPage = () => {
     curPage = new PageCollector()
     pages.push(curPage)
+    curPageIdx = pages.length - 1
     boxIdx = 0
     lineIdx = 0
   }
@@ -876,7 +954,8 @@ export function layoutFlowStrokes(
     runs: TextRun[],
     scaleMult: number,
     prepareLine: (li: number) => [number, number],
-    emitLine: (li: number, items: RichItem[]) => void,
+    emitLine: (li: number, items: RichItem[], startCharIdx: number, endCharIdx: number) => void,
+    charCursor: { val: number },
   ) => {
     let runIdx = 0
     let charIdx = 0
@@ -904,13 +983,17 @@ export function layoutFlowStrokes(
       const [avail, curLh] = prepareLine(li)
       const cur: RichItem[] = []
       let curW = 0
+      let lineStartChar = charCursor.val
 
       if (pending !== null) {
         let item = pending.item
+        const prevCharIdx = item.charIdx
         if (pending.builtLh !== curLh) {
           item = buildCharRunItem(pending.ch, pending.run, curLh, scaleMult, opts)
+          item.charIdx = prevCharIdx
         }
         pending = null
+        if (item.charIdx !== undefined) lineStartChar = item.charIdx
         cur.push(item)
         curW += item.step
       }
@@ -924,17 +1007,21 @@ export function layoutFlowStrokes(
           charIdx++
           if (ch === '\r') continue
           if (ch === '\n') {
+            const lineEndChar = charCursor.val
+            charCursor.val++
             advanceCursor()
-            emitLine(li, cur)
+            emitLine(li, cur, lineStartChar, lineEndChar)
             li++
             emittedAny = true
             lineClosed = true
             break
           }
           const item = buildCharRunItem(ch, run, curLh, scaleMult, opts)
+          const thisCharIdx = charCursor.val++
+          item.charIdx = thisCharIdx
           if (cur.length > 0 && curW + item.adv > avail && !NO_LINE_START.has(ch)) {
             advanceCursor()
-            emitLine(li, cur)
+            emitLine(li, cur, lineStartChar, thisCharIdx)
             li++
             emittedAny = true
             pending = { ch, run, item, builtLh: curLh }
@@ -949,7 +1036,7 @@ export function layoutFlowStrokes(
 
       if (!lineClosed) {
         if (cur.length > 0 || !emittedAny) {
-          emitLine(li, cur)
+          emitLine(li, cur, lineStartChar, charCursor.val)
           li++
           emittedAny = true
         }
@@ -958,45 +1045,82 @@ export function layoutFlowStrokes(
 
     if (!emittedAny) {
       prepareLine(0)
-      emitLine(0, [])
+      emitLine(0, [], charCursor.val, charCursor.val)
     }
   }
 
-  const runsToWrappedLines = (runs: TextRun[], avail: number, lineH: number, scaleMult: number): RichItem[][] => {
-    const lines: RichItem[][] = []
+  const runsToWrappedLines = (
+    runs: TextRun[],
+    avail: number,
+    lineH: number,
+    scaleMult: number,
+    charCursor?: { val: number },
+  ): { items: RichItem[]; startCharIdx: number; endCharIdx: number }[] => {
+    const lines: { items: RichItem[]; startCharIdx: number; endCharIdx: number }[] = []
     let cur: RichItem[] = []
     let curW = 0
+    let lineStart = charCursor?.val ?? 0
     for (const run of runs) {
       for (const ch of run.text) {
         if (ch === '\r') continue
         if (ch === '\n') {
-          lines.push(cur)
+          const lineEnd = charCursor ? charCursor.val++ : 0
+          lines.push({ items: cur, startCharIdx: lineStart, endCharIdx: lineEnd })
           cur = []
           curW = 0
+          lineStart = charCursor?.val ?? 0
           continue
         }
         const item = buildCharRunItem(ch, run, lineH, scaleMult, opts)
+        const thisIdx = charCursor ? (charCursor.val += ch.length, charCursor.val - ch.length) : undefined
+        item.charIdx = thisIdx
         if (cur.length > 0 && curW + item.adv > avail && !NO_LINE_START.has(ch)) {
-          lines.push(cur)
+          const wrapEnd = thisIdx ?? 0
+          lines.push({ items: cur, startCharIdx: lineStart, endCharIdx: wrapEnd })
           cur = []
           curW = 0
+          lineStart = wrapEnd
         }
         cur.push(item)
         curW += item.step
       }
     }
-    if (cur.length > 0 || lines.length === 0) lines.push(cur)
+    if (cur.length > 0 || lines.length === 0) {
+      lines.push({ items: cur, startCharIdx: lineStart, endCharIdx: charCursor?.val ?? 0 })
+    }
     return lines
   }
 
-  const layoutBlocks = (blocks: RichBlock[], indentLeft = 0, quoteDepth = 0) => {
-    for (const blk of blocks) {
+  const layoutBlocks = (
+    blocks: RichBlock[],
+    indentLeft = 0,
+    quoteDepth = 0,
+    parentBlockIdx?: number,
+    parentCharCursor?: { val: number },
+  ) => {
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const blk = blocks[bi]
+      const blkIdx = parentBlockIdx ?? bi
+      const charCursor = parentCharCursor ?? { val: 0 }
       if (blk.kind === 'pagebreak') {
         if (lineIdx > 0 || boxIdx > 0 || curPage.strokes > 0) newPage()
         continue
       }
       if (blk.kind === 'hr') {
         ensureLines(1)
+        const b = curBox()
+        const [baseLeft] = boxFrame(indentLeft)
+        lineAnchors.push({
+          blockIdx: blkIdx,
+          page: curPageIdx,
+          boxIdx,
+          x: baseLeft,
+          y: lineY(),
+          h: b.lineH,
+          endX: baseLeft,
+          startCharIdx: 0,
+          endCharIdx: 0,
+        })
         advanceLines(1)
         continue
       }
@@ -1013,16 +1137,25 @@ export function layoutFlowStrokes(
             const [, availBase] = boxFrame(indentLeft)
             return [availBase, curBox().lineH]
           },
-          (_li, wl) => {
+          (_li, wl, startCharIdx, endCharIdx) => {
             const b = curBox()
             const linesPerRow = lvlFactor >= 1.3 && b.lineNum >= 2 ? 2 : 1
             const [baseLeft, availBase] = boxFrame(indentLeft)
             const yTop = lineY()
             const yDraw = yTop + (linesPerRow - 1) * b.lineH * 0.5
-            emitLineItems(curPage, wl, baseLeft, availBase, yDraw, b.lineH, align, lvlFactor, opts)
+            emitLineItems(curPage, wl, baseLeft, availBase, yDraw, b.lineH, align, lvlFactor, opts, {
+              charBoxes,
+              lineAnchors,
+              blockIdx: blkIdx,
+              page: curPageIdx,
+              boxIdx,
+              startCharIdx,
+              endCharIdx,
+            })
             if (quoteDepth) drawQuoteBars(quoteDepth, yTop, linesPerRow)
             advanceLines(linesPerRow)
           },
+          charCursor,
         )
         continue
       }
@@ -1045,18 +1178,27 @@ export function layoutFlowStrokes(
             const [, , wLine] = paraGeom(li)
             return [wLine, curBox().lineH]
           },
-          (li, wl) => {
+          (li, wl, startCharIdx, endCharIdx) => {
             const [baseLeft, ind, wLine] = paraGeom(li)
             const yTop = lineY()
-            emitLineItems(curPage, wl, baseLeft + ind, wLine, yTop, curBox().lineH, align, 1.0, opts)
+            emitLineItems(curPage, wl, baseLeft + ind, wLine, yTop, curBox().lineH, align, 1.0, opts, {
+              charBoxes,
+              lineAnchors,
+              blockIdx: blkIdx,
+              page: curPageIdx,
+              boxIdx,
+              startCharIdx,
+              endCharIdx,
+            })
             if (quoteDepth) drawQuoteBars(quoteDepth, yTop, 1)
             advanceLines(1)
           },
+          charCursor,
         )
         continue
       }
       if (blk.kind === 'quote') {
-        layoutBlocks(blk.blocks, indentLeft + 5.0, quoteDepth + 1)
+        layoutBlocks(blk.blocks, indentLeft + 5.0, quoteDepth + 1, blkIdx, charCursor)
         continue
       }
       if (blk.kind === 'list') {
@@ -1072,7 +1214,7 @@ export function layoutFlowStrokes(
               const wLine = Math.max(Math.min(8, availBase), availBase - markerW)
               return [wLine, curBox().lineH]
             },
-            (li, wl) => {
+            (li, wl, startCharIdx, endCharIdx) => {
               const [baseLeft, availBase] = boxFrame(indentLeft)
               const wLine = Math.max(Math.min(8, availBase), availBase - markerW)
               const b = curBox()
@@ -1093,13 +1235,22 @@ export function layoutFlowStrokes(
                   curPage.addCircle(baseLeft + 2.2, yTop + b.lineH * 0.52, br)
                 }
               }
-              emitLineItems(curPage, wl, baseLeft + markerW, wLine, yTop, b.lineH, 'L', 1.0, opts)
+              emitLineItems(curPage, wl, baseLeft + markerW, wLine, yTop, b.lineH, 'L', 1.0, opts, {
+                charBoxes,
+                lineAnchors,
+                blockIdx: blkIdx,
+                page: curPageIdx,
+                boxIdx,
+                startCharIdx,
+                endCharIdx,
+              })
               if (quoteDepth) drawQuoteBars(quoteDepth, yTop, 1)
               advanceLines(1)
             },
+            charCursor,
           )
           if (item.children.length > 0) {
-            layoutBlocks(item.children, indentLeft + markerW, quoteDepth)
+            layoutBlocks(item.children, indentLeft + markerW, quoteDepth, blkIdx, charCursor)
           }
         })
         continue
@@ -1120,9 +1271,10 @@ export function layoutFlowStrokes(
           boxStartLine = null
         }
 
-        for (const cl of codeLines) {
+        for (let cli = 0; cli < codeLines.length; cli++) {
+          const cl = codeLines[cli]
           layoutRuns(
-            [{ text: cl || ' ', code: true }],
+            [{ text: cl, code: true }],
             0.88,
             () => {
               if (lineIdx >= curBox().lineNum) {
@@ -1138,18 +1290,28 @@ export function layoutFlowStrokes(
               const cw = Math.max(Math.min(8, availBase), availBase - pad * 2)
               return [cw, curBox().lineH]
             },
-            (_li, wl) => {
+            (_li, wl, startCharIdx, endCharIdx) => {
               const [baseLeft, availBase] = boxFrame(indentLeft)
               const cw = Math.max(Math.min(8, availBase), availBase - pad * 2)
               const b = curBox()
-              emitLineItems(curPage, wl, baseLeft + pad, cw, lineY(), b.lineH, 'L', 0.88, opts)
+              emitLineItems(curPage, wl, baseLeft + pad, cw, lineY(), b.lineH, 'L', 0.88, opts, {
+                charBoxes,
+                lineAnchors,
+                blockIdx: blkIdx,
+                page: curPageIdx,
+                boxIdx,
+                startCharIdx,
+                endCharIdx,
+              })
               lineIdx++
               if (lineIdx >= b.lineNum) {
                 flushCodeBox()
                 nextBox()
               }
             },
+            charCursor,
           )
+          if (cli + 1 < codeLines.length) charCursor.val++
         }
         flushCodeBox()
         if (lineIdx >= curBox().lineNum) nextBox()
@@ -1165,13 +1327,16 @@ export function layoutFlowStrokes(
           const innerW = Math.max(4, colW - padX * 2)
           return { x0, availW, colW, innerW }
         }
-        const prepareRow = (cells: TextRun[][], innerW: number, lh: number) =>
-          Array.from({ length: ncols }, (_, ci) => runsToWrappedLines(cells[ci] ?? [], innerW, lh, 0.92))
+        const prepareRow = (cells: TextRun[][], innerW: number, lh: number, trackCursor: boolean) =>
+          Array.from({ length: ncols }, (_, ci) =>
+            runsToWrappedLines(cells[ci] ?? [], innerW, lh, 0.92, trackCursor ? charCursor : undefined),
+          )
 
         const drawRow = (
-          wcols: RichItem[][][],
+          wcols: { items: RichItem[]; startCharIdx: number; endCharIdx: number }[][],
           isHdr: boolean,
           geom: { x0: number; availW: number; colW: number; innerW: number },
+          recordGeom = true,
         ) => {
           const rowLines = Math.max(1, ...wcols.map((wc) => wc.length))
           const b = curBox()
@@ -1182,7 +1347,28 @@ export function layoutFlowStrokes(
               const wc = wcols[ci]
               if (li < wc.length) {
                 const al = blk.aligns[ci] ?? 'L'
-                emitLineItems(curPage, wc[li], geom.x0 + ci * geom.colW + padX, geom.innerW, yLine, b.lineH, al, 0.92, opts)
+                emitLineItems(
+                  curPage,
+                  wc[li].items,
+                  geom.x0 + ci * geom.colW + padX,
+                  geom.innerW,
+                  yLine,
+                  b.lineH,
+                  al,
+                  0.92,
+                  opts,
+                  recordGeom
+                    ? {
+                        charBoxes,
+                        lineAnchors,
+                        blockIdx: blkIdx,
+                        page: curPageIdx,
+                        boxIdx,
+                        startCharIdx: wc[li].startCharIdx,
+                        endCharIdx: wc[li].endCharIdx,
+                      }
+                    : undefined,
+                )
               }
             }
             lineIdx++
@@ -1204,38 +1390,38 @@ export function layoutFlowStrokes(
         }
 
         let geom = boxTableGeom()
-        let hdrWrapped = blk.headers.length > 0 ? prepareRow(blk.headers, geom.innerW, curBox().lineH) : null
+        let hdrWrapped = blk.headers.length > 0 ? prepareRow(blk.headers, geom.innerW, curBox().lineH, true) : null
         const rawRows: { isHdr: boolean; cells: TextRun[][] }[] = [
           ...(blk.headers.length > 0 ? [{ isHdr: true, cells: blk.headers }] : []),
           ...blk.rows.map((cells) => ({ isHdr: false, cells })),
         ]
 
         for (const row of rawRows) {
-          let wcols = row.isHdr && hdrWrapped ? hdrWrapped : prepareRow(row.cells, geom.innerW, curBox().lineH)
+          let wcols = row.isHdr && hdrWrapped ? hdrWrapped : prepareRow(row.cells, geom.innerW, curBox().lineH, true)
           let needed = Math.max(1, ...wcols.map((wc) => wc.length))
           if (lineIdx > 0 && lineIdx + needed > curBox().lineNum) {
             const prev = `${curBox().bodyW}:${curBox().lineH}`
             nextBox()
             geom = boxTableGeom()
             if (`${curBox().bodyW}:${curBox().lineH}` !== prev) {
-              hdrWrapped = blk.headers.length > 0 ? prepareRow(blk.headers, geom.innerW, curBox().lineH) : null
-              wcols = row.isHdr && hdrWrapped ? hdrWrapped : prepareRow(row.cells, geom.innerW, curBox().lineH)
+              hdrWrapped = blk.headers.length > 0 ? prepareRow(blk.headers, geom.innerW, curBox().lineH, false) : null
+              wcols = row.isHdr && hdrWrapped ? hdrWrapped : prepareRow(row.cells, geom.innerW, curBox().lineH, false)
               needed = Math.max(1, ...wcols.map((wc) => wc.length))
             }
             if (!row.isHdr && hdrWrapped && tableHeaderRepeat) {
               const hNeed = Math.max(1, ...hdrWrapped.map((wc) => wc.length))
               if (lineIdx + hNeed + needed <= curBox().lineNum) {
-                drawRow(hdrWrapped, true, geom)
+                drawRow(hdrWrapped, true, geom, false)
               }
             }
           }
-          drawRow(wcols, row.isHdr, geom)
+          drawRow(wcols, row.isHdr, geom, true)
           if (lineIdx >= curBox().lineNum) {
             const prev = `${curBox().bodyW}:${curBox().lineH}`
             nextBox()
             geom = boxTableGeom()
             if (`${curBox().bodyW}:${curBox().lineH}` !== prev) {
-              hdrWrapped = blk.headers.length > 0 ? prepareRow(blk.headers, geom.innerW, curBox().lineH) : null
+              hdrWrapped = blk.headers.length > 0 ? prepareRow(blk.headers, geom.innerW, curBox().lineH, false) : null
             }
           }
         }
@@ -1254,6 +1440,8 @@ export function layoutFlowStrokes(
     pages: pages.map((p) => p.finish()),
     missing: [...opts.missing].sort(),
     overflow: false,
+    charBoxes,
+    lineAnchors,
   }
 }
 
@@ -1289,37 +1477,57 @@ export function layoutTextBoxStrokes(el: TextElement, vars: Record<string, strin
     missing: new Set(),
   }
 
-  const lines: RichItem[][] = []
+  const lines: { items: RichItem[]; startCharIdx: number; endCharIdx: number }[] = []
   let cur: RichItem[] = []
   let curW = 0
+  let lineStart = 0
+  let rawIdx = 0
 
   for (const ch of rawText) {
+    const chLen = ch.length
+    const curIdx = rawIdx
+    rawIdx += chLen
     if (ch === '\r') continue
     if (ch === '\n') {
-      lines.push(cur)
+      lines.push({ items: cur, startCharIdx: lineStart, endCharIdx: curIdx })
       cur = []
       curW = 0
+      lineStart = rawIdx
       continue
     }
     const item = buildGlyphItem(ch, pitch, 1.0, false, false, false, true, opts)
+    item.charIdx = curIdx
     if (cur.length > 0 && curW + item.adv > availW && !NO_LINE_START.has(ch)) {
-      lines.push(cur)
+      lines.push({ items: cur, startCharIdx: lineStart, endCharIdx: curIdx })
       cur = []
       curW = 0
+      lineStart = curIdx
     }
     cur.push(item)
     curW += item.step
   }
-  if (cur.length > 0 || lines.length === 0) lines.push(cur)
+  if (cur.length > 0 || lines.length === 0) {
+    lines.push({ items: cur, startCharIdx: lineStart, endCharIdx: rawIdx })
+  }
 
   const overflow = lines.length > maxLines
   const drawCount = Math.min(lines.length, maxLines)
   const collector = new PageCollector()
   const align: AlignType = pr.align ?? 'L'
   const emitW = box?.w ? availW : 0
+  const charBoxes: CharBox[] = []
+  const lineAnchors: LineAnchor[] = []
 
   for (let i = 0; i < drawCount; i++) {
-    emitLineItems(collector, lines[i], 0, emitW, i * pitch, pitch, align, 1.0, opts)
+    emitLineItems(collector, lines[i].items, 0, emitW, i * pitch, pitch, align, 1.0, opts, {
+      charBoxes,
+      lineAnchors,
+      blockIdx: 0,
+      page: 0,
+      boxIdx: 0,
+      startCharIdx: lines[i].startCharIdx,
+      endCharIdx: lines[i].endCharIdx,
+    })
   }
 
   const res = collector.finish()
@@ -1327,6 +1535,8 @@ export function layoutTextBoxStrokes(el: TextElement, vars: Record<string, strin
     ...res,
     missing: [...opts.missing].sort(),
     overflow,
+    charBoxes,
+    lineAnchors,
   }
 }
 
@@ -1344,6 +1554,8 @@ export function resolveTextRender(
   missing: string[]
   overflow: boolean
   isBackendRich: boolean
+  charBoxes: CharBox[]
+  lineAnchors: LineAnchor[]
 } {
   const isBackendRich = needsBackendRich(el, vars)
   if (el.type === 'flow_text') {
@@ -1357,6 +1569,8 @@ export function resolveTextRender(
       missing: res.missing,
       overflow: res.overflow,
       isBackendRich,
+      charBoxes: res.charBoxes,
+      lineAnchors: res.lineAnchors,
     }
   }
   const res = layoutTextBoxStrokes(el, vars)
@@ -1367,5 +1581,7 @@ export function resolveTextRender(
     missing: res.missing,
     overflow: res.overflow,
     isBackendRich,
+    charBoxes: res.charBoxes,
+    lineAnchors: res.lineAnchors,
   }
 }
