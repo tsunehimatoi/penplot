@@ -57,6 +57,7 @@ class GlyphInfo(Model):
     char: str
     w: float = Field(description='advance/width in font units')
     x0: float = Field(0.0, description='minimum X coordinate in font units')
+    has_advance: bool = False
     path_d: str = Field(description='SVG path data in font units (y down, baseline 0)')
 
 

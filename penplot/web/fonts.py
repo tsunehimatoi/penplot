@@ -355,6 +355,7 @@ class FontIndex:
             xs = g.coords[0::2] if g.coords else []
             x0 = round(float(min(xs)), 2) if xs else 0.0
             w = getattr(g, 'advance', None)
+            has_adv = bool(w)
             if not w:
                 w = (max(xs) - min(0.0, min(xs))) if xs else ref_size * 0.3
             out.append({
@@ -362,6 +363,7 @@ class FontIndex:
                 'char': chr(cp),
                 'w': round(float(w), 2),
                 'x0': x0,
+                'has_advance': has_adv,
                 'path_d': self._glyph_d(g),
             })
         nxt = start + count if start + count < total else None

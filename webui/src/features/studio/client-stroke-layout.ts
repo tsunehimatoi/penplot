@@ -60,12 +60,15 @@ export function needsBackendRich(el: FlowTextElement | TextElement, vars: Record
   return false
 }
 
-// ------------------------------------------------------------------ Deterministic PRNG
+// ------------------------------------------------------------------ Deterministic PRNG (CPython 3 MT19937)
 
-function crc32(str: string): number {
+const utf8Encoder = new TextEncoder()
+
+export function crc32Utf8(str: string): number {
+  const bytes = utf8Encoder.encode(str)
   let crc = 0xffffffff
-  for (let i = 0; i < str.length; i++) {
-    crc ^= str.charCodeAt(i)
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i]
     for (let j = 0; j < 8; j++) {
       crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
     }
@@ -73,13 +76,93 @@ function crc32(str: string): number {
   return (crc ^ 0xffffffff) >>> 0
 }
 
-function makeRng(seed: number): () => number {
-  let s = seed >>> 0
+/**
+ * Bit-for-bit CPython 3 `random.Random(int_seed)` MT19937 implementation
+ * (`init_by_array` + `genrand_res53`).
+ */
+export function makeRng(seed: number): () => number {
+  const N = 624
+  const M = 397
+  const mt = new Uint32Array(N)
+  let mti = N + 1
+
+  const initGenrand = (s: number) => {
+    mt[0] = s >>> 0
+    for (mti = 1; mti < N; mti++) {
+      const prev = mt[mti - 1] ^ (mt[mti - 1] >>> 30)
+      mt[mti] = (Math.imul(1812433253, prev) + mti) >>> 0
+    }
+  }
+
+  const initByArray = (initKey: number[]) => {
+    initGenrand(19650218)
+    let i = 1
+    let j = 0
+    let k = N > initKey.length ? N : initKey.length
+    for (; k > 0; k--) {
+      const prev = mt[i - 1] ^ (mt[i - 1] >>> 30)
+      mt[i] = ((mt[i] ^ Math.imul(prev, 1664525)) + initKey[j] + j) >>> 0
+      i++
+      j++
+      if (i >= N) {
+        mt[0] = mt[N - 1]
+        i = 1
+      }
+      if (j >= initKey.length) j = 0
+    }
+    for (k = N - 1; k > 0; k--) {
+      const prev = mt[i - 1] ^ (mt[i - 1] >>> 30)
+      mt[i] = ((mt[i] ^ Math.imul(prev, 1566083941)) - i) >>> 0
+      i++
+      if (i >= N) {
+        mt[0] = mt[N - 1]
+        i = 1
+      }
+    }
+    mt[0] = 0x80000000
+  }
+
+  let absN = Math.abs(Math.trunc(seed))
+  const key: number[] = []
+  if (absN === 0) {
+    key.push(0)
+  } else {
+    while (absN > 0) {
+      key.push(absN % 0x100000000)
+      absN = Math.floor(absN / 0x100000000)
+    }
+  }
+  initByArray(key)
+
+  const mag01 = [0, 0x9908b0df]
+  const genrandInt32 = (): number => {
+    let y: number
+    if (mti >= N) {
+      let kk = 0
+      for (; kk < N - M; kk++) {
+        y = (mt[kk] & 0x80000000) | (mt[kk + 1] & 0x7fffffff)
+        mt[kk] = (mt[kk + M] ^ (y >>> 1) ^ mag01[y & 1]) >>> 0
+      }
+      for (; kk < N - 1; kk++) {
+        y = (mt[kk] & 0x80000000) | (mt[kk + 1] & 0x7fffffff)
+        mt[kk] = (mt[kk + (M - N)] ^ (y >>> 1) ^ mag01[y & 1]) >>> 0
+      }
+      y = (mt[N - 1] & 0x80000000) | (mt[0] & 0x7fffffff)
+      mt[N - 1] = (mt[M - 1] ^ (y >>> 1) ^ mag01[y & 1]) >>> 0
+      mti = 0
+    }
+    y = mt[mti++]
+    y ^= y >>> 11
+    y ^= (y << 7) & 0x9d2c5680
+    y ^= (y << 15) & 0xefc60000
+    y ^= y >>> 18
+    return y >>> 0
+  }
+
   return () => {
-    s = (s + 0x6d2b79f5) | 0
-    let t = Math.imul(s ^ (s >>> 15), 1 | s)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    const a = genrandInt32() >>> 5
+    const b = genrandInt32() >>> 6
+    return (a * 67108864.0 + b) * (1.0 / 9007199254740992.0)
   }
 }
 
@@ -448,7 +531,7 @@ interface BoxGeom {
 }
 
 interface LayoutOpts {
-  primaryFontId: string
+  primaryFontId: string | null | undefined
   fontRoles?: FontRoles | null
   fontMix?: FontMixEntry[] | null
   jitter: Jitter
@@ -493,7 +576,7 @@ function buildGlyphItem(
     const jXs = applyJitter ? randPair(fs.randomXScale, opts.rng, 1) : 1
     const jYs = applyJitter ? randPair(fs.randomYScale, opts.rng, 1) : 1
     const jRot = applyJitter ? randPair(fs.randomRotate, opts.rng, 0) : 0
-    const jY = applyJitter && fs.randomY ? (opts.rng() * 2 - 1) * fs.randomY * lineH : 0
+    const jY = applyJitter && fs.randomY ? (-fs.randomY + 2 * fs.randomY * opts.rng()) * lineH : 0
 
     const sc = (lineH / picked.refSize) * jSize * effSize
     const sx = sc * jXs
@@ -530,7 +613,7 @@ function buildGlyphItem(
     }
 
     let shift = minX < 0 ? -minX : 0
-    let adv = g.w > 0 ? g.w * (lineH / picked.refSize) * effSize : (maxX - minX) + Math.max(0, minX)
+    let adv = g.hasAdvance && g.w > 0 ? g.w * (lineH / picked.refSize) * effSize : (maxX - minX) + Math.max(0, minX)
     if (applyJitter && isSpecialChar(fs.chars, ch)) {
       shift += fs.widthAdd ?? 0
       adv += shift
@@ -694,7 +777,7 @@ export function layoutFlowStrokes(
 ): ClientFlowLayoutResult {
   const pr = el.props
   const rawText = substituteVars(pr.text ?? '', vars)
-  const seed = pr.seed != null ? pr.seed : crc32(el.id)
+  const seed = pr.seed != null ? Math.trunc(pr.seed) : crc32Utf8(el.id)
   const rng = makeRng(seed)
 
   const jitter: Jitter = { ...NO_JITTER, ...(pr.jitter ?? {}) }
@@ -705,7 +788,7 @@ export function layoutFlowStrokes(
   const codeBox = rs.code_box ?? true
 
   const opts: LayoutOpts = {
-    primaryFontId: pr.font_id || 'builtin',
+    primaryFontId: pr.font_id,
     fontRoles: pr.font_roles,
     fontMix: pr.font_mix,
     jitter,
@@ -1189,12 +1272,12 @@ export function layoutTextBoxStrokes(el: TextElement, vars: Record<string, strin
     ? Math.max(1, Math.floor((Number(box.h || pitch * nlines)) / pitch + 1e-9))
     : Infinity
 
-  const seed = pr.seed != null ? pr.seed : crc32(el.id)
+  const seed = pr.seed != null ? Math.trunc(pr.seed) : crc32Utf8(el.id)
   const rng = makeRng(seed)
   const jitter: Jitter = { ...NO_JITTER, ...(pr.jitter ?? {}) }
 
   const opts: LayoutOpts = {
-    primaryFontId: pr.font_id || 'builtin',
+    primaryFontId: pr.font_id,
     fontRoles: pr.font_roles,
     fontMix: pr.font_mix,
     jitter,

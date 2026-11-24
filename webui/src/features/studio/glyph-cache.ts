@@ -6,10 +6,12 @@
 import { create } from 'zustand'
 import { api } from '@/api/client'
 import type { FontMixEntry, FontRoles } from '@/api/studio'
+import { defaultFontId } from './actions'
 
 export interface GlyphData {
   w: number
   x0: number
+  hasAdvance: boolean
   segs: Float32Array[]
 }
 
@@ -23,6 +25,7 @@ interface GlyphApiItem {
   char?: string
   w?: number
   x0?: number
+  has_advance?: boolean
   path_d?: string
 }
 
@@ -265,7 +268,8 @@ export async function ensureGlyphs(fontId: string | null | undefined, text: stri
           const w = typeof item.w === 'number' && Number.isFinite(item.w)
             ? item.w
             : Number.isFinite(maxX) ? (maxX - minX) + Math.max(0, minX) : 0
-          received.set(ch, { w, x0, segs })
+          const hasAdvance = Boolean(item.has_advance)
+          received.set(ch, { w, x0, hasAdvance, segs })
         }
       }
       for (const ch of chunk) {
@@ -290,6 +294,13 @@ export async function ensureGlyphs(fontId: string | null | undefined, text: stri
   }
 }
 
+function resolvePrimaryFontId(
+  primaryFontId: string | null | undefined,
+  fontMix?: FontMixEntry[] | null,
+): string {
+  return fontMix?.[0]?.font_id || primaryFontId || defaultFontId() || 'builtin'
+}
+
 /** Ensure glyphs for primary font, font_roles, and font_mix used by a text/flow_text element. */
 export function ensureElementGlyphs(
   text: string,
@@ -297,8 +308,9 @@ export function ensureElementGlyphs(
   fontRoles?: FontRoles | null,
   fontMix?: FontMixEntry[] | null,
 ): void {
+  const effectivePrimary = resolvePrimaryFontId(primaryFontId, fontMix)
   const fids = new Set<string>()
-  fids.add(primaryFontId || 'builtin')
+  fids.add(effectivePrimary)
   if (fontRoles) {
     if (fontRoles.en) fids.add(fontRoles.en)
     if (fontRoles.zh) fids.add(fontRoles.zh)
@@ -362,7 +374,7 @@ export function pickFontForChar(
   fontMix?: FontMixEntry[] | null,
   rng?: () => number,
 ): { fontId: string; glyph: GlyphData | null | undefined; refSize: number; pending: boolean } {
-  const primary = primaryFontId || 'builtin'
+  const primary = resolvePrimaryFontId(primaryFontId, fontMix)
   const cat = charCategory(ch)
 
   if (fontRoles && (cat === 'en' || cat === 'zh' || cat === 'symbol')) {
@@ -387,17 +399,21 @@ export function pickFontForChar(
       return { fontId: fid, ...getCachedGlyph(fid, ch) }
     }
     if (candidates.length > 1) {
+      const cumWeights: number[] = new Array(candidates.length)
       let totalW = 0
-      for (const c of candidates) totalW += c.weight ?? 1
-      let r = (rng ? rng() : Math.random()) * totalW
-      let picked = candidates[candidates.length - 1].font_id
-      for (const c of candidates) {
-        r -= c.weight ?? 1
-        if (r <= 0) {
-          picked = c.font_id
-          break
-        }
+      for (let i = 0; i < candidates.length; i++) {
+        totalW += Number(candidates[i].weight ?? 1)
+        cumWeights[i] = totalW
       }
+      const target = (rng ? rng() : Math.random()) * totalW
+      let lo = 0
+      let hi = candidates.length - 1
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1
+        if (target < cumWeights[mid]) hi = mid
+        else lo = mid + 1
+      }
+      const picked = candidates[lo].font_id
       return { fontId: picked, ...getCachedGlyph(picked, ch) }
     }
   }
