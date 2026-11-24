@@ -66,7 +66,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
   const st = useStudio(
     useShallow((s) => ({
       doc: s.doc, view: s.view, selection: s.selection, tool: s.tool, spaceHand: s.spaceHand, zoom: s.zoom, overlays: s.overlays,
-      fitRequest: s.fitRequest, animate: s.animate, bgAlign: s.bgAlign, bgCalib: s.bgCalib, bgTouch: s.bgTouch, readOnly: s.readOnly,
+      fitRequest: s.fitRequest, animate: s.animate, version: s.version, bgAlign: s.bgAlign, bgCalib: s.bgCalib, bgTouch: s.bgTouch, readOnly: s.readOnly,
       focusedTextId: s.focusedTextId,
     })),
   )
@@ -800,7 +800,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
             <Guides v={v} lines={guides} />
             {st.overlays.rulers && !touch ? <Rulers v={v} highlight={selBox} /> : null}
           </svg>
-          {st.animate && pageRender.result && outIdx != null ? <StrokeAnimation key={`${pageRender.result.rid}/${outIdx}`} rid={pageRender.result.rid} index={outIdx} v={v} origin={originPoint(origin, pw, ph, cbox)} /> : null}
+          {st.animate && pageRender.result && pageRender.status !== 'running' && (pageRender.version === 0 || pageRender.version === st.version) && outIdx != null ? <StrokeAnimation key={`${pageRender.result.rid}/${outIdx}`} rid={pageRender.result.rid} index={outIdx} v={v} origin={originPoint(origin, pw, ph, cbox)} /> : null}
         </div>
       </ContextMenuTrigger>
       <CanvasMenu />

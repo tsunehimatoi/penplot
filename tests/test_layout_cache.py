@@ -143,7 +143,7 @@ def test_corruption_and_write_failure_fall_back(tmp_path, monkeypatch):
     args = inputs(tmp_path)
     args[0]['pages'][0]['elements'].append({'id': 'box', 'type': 'shape', 'props': {'w': 2, 'h': 2}})
     expected = compose_pages(*args)
-    filename, = [p for p in (tmp_path / 'cache' / 'layout-v1').glob('*.layout')
+    filename, = [p for p in (tmp_path / 'cache' / f'layout-v{cache.VERSION}').glob('*.layout')
                  if not p.name.startswith('flow-')]
     filename.write_bytes(b'broken')
     assert cache.encode_composition(compose_pages(*args)) == cache.encode_composition(expected)
@@ -252,7 +252,7 @@ def test_flow_warnings_mutability_and_corrupt_cache(tmp_path):
     assert len(calls) == 1
     assert second[0][0].coords[0] == 1.123456789123
     assert other == warn
-    filename, = (tmp_path / 'cache' / 'layout-v1').glob('flow-*.layout')
+    filename, = (tmp_path / 'cache' / f'layout-v{cache.VERSION}').glob('flow-*.layout')
     filename.write_bytes(b'broken')
     run()
     assert len(calls) == 2
@@ -264,7 +264,7 @@ def test_flow_warnings_mutability_and_corrupt_cache(tmp_path):
 def test_pure_flow_persists_only_local_layout_and_reuses_it(tmp_path, monkeypatch):
     args = inputs(tmp_path)
     expected = cache.encode_composition(compose_pages(*args))
-    files = list((tmp_path / 'cache' / 'layout-v1').glob('*.layout'))
+    files = list((tmp_path / 'cache' / f'layout-v{cache.VERSION}').glob('*.layout'))
     assert len(files) == 1 and files[0].name.startswith('flow-')
     def fail(*args, **kwargs):
         raise AssertionError('pure flow repeated layout')

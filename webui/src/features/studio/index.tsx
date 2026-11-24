@@ -179,6 +179,7 @@ function Editor() {
   const view = useStudio((s) => s.view)
   const saveState = useStudio((s) => s.saveState)
   const animate = useStudio((s) => s.animate)
+  const version = useStudio((s) => s.version)
   const bgAlign = useStudio((s) => s.bgAlign && !!s.doc?.pages[s.view.page]?.background)
   const papers = usePapers()
   useFonts()
@@ -255,7 +256,7 @@ function Editor() {
     if (!animate || !papers.data) return
     const s = useStudio.getState()
     if (s.doc) void renderDocNow(project.id, s.doc, s.version, vars)
-  }, [animate, project.id, papers.data, vars])
+  }, [animate, version, project.id, papers.data, vars])
 
   // dropped / queued imports
   React.useEffect(() => {

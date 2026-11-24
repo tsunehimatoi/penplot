@@ -496,7 +496,7 @@ function parseHtmlToBlocks(html: string): RichBlock[] {
         } else {
           // Collapse trailing single <br> inside empty <p><br></p> so it occupies 1 line instead of 2
           const runs = collectRuns(el)
-          const nonNl = runs.some((r) => r.text.replace(/\n/g, '').length > 0)
+          const nonNl = runs.some((r) => r.text.replace(/[\n \t\r\u00a0]/g, '').length > 0)
           const finalRuns = nonNl ? runs : [{ text: '' }]
           target.push({
             kind: 'paragraph',
@@ -523,17 +523,20 @@ function parseRichBlocks(text: string, format: 'plain' | 'markdown' | 'html' | u
   if (!text) return [{ kind: 'paragraph', runs: [{ text: '' }] }]
   if (format === 'html') return parseHtmlToBlocks(text)
   if (format === 'markdown') {
+    const stripMdBlankParas = (bs: RichBlock[]): RichBlock[] =>
+      bs.filter((b) => b.kind !== 'paragraph' || b.runs.some((r) => r.text.replace(/[\n \t\r\u00a0]/g, '').length > 0))
     // Support === pagebreak in markdown just like backend parse_rich
     const parts = text.split(/^[ \t]*===[ \t]*$/m)
     if (parts.length > 1) {
       const blocks: RichBlock[] = []
       parts.forEach((part, idx) => {
         if (idx > 0) blocks.push({ kind: 'pagebreak' })
-        if (part.trim()) blocks.push(...parseHtmlToBlocks(markdownToHtml(part)))
+        if (part.trim()) blocks.push(...stripMdBlankParas(parseHtmlToBlocks(markdownToHtml(part))))
       })
       return blocks.length ? blocks : [{ kind: 'paragraph', runs: [{ text: '' }] }]
     }
-    return parseHtmlToBlocks(markdownToHtml(text))
+    const blocks = stripMdBlankParas(parseHtmlToBlocks(markdownToHtml(text)))
+    return blocks.length ? blocks : [{ kind: 'paragraph', runs: [{ text: '' }] }]
   }
   // Plain text: each line is a paragraph
   return text.split(/\r?\n/).map((line) => ({
