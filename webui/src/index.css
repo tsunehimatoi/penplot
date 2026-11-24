@@ -514,6 +514,8 @@
   line-height: 1.6;
   color: rgb(var(--label));
   word-break: break-word;
+  white-space: pre-wrap;
+  tab-size: 2;
   outline: none;
 }
 .rich-wysiwyg[data-empty='true']::before {
@@ -636,6 +638,45 @@
   font-weight: 600;
   background: rgb(var(--quaternary-fill) / var(--quaternary-fill-a));
 }
+.rich-wysiwyg table[data-border='none'] :is(th, td) {
+  border-color: transparent;
+}
+.rich-wysiwyg table[data-border='vertical'] :is(th, td) {
+  border-block-color: transparent;
+}
+.rich-wysiwyg table[data-border-edges] :is(th, td) {
+  border-color: transparent;
+}
+.rich-wysiwyg table[data-border-edges~='left'] tr > :first-child,
+.rich-wysiwyg table[data-border-edges~='vertical'] tr > :is(th, td) + :is(th, td) {
+  border-inline-start-color: rgb(var(--separator) / var(--separator-a));
+}
+.rich-wysiwyg table[data-border-edges~='right'] tr > :last-child {
+  border-inline-end-color: rgb(var(--separator) / var(--separator-a));
+}
+.rich-wysiwyg table[data-border-edges~='top'] > :first-child > tr:first-child > :is(th, td),
+.rich-wysiwyg table[data-border-edges~='horizontal'] tr + tr > :is(th, td),
+.rich-wysiwyg table[data-border-edges~='horizontal'] > :is(thead, tbody, tfoot) + :is(tbody, tfoot) > tr:first-child > :is(th, td) {
+  border-block-start-color: rgb(var(--separator) / var(--separator-a));
+}
+.rich-wysiwyg table[data-border-edges~='bottom'] > :last-child > tr:last-child > :is(th, td) {
+  border-block-end-color: rgb(var(--separator) / var(--separator-a));
+}
+.rich-wysiwyg .math-inline,
+.rich-wysiwyg .math-display {
+  font-family: var(--font-mono);
+}
+.rich-wysiwyg .math-display {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+  overflow-wrap: anywhere;
+}
+.rich-wysiwyg :is(.math-inline, .math-display)[data-border='box'] {
+  border: 1px solid currentColor;
+  border-radius: 0.2em;
+  padding: 0.12em 0.3em;
+}
 .rich-wysiwyg hr {
   border: none;
   border-top: 1px solid rgb(var(--separator) / var(--separator-a));
@@ -696,15 +737,6 @@
   padding: 0;
   line-height: var(--ruled-lh);
   min-height: var(--ruled-lh);
-}
-.studio-ruled-editor p {
-  text-indent: var(--ruled-indent, 0px);
-}
-.studio-ruled-editor p[style*='text-align: center'],
-.studio-ruled-editor p[style*='text-align:center'],
-.studio-ruled-editor p[style*='text-align: right'],
-.studio-ruled-editor p[style*='text-align:right'] {
-  text-indent: 0;
 }
 .studio-ruled-editor h1,
 .studio-ruled-editor h2,

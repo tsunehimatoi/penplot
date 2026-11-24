@@ -12,10 +12,12 @@ import { cn } from '@/lib/cn'
 import { plainToHtml } from '@/lib/html-to-md'
 import { toast } from '@/lib/toast'
 import { resolveTextRender, type CharBox, type LineAnchor } from '../client-stroke-layout'
+import { useElementRender } from '../element-render'
 import { useGlyphCache } from '../glyph-cache'
 import { boxLineNum, effectiveLayoutBoxes, variableValues } from '../model'
 import { studio, useStudio } from '../store'
 import {
+  EDIT_SELECTED_FORMULA_EVENT,
   normalizeEditorHtml,
   toVisualHtml,
   WysiwygSurface,
@@ -159,7 +161,7 @@ function hitTestBlockChar(
   localMmY: number,
   pageCharBoxes: CharBox[],
   pageLineAnchors: LineAnchor[],
-): { bc: BlockChar; anchor: LineAnchor | null } {
+): { bc: BlockChar; anchor: LineAnchor | null; atom?: CharBox } {
   if (pageLineAnchors.length === 0) return { bc: { blockIdx: 0, charIdx: 0 }, anchor: null }
   let bestAnchor = pageLineAnchors[0]
   let bestDy = Infinity
@@ -196,6 +198,10 @@ function hitTestBlockChar(
     return { bc: { blockIdx: bestAnchor.blockIdx, charIdx: bestAnchor.startCharIdx }, anchor: bestAnchor }
   }
   for (const cb of lineChars) {
+    if (cb.atomic && localMmX > cb.x + cb.w * 0.15 && localMmX < cb.x + cb.w * 0.85) {
+      const charIdx = localMmX < cb.x + cb.w * 0.5 ? cb.charIdx : cb.endCharIdx ?? cb.charIdx + 1
+      return { bc: { blockIdx: cb.blockIdx, charIdx }, anchor: bestAnchor, atom: cb }
+    }
     if (localMmX < cb.x + cb.w * 0.5) {
       return { bc: { blockIdx: bestAnchor.blockIdx, charIdx: cb.charIdx }, anchor: bestAnchor }
     }
@@ -290,7 +296,7 @@ interface DomBlockInfo {
 function hasNonNewlineText(nodes: Node[]): boolean {
   for (const n of nodes) {
     if (n.nodeType === 3) {
-      if ((n.textContent ?? '').replace(/[ \t\r\n]+/g, ' ').replace(/\n/g, '').length > 0) return true
+      if ((n.textContent ?? '').replace(/[\r\n]/g, '').length > 0) return true
     } else if (n.nodeType === 1) {
       const el = n as globalThis.Element
       const tag = el.tagName.toLowerCase()
@@ -358,7 +364,8 @@ function getDomBlocks(editorEl: HTMLElement): DomBlockInfo[] {
         if (tag === 'div' && hasChildBlock) {
           process(el)
         } else {
-          out.push({ nodes: [el], isEmptyBlock: !hasNonNewlineText([el]), isPre: false })
+          out.push({ nodes: [el], isEmptyBlock: !hasNonNewlineText([el]) &&
+            el.querySelectorAll('br:not([data-editor-sentinel])').length <= 1, isPre: false })
         }
         continue
       }
@@ -372,35 +379,28 @@ function getDomBlocks(editorEl: HTMLElement): DomBlockInfo[] {
 }
 
 function collapsedTextLen(raw: string, inPre: boolean): number {
-  return inPre ? raw.length : raw.replace(/[ \t\r\n]+/g, ' ').length
+  return inPre ? raw.length : raw.replace(/[ \t]*[\r\n]+[ \t\r\n]*/g, ' ').length
 }
 
 function rawOffsetForCollapsed(raw: string, targetCollapsed: number, inPre: boolean): number {
   if (inPre) return Math.min(raw.length, targetCollapsed)
-  const collapsed = raw.replace(/[ \t\r\n]+/g, ' ')
-  if (collapsed.length === raw.length) return Math.min(raw.length, targetCollapsed)
-  let c = 0
-  let i = 0
-  while (i < raw.length && c < targetCollapsed) {
-    if (/[ \t\r\n]/.test(raw[i])) {
-      while (i < raw.length && /[ \t\r\n]/.test(raw[i])) i++
-      c++
-    } else {
-      i++
-      c++
-    }
+  let offset = targetCollapsed
+  for (const whitespace of raw.matchAll(/[ \t]*[\r\n]+[ \t\r\n]*/g)) {
+    if (whitespace.index >= offset) break
+    offset += whitespace[0].length - 1
   }
-  return i
+  return Math.min(raw.length, offset)
 }
 
 function countNodeChars(node: Node, isEmptyBlock: boolean, inPre: boolean): number {
   if (node.nodeType === 3) return collapsedTextLen(node.textContent ?? '', inPre)
   if (node.nodeType !== 1) return 0
   const el = node as globalThis.Element
+  if (el.matches('.math-inline, .math-display')) return 1
   const tag = el.tagName.toLowerCase()
-  if (tag === 'br') return isEmptyBlock ? 0 : 1
+  if (tag === 'br') return isEmptyBlock || el.hasAttribute('data-editor-sentinel') ? 0 : 1
   const nextPre = inPre || tag === 'pre'
-  let sum = 0
+  let sum = tag === 'td' || tag === 'th' ? 1 : 0
   for (let i = 0; i < el.childNodes.length; i++) {
     sum += countNodeChars(el.childNodes[i], isEmptyBlock, nextPre)
   }
@@ -435,6 +435,11 @@ function domPointToBlockChar(editorEl: HTMLElement, container: Node, offset: num
   let acc = 0
 
   const walk = (n: Node, inPre: boolean): number | null => {
+    if (n instanceof globalThis.Element && n.matches('.math-inline, .math-display')) {
+      if (n.contains(container)) return acc + (offset > 0 ? 1 : 0)
+      acc++
+      return null
+    }
     if (n === container) {
       if (n.nodeType === 3) {
         return acc + collapsedTextLen((n.textContent ?? '').slice(0, offset), inPre)
@@ -454,7 +459,7 @@ function domPointToBlockChar(editorEl: HTMLElement, container: Node, offset: num
     const el = n as globalThis.Element
     const tag = el.tagName.toLowerCase()
     if (tag === 'br') {
-      if (!blk.isEmptyBlock) acc += 1
+      acc += countNodeChars(el, blk.isEmptyBlock, false)
       return null
     }
     const nextPre = inPre || tag === 'pre'
@@ -499,6 +504,12 @@ function blockCharToDomPoint(
     }
     if (n.nodeType !== 1) return null
     const el = n as globalThis.Element
+    if (el.matches('.math-inline, .math-display') && el.parentNode) {
+      const index = Array.from(el.parentNode.childNodes).indexOf(el)
+      if (rem <= 1) return { container: el.parentNode, offset: index + rem }
+      rem--
+      return null
+    }
     const tag = el.tagName.toLowerCase()
     if (tag === 'br') {
       const p = el.parentNode
@@ -507,13 +518,17 @@ function blockCharToDomPoint(
       if (blk.isEmptyBlock || rem === 0) {
         return { container: p, offset: idx }
       }
-      rem -= 1
+      rem -= countNodeChars(el, blk.isEmptyBlock, false)
       return null
     }
     const nextPre = inPre || tag === 'pre'
     for (let i = 0; i < el.childNodes.length; i++) {
       const res = walk(el.childNodes[i], nextPre)
       if (res) return res
+    }
+    if (tag === 'td' || tag === 'th') {
+      if (rem === 0) return { container: el, offset: el.childNodes.length }
+      rem--
     }
     return null
   }
@@ -601,30 +616,36 @@ function FlowDirectEditor({
   const height = (Math.max(...layoutBoxes.map((box) => box.y_mm + box.h_mm)) - boxTop) * v.zoom
   const lineH = (activeBox.h_mm / Math.max(1, lineNum)) * v.zoom
   const fontSize = Math.max(6, lineH * (el.props.text_size || 1) * 0.72)
-  const spe1 = el.props.paragraph?.spe_type === 1 ? (el.props.paragraph.spe_value ?? 0) * v.zoom : 0
   const headingScale = el.props.rich_style?.heading_scale ?? 1.35
   const h1Lines = headingScale >= 1.3 ? 2 : 1
   const ruledVars: Record<string, string> = {
     '--ruled-lh': `${lineH}px`,
-    '--ruled-indent': `${spe1}px`,
     '--ruled-h1-lh': `${lineH * h1Lines}px`,
   }
   const textAlign = ALIGN_CSS[el.props.align] ?? 'left'
-  const padLeft = (el.props.paragraph?.left ?? 0) * v.zoom
-  const padRight = (el.props.paragraph?.right ?? 0) * v.zoom
 
   const clientText = React.useMemo(() => {
     void glyphVersion
     return resolveTextRender(el, paper, doc ? variableValues(doc) : {}, sub)
   }, [el, paper, doc, sub, glyphVersion])
+  const { r, stale } = useElementRender(el)
+  const exactLayout = clientText.isBackendRich && !stale && r?.status === 'ok' ? r.editorLayout : undefined
+  const textLayout = React.useMemo(() => {
+    if (!exactLayout?.lineAnchors.length) return clientText
+    const mapped = new Set(exactLayout.lineAnchors.map((line) => line.blockIdx))
+    return {
+      charBoxes: exactLayout.charBoxes.concat(clientText.charBoxes.filter((box) => !mapped.has(box.blockIdx))),
+      lineAnchors: exactLayout.lineAnchors.concat(clientText.lineAnchors.filter((line) => !mapped.has(line.blockIdx))),
+    }
+  }, [clientText, exactLayout])
 
   const pageCharBoxes = React.useMemo(
-    () => clientText.charBoxes.filter((c) => c.page === sub),
-    [clientText.charBoxes, sub],
+    () => textLayout.charBoxes.filter((c) => c.page === sub),
+    [textLayout.charBoxes, sub],
   )
   const pageLineAnchors = React.useMemo(
-    () => clientText.lineAnchors.filter((a) => a.page === sub),
-    [clientText.lineAnchors, sub],
+    () => textLayout.lineAnchors.filter((a) => a.page === sub),
+    [textLayout.lineAnchors, sub],
   )
 
   const syncSelection = React.useCallback(() => {
@@ -659,14 +680,14 @@ function FlowDirectEditor({
     const ed = containerRef.current?.querySelector('[role="textbox"]')
     if (document.activeElement !== ed) return
     const { blockIdx, charIdx } = selRange.end
-    const anchor = clientText.lineAnchors.find((line) =>
+    const anchor = textLayout.lineAnchors.find((line) =>
       line.blockIdx === blockIdx && charIdx >= line.startCharIdx && charIdx <= line.endCharIdx,
     )
     const state = useStudio.getState()
     if (anchor && anchor.page !== sub && state.focusedTextId === el.id) {
       state.setView({ ...state.view, sub: anchor.page }, true)
     }
-  }, [caretGeom, clientText.lineAnchors, el.id, focused, mode, selRange, sub])
+  }, [caretGeom, textLayout.lineAnchors, el.id, focused, mode, selRange, sub])
 
   const commitProps = React.useCallback(
     (patch: Record<string, unknown>, coalesce?: string) => {
@@ -731,8 +752,16 @@ function FlowDirectEditor({
     e.preventDefault()
     ed.focus({ preventScroll: true })
     const pt = toLocalMm(e.clientX, e.clientY)
-    const { bc, anchor } = hitTestBlockChar(pt.x, pt.y, pageCharBoxes, pageLineAnchors)
+    const { bc, anchor, atom } = hitTestBlockChar(pt.x, pt.y, pageCharBoxes, pageLineAnchors)
 
+    if (atom && !e.shiftKey) {
+      const start = { blockIdx: atom.blockIdx, charIdx: atom.charIdx }
+      const end = { blockIdx: atom.blockIdx, charIdx: atom.endCharIdx ?? atom.charIdx + 1 }
+      dragAnchorRef.current = start
+      setDomSelectionRange(ed, start, end)
+      setSelRange({ start, end })
+      return
+    }
     if (e.detail >= 2 && anchor) {
       const startBC: BlockChar = { blockIdx: anchor.blockIdx, charIdx: anchor.startCharIdx }
       const endBC: BlockChar = { blockIdx: anchor.blockIdx, charIdx: anchor.endCharIdx }
@@ -792,7 +821,14 @@ function FlowDirectEditor({
             }
           }
         }}
-        onDoubleClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          if (mode !== 'visual') return
+          const pt = toLocalMm(e.clientX, e.clientY)
+          if (!hitTestBlockChar(pt.x, pt.y, pageCharBoxes, pageLineAnchors).atom) return
+          const ed = containerRef.current?.querySelector('[role="textbox"]')
+          ed?.dispatchEvent(new CustomEvent(EDIT_SELECTED_FORMULA_EVENT, { detail: { x: e.clientX, y: e.clientY } }))
+        }}
       >
         <input
           ref={fileRef}
@@ -806,10 +842,10 @@ function FlowDirectEditor({
           mode={mode}
           fmt={fmt}
           text={text}
+          editorDocument={el.props.editor_document}
           compact
           showModeToggle
           onModeChange={setMode}
-          onFormatChange={(nextFmt) => commitProps({ format: nextFmt })}
           onImportClick={() => fileRef.current?.click()}
           onToolbarPointerDown={(e) => e.stopPropagation()}
           toolbarClassName={focused ? 'mat-thin bg-bg-elevated/95 shadow-lg backdrop-blur-md' : 'hidden'}
@@ -835,8 +871,6 @@ function FlowDirectEditor({
             maxHeight: height,
             paddingTop: 0,
             paddingBottom: 0,
-            paddingLeft: padLeft,
-            paddingRight: padRight,
           }}
           editorClassName="studio-ruled-editor"
           editorStyle={

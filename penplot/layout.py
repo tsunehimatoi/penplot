@@ -10,6 +10,7 @@ import random
 from .font_resolver import FontResolver
 from .geometry import Path, Affine2D, bbox_of, translate_all, scale_all, rotate_all_around
 from .settings import AxesSettings
+from .text_spacing import SPACE_WIDTH_EM
 
 
 # ---------------------------------------------------------------- PageInfo
@@ -178,6 +179,12 @@ class TextDocument:
     def _char_path(self, ch, line_height):
         """Returns (path|None, visual_advance i())."""
         fs = self.fs
+        space_width = SPACE_WIDTH_EM.get(ch)
+        if space_width is not None:
+            add = fs.tabWidthAdd if ch == '\t' else fs.spaceWidthAdd if ch == ' ' else 0.0
+            return None, line_height * self.text_size * space_width + add
+        if ch in '\n\f':
+            return None, line_height * 0.5
         baseline = line_height * 0.75 * fs.baseLine
         font = self._pick_font(ch)
         g = font.glyph(ch)
@@ -210,12 +217,6 @@ class TextDocument:
             if fs.simple > 0:
                 p.rdp_simplify(fs.simple)
             return p, adv
-        if ch == '\t':
-            # Java adds tabWidthAdd RAW (already px in FontsSetData)
-            adv = line_height * self.text_size * 0.3 * 2.0 + fs.tabWidthAdd
-            return None, adv
-        if ch in '\n\f':
-            return None, line_height * 0.5
         # glyph present but stroke-less (space etc. from TTF conversion):
         # use its real advance width when available
         if g is not None and getattr(g, 'advance', None):
@@ -224,11 +225,10 @@ class TextDocument:
         # Java adds spaceWidthAdd RAW (already px in FontsSetData)
         adv = line_height * self.text_size * 0.3 + fs.spaceWidthAdd
         p = None
-        if ch != ' ':
-            self.missing.add(ch)
-            if self.missing_glyph != 'skip':
-                p = Path()
-                p.rect(0.0, 0.0, adv, line_height * self.text_size)
+        self.missing.add(ch)
+        if self.missing_glyph != 'skip':
+            p = Path()
+            p.rect(0.0, 0.0, adv, line_height * self.text_size)
         return p, adv
 
     # layout (word.c.d + a(List,int,float)) ------------------------
@@ -300,6 +300,9 @@ class TextDocument:
                 cur.append(_CharBox(ch, None, self._line_h * 0.5,
                                     self._line_h * 0.5 + q_px + p_gap, q_px, p_gap))
                 new_line(True, new_para=True)
+                continue
+            if SPACE_WIDTH_EM.get(ch) == 0:
+                cur.append(_CharBox(ch, None, 0.0, 0.0, 0.0, 0.0))
                 continue
             path, adv = self._char_path(ch, self._line_h)
             p_gap = space_px * self._rand(self.fs.randomSpace)

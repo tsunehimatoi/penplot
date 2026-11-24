@@ -2560,6 +2560,70 @@ export interface components {
             type: "dxf";
             props: components["schemas"]["VectorProps"];
         };
+        /** EditorDocumentNode */
+        EditorDocumentNode: {
+            /** Kind */
+            kind: string;
+            /** Text */
+            text?: string | null;
+            /** Children */
+            children?: components["schemas"]["EditorDocumentNode"][] | null;
+            /** Attributes */
+            attributes?: {
+                [key: string]: string;
+            } | null;
+        };
+        /** EditorLayout */
+        EditorLayout: {
+            /** Charboxes */
+            charBoxes: components["schemas"]["EditorLayoutAtom"][];
+            /** Lineanchors */
+            lineAnchors: components["schemas"]["EditorLayoutLine"][];
+        };
+        /** EditorLayoutAtom */
+        EditorLayoutAtom: {
+            /** Blockidx */
+            blockIdx: number;
+            /** Page */
+            page: number;
+            /** Boxidx */
+            boxIdx: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** H */
+            h: number;
+            /** Charidx */
+            charIdx: number;
+            /** Endcharidx */
+            endCharIdx: number;
+            /** Atomic */
+            atomic: boolean;
+            /** W */
+            w: number;
+        };
+        /** EditorLayoutLine */
+        EditorLayoutLine: {
+            /** Blockidx */
+            blockIdx: number;
+            /** Page */
+            page: number;
+            /** Boxidx */
+            boxIdx: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** H */
+            h: number;
+            /** Startcharidx */
+            startCharIdx: number;
+            /** Endcharidx */
+            endCharIdx: number;
+            /** Endx */
+            endX: number;
+        };
         /** ElementPatch */
         ElementPatch: {
             /**
@@ -2614,6 +2678,10 @@ export interface components {
             preview_only: true;
             /** Pages */
             pages: components["schemas"]["ElementPreviewPage"][];
+            /** Editor Layouts */
+            editor_layouts?: {
+                [key: string]: components["schemas"]["EditorLayout"];
+            };
             /**
              * Elapsed Ms
              * @default 0
@@ -2694,6 +2762,19 @@ export interface components {
             name?: string | null;
             /** Tags */
             tags?: string[] | null;
+        };
+        /** FlowEditorDocument */
+        FlowEditorDocument: {
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version: 1;
+            /** Source Crc32 */
+            source_crc32: number;
+            /** Blocks */
+            blocks: components["schemas"]["EditorDocumentNode"][];
         };
         /** FlowTextElement */
         FlowTextElement: {
@@ -2804,6 +2885,7 @@ export interface components {
              * @enum {string}
              */
             format: "plain" | "markdown" | "html";
+            editor_document?: components["schemas"]["FlowEditorDocument"] | null;
             rich_style?: components["schemas"]["RichStyle"] | null;
             /** Font Id */
             font_id?: string | null;
@@ -4279,6 +4361,8 @@ export interface components {
              * @default 0
              */
             right: number;
+            /** Indent Configured */
+            indent_configured?: boolean | null;
         };
         /** PenRequest */
         PenRequest: {
@@ -6742,6 +6826,10 @@ export type DiagnosticsRequest = components['schemas']['DiagnosticsRequest'];
 export type DiagnosticsResult = components['schemas']['DiagnosticsResult'];
 export type DiskInfo = components['schemas']['DiskInfo'];
 export type DxfElement = components['schemas']['DxfElement'];
+export type EditorDocumentNode = components["schemas"]["EditorDocumentNode"];
+export type EditorLayout = components['schemas']['EditorLayout'];
+export type EditorLayoutAtom = components['schemas']['EditorLayoutAtom'];
+export type EditorLayoutLine = components['schemas']['EditorLayoutLine'];
 export type ElementPatch = components['schemas']['ElementPatch'];
 export type ElementPreviewPage = components['schemas']['ElementPreviewPage'];
 export type ElementPreviewResult = components['schemas']['ElementPreviewResult'];
@@ -6749,6 +6837,7 @@ export type ErrorInfo = components['schemas']['ErrorInfo'];
 export type Features = components['schemas']['Features'];
 export type FileInfo = components['schemas']['FileInfo'];
 export type FilePatch = components['schemas']['FilePatch'];
+export type FlowEditorDocument = components["schemas"]["FlowEditorDocument"];
 export type FlowTextElement = components['schemas']['FlowTextElement'];
 export type FlowTextProps = components['schemas']['FlowTextProps'];
 export type FontConvert = components['schemas']['FontConvert'];

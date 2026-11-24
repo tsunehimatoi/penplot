@@ -83,9 +83,16 @@ function hasBlockDescendant(el: Element): boolean {
 }
 
 function isVisuallyEmptyLeaf(el: Element): boolean {
+  if (el.querySelectorAll('br').length > 1) return false
   if (el.querySelector('svg, math, [data-chart], [data-pagebreak], img, table, pre, hr')) return false
-  const txt = (el.textContent ?? '').replace(/[\u00a0\u200b\ufeff\s]+/g, '')
+  const txt = (el.textContent ?? '').replace(/[\t ]*[\r\n][\t \r\n]*|[\u200b\ufeff]/g, '')
   return txt.length === 0
+}
+
+export function isEmptyList(el: Element): boolean {
+  return el.matches('ol, ul') &&
+    !(el.textContent ?? '').replace(/[\s\u200b\ufeff]+/g, '') &&
+    !el.querySelector('svg, math, .math-inline, .math-display, [data-chart], [data-pagebreak], img, table, pre, hr')
 }
 
 function unwrapElement(el: Element): void {
@@ -149,7 +156,7 @@ function cleanClassAttribute(el: Element, inKatexOrMath: boolean): void {
   else el.removeAttribute('class')
 }
 
-export function sanitizePastedHtml(rawHtml: string): string {
+export function sanitizePastedHtml(rawHtml: string, { discardEmptyLists = false } = {}): string {
   const preCleaned = rawHtml
     .replace(/<!--\[if[\s\S]*?<!\[endif\]-->/gi, '')
     .replace(/<!\[if[^\]]*\]>/gi, '')
@@ -157,6 +164,18 @@ export function sanitizePastedHtml(rawHtml: string): string {
     .replace(/<!--[\s\S]*?-->/g, '')
 
   const doc = new DOMParser().parseFromString(preCleaned, 'text/html')
+  for (const sentinel of doc.querySelectorAll('br[data-editor-sentinel]')) sentinel.remove()
+
+  for (const el of doc.body.querySelectorAll('.katex-display, .katex, math')) {
+    if (!doc.body.contains(el)) continue
+    const latex = el.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim()
+    if (!latex) continue
+    const block = el.matches('.katex-display, math[display="block"]')
+    const component = doc.createElement(block ? 'div' : 'span')
+    component.className = block ? 'math-display' : 'math-inline'
+    component.textContent = latex
+    el.replaceWith(component)
+  }
 
   for (const el of doc.querySelectorAll('script, style, meta, link, title, xml, noscript, iframe, object, embed, o\\:p')) {
     el.remove()
@@ -173,7 +192,8 @@ export function sanitizePastedHtml(rawHtml: string): string {
   const sanitizeNode = (el: Element, inSvg: boolean, inKatexOrMath: boolean): void => {
     const tag = el.tagName.toLowerCase()
     const nextInSvg = inSvg || tag === 'svg'
-    const nextInMath = inKatexOrMath || tag === 'math' || el.classList.contains('katex') || el.classList.contains('katex-display')
+    const nextInMath = inKatexOrMath || tag === 'math' ||
+      el.matches('.katex, .katex-display, span.math-inline, div.math-display')
 
     // Process children bottom-up or snapshot first
     for (const child of [...el.children]) {
@@ -198,7 +218,9 @@ export function sanitizePastedHtml(rawHtml: string): string {
         const name = attr.name.toLowerCase()
         if (name.startsWith('on')) {
           el.removeAttribute(attr.name)
-        } else if (!['class', 'style', 'encoding', 'display', 'xmlns', 'aria-hidden', 'mathvariant', 'stretchy'].includes(name)) {
+        } else if (!(name === 'data-border' && attr.value === 'box' &&
+                     el.matches('span.math-inline, div.math-display')) &&
+                   !['class', 'style', 'encoding', 'display', 'xmlns', 'aria-hidden', 'mathvariant', 'stretchy'].includes(name)) {
           el.removeAttribute(attr.name)
         }
       }
@@ -274,6 +296,9 @@ export function sanitizePastedHtml(rawHtml: string): string {
     for (const attr of [...el.attributes]) {
       const name = attr.name.toLowerCase()
       if (name === 'style' || name === 'class' || name === 'data-chart') continue
+      if (tag === 'table' && name === 'data-border' && ['none', 'vertical', 'grid'].includes(attr.value)) continue
+      if (tag === 'table' && name === 'data-border-edges' &&
+          attr.value.split(/\s+/).every((edge) => !edge || ['top', 'right', 'bottom', 'left', 'horizontal', 'vertical'].includes(edge))) continue
       if (name === 'data-pagebreak' && isPb) continue
       if (tag === 'a' && name === 'href') {
         const safe = safeHref(attr.value)
@@ -320,9 +345,19 @@ export function sanitizePastedHtml(rawHtml: string): string {
     for (const child of [...doc.body.children]) {
       sanitizeNode(child, false, false)
     }
+    if (discardEmptyLists) {
+      for (const list of doc.body.querySelectorAll('ol, ul')) {
+        if (isEmptyList(list)) list.remove()
+      }
+    }
     return doc.body.innerHTML.trim()
   }
   return rawHtml.trim()
+}
+
+function wrapMarkdownInline(text: string, marker: string): string {
+  const body = text.trim()
+  return body ? text.replace(body, () => marker + body + marker) : text
 }
 
 export function htmlToMarkdown(rawHtml: string): string {
@@ -336,7 +371,7 @@ export function htmlToMarkdown(rawHtml: string): string {
 
   const walk = (node: Node, listDepth = 0): string => {
     if (node.nodeType === Node.TEXT_NODE) {
-      return (node.textContent ?? '').replace(/\s+/g, ' ')
+      return (node.textContent ?? '').replace(/[ \t]*[\r\n]+[ \t\r\n]*/g, ' ').replaceAll('\u00a0', ' ')
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return ''
     const el = node as Element
@@ -348,6 +383,11 @@ export function htmlToMarkdown(rawHtml: string): string {
       return `\n\n\`\`\`chart\n${el.getAttribute('data-chart')}\n\`\`\`\n\n`
     }
     if (el.classList.contains('katex-html')) return ''
+    if (el.matches('div.math-display, span.math-inline')) {
+      const tex = el.textContent?.trim() ?? ''
+      if (el.matches('div.math-display')) return `\n\n$$\n${tex}\n$$\n\n`
+      return `$${tex}$`
+    }
     if (el.classList.contains('katex-display')) {
       const tex = el.querySelector('annotation')?.textContent?.trim()
       if (tex) return `\n\n$$\n${tex}\n$$\n\n`
@@ -364,7 +404,12 @@ export function htmlToMarkdown(rawHtml: string): string {
 
     switch (tag) {
       case 'br':
-        return '\n'
+        // A literal break is needed where a newline would finish a table
+        // row, list item, or paragraph instead of advancing within it.
+        return listDepth > 0 || el.closest('td, th') || !el.previousSibling || !el.nextSibling ||
+          el.previousSibling instanceof HTMLBRElement || el.nextSibling instanceof HTMLBRElement ||
+          !el.parentElement?.matches('p, div, body')
+          ? '<br>' : '\n'
       case 'hr':
         return '\n\n---\n\n'
       case 'h1':
@@ -384,18 +429,16 @@ export function htmlToMarkdown(rawHtml: string): string {
         if (!hasBlockDescendant(el) && isVisuallyEmptyLeaf(el)) {
           return '\n\n\u200BBLANK\u200B\n\n'
         }
-        const s = inner().trim()
+        const s = inner().replace(/^\n+|\n+$/g, '')
         return s ? `\n\n${s}\n\n` : ''
       }
       case 'strong':
       case 'b': {
-        const s = inner().trim()
-        return s ? `**${s}**` : ''
+        return wrapMarkdownInline(inner(), '**')
       }
       case 'em':
       case 'i': {
-        const s = inner().trim()
-        return s ? `*${s}*` : ''
+        return wrapMarkdownInline(inner(), '*')
       }
       case 'u':
       case 'ins': {
@@ -405,8 +448,7 @@ export function htmlToMarkdown(rawHtml: string): string {
       case 's':
       case 'del':
       case 'strike': {
-        const s = inner().trim()
-        return s ? `~~${s}~~` : ''
+        return wrapMarkdownInline(inner(), '~~')
       }
       case 'sup': {
         const s = inner().trim()
@@ -437,6 +479,7 @@ export function htmlToMarkdown(rawHtml: string): string {
       }
       case 'ul':
       case 'ol': {
+        if (isEmptyList(el)) return ''
         const ordered = tag === 'ol'
         const items: string[] = []
         let idx = 1
@@ -450,7 +493,11 @@ export function htmlToMarkdown(rawHtml: string): string {
             .replace(/\u200BBLANK\u200B/g, '')
             .trim()
             .replace(/\n{2,}/g, '\n')
-          items.push(`${pad}${marker}${txt}`)
+          const [first, ...continuation] = txt.split('\n')
+          const indent = pad + ' '.repeat(marker.length)
+          items.push(`${pad}${marker}${first}` + continuation.map(
+            (line) => `\n${line.startsWith(pad + '  ') ? line : indent + line}`,
+          ).join(''))
         }
         return `\n\n${items.join('\n')}\n\n`
       }
@@ -487,7 +534,7 @@ export function htmlToMarkdown(rawHtml: string): string {
 
   const raw = doc.body ? walk(doc.body) : ''
   // Reconstruct blocks while preserving intentional blank lines as extra newlines
-  const tokens = raw.split(/\n{2,}/).map((t) => t.trim()).filter((t) => t.length > 0)
+  const tokens = raw.split(/\n{2,}/).map((t) => t.replace(/^\n+|\n+$/g, '')).filter((t) => t.trim().length > 0)
   let out = ''
   let blanks = 0
   let seenContent = false
@@ -513,9 +560,33 @@ export function htmlToMarkdown(rawHtml: string): string {
 
 // ------------------------------------------------------------------ Markdown / Plain -> HTML
 
+// Keep these bare-expression forms synchronized with penplot/rich_text.py.
+const BARE_TEX_TERMS = [
+  String.raw`(?:\d+(?:\.\d+)?(?:\\[,;: ]|[ \t])*)?\^\s*(?:\{\s*\\circ\s*\}|\\circ(?![A-Za-z]))(?:[ \t]*(?:\\(?:text|mathrm)\{\s*C\s*\}|C(?![A-Za-z])))?`,
+  String.raw`(?:\d+(?:\.\d+)?[ \t]*)?(?:℃|°[ \t]*C(?![A-Za-z])|°)`,
+  String.raw`(?:[+-]?\d+(?:\.\d+)?[ \t]*)?\\(?:text|mathrm)\{[^{}\n]+\}`,
+  String.raw`[A-Za-z0-9()]+[\^_]\{[^{}]*\\[A-Za-z]+[^{}]*\}(?:\s*[+\-*/=<>]\s*[A-Za-z0-9()\\^{}_+\-*/=<> ]*)?`,
+  String.raw`(?:\([A-Za-z0-9]+\)|[A-Za-z0-9]+)?\\(?:frac|dfrac|tfrac|bar|overline|underline|hat|widehat|vec|sqrt|lim|sum|prod|int|iint|oint|pi|phi|alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|Delta|Omega|infty|pm|mp|times|div|cdot|to|rightarrow|leftarrow|Rightarrow|leq|geq|neq|approx|partial|nabla|sin|cos|tan|log|ln|exp)(?![A-Za-z])(?:[A-Za-z0-9\s+\-*/=<>^_{}()\[\]\\.,]*[A-Za-z0-9)}\\]|[^{}\s]*)`,
+]
+export const BARE_TEX_SOURCE = String.raw`(?<![A-Za-z0-9_\\])(?:${BARE_TEX_TERMS.join('|')})`
+
+export function formulaHtml(latex: string, block: boolean): string {
+  const tag = block ? 'div' : 'span'
+  return `<${tag} class="math-${block ? 'display' : 'inline'}">${escapeHtml(latex)}</${tag}>`
+}
+
+const TEX_BRACKETS = String.raw`\\\((?:\\.|[^\\])+?\\\)|\\\[(?:\\.|[^\\])+?\\\]`
+const TEX_DOLLARS = String.raw`(?<![\\$])\$\$(?!\$)(?:\\.|[^$\n])+?\$\$(?!\$)|(?<![\\$])\$(?![\s$])(?:\\.|[^$\n])+?(?<![\s$])\$(?!\$)`
+export const DELIMITED_FORMULA_SOURCE = `${TEX_BRACKETS}|${TEX_DOLLARS}`
+
+export function formulaBody(token: string): string {
+  const edge = token.startsWith('$') && !token.startsWith('$$') ? 1 : 2
+  return token.slice(edge, -edge).trim()
+}
+
 const INLINE_MD_SOURCE = [
-  '(\\\\\\((?:\\\\.|[^\\\\])+?\\\\\\))', // \( ... \)
-  '(\\$(?!\\s)(?:\\\\.|[^$\\n])+?(?<!\\s)\\$)', // $ ... $
+  `(${TEX_BRACKETS})`,
+  `(${TEX_DOLLARS})`,
   '(`+[^`]+`+)', // `code`
   '(<br\\s*/?>)', // <br>
   '(<(u|sup|sub|s|del|strong|b|em|i)>([\\s\\S]*?)</\\6>)', // inline HTML tags
@@ -542,8 +613,7 @@ function parseInlineMdToHtml(text: string): string {
     }
     const tok = m[0]
     if (m[1] || m[2]) {
-      // \( ... \) or $ ... $
-      out += escapeHtml(tok)
+      out += formulaHtml(formulaBody(tok), false)
     } else if (m[3]) {
       // `code`
       const stripped = tok.replace(/^`+|`+$/g, '')
@@ -635,15 +705,34 @@ function parseTableAligns(sepLine: string, ncols: number): ('left' | 'center' | 
 function joinParagraphLines(plines: string[]): string {
   let acc = ''
   for (let idx = 0; idx < plines.length; idx++) {
-    const raw = plines[idx]
-    const hardBreak = /(?: {2}|\\)$/.test(raw)
-    const cleaned = raw.replace(/(?: {2}|\\)$/, '').trim()
+    const raw = plines[idx].trimEnd()
+    const cleaned = idx < plines.length - 1 ? raw.replace(/(?<!\\)\\$/, '') : raw
     acc += parseInlineMdToHtml(cleaned)
     if (idx < plines.length - 1) {
-      acc += hardBreak ? '<br>' : ' '
+      acc += '<br>'
     }
   }
   return acc
+}
+
+function readDisplayMath(lines: string[], start: number, parentIndent?: number): { latex: string; end: number } | null {
+  const first = lines[start].trim()
+  const close = first.startsWith('$$') ? '$$' : first.startsWith('\\[') ? '\\]' : null
+  if (!close) return null
+  if (first.length > 4 && first.endsWith(close)) return { latex: first.slice(2, -2).trim(), end: start + 1 }
+  const body = [first.slice(2)]
+  for (let index = start + 1; index < lines.length; index++) {
+    const raw = lines[index]
+    const line = raw.trim()
+    if (parentIndent !== undefined && line && raw.length - raw.trimStart().length <= parentIndent) break
+    if (line.startsWith('\\[') || (line.startsWith('$$') && line !== '$$')) break
+    if (line.endsWith(close)) {
+      body.push(line.slice(0, -2))
+      return { latex: body.join('\n').trim(), end: index + 1 }
+    }
+    body.push(lines[index])
+  }
+  return null
 }
 
 export function markdownToHtml(md: string): string {
@@ -713,6 +802,8 @@ export function markdownToHtml(md: string): string {
       const body = bodyLines.join('\n')
       if (lang === 'svg' && body.toLowerCase().includes('<svg')) {
         htmlBlocks.push(sanitizePastedHtml(body))
+      } else if (['math', 'latex', 'tex'].includes(lang)) {
+        htmlBlocks.push(formulaHtml(body.trim(), true))
       } else if (lang) {
         htmlBlocks.push(`<pre><code class="language-${escapeHtml(lang)}">${escapeHtml(body)}</code></pre>`)
       } else {
@@ -722,54 +813,11 @@ export function markdownToHtml(md: string): string {
       continue
     }
 
-    // Display math $$...$$ or \[...\]
-    if (stripped.startsWith('$$')) {
-      if (stripped.endsWith('$$') && stripped.length > 4) {
-        htmlBlocks.push(`<p>${escapeHtml(stripped)}</p>`)
-        hasContentBlock = true
-        i++
-        continue
-      }
-      i++
-      const mlines = stripped.length > 2 ? [stripped.slice(2)] : []
-      while (i < n) {
-        const cur = lines[i]
-        if (cur.trim().endsWith('$$')) {
-          const tail = cur.trim().slice(0, -2)
-          if (tail) mlines.push(tail)
-          i++
-          break
-        }
-        mlines.push(cur)
-        i++
-      }
-      htmlBlocks.push(`<p>$$${escapeHtml(mlines.join(' ').trim())}$$</p>`)
+    const display = readDisplayMath(lines, i)
+    if (display) {
+      htmlBlocks.push(formulaHtml(display.latex, true))
       hasContentBlock = true
-      continue
-    }
-
-    if (stripped.startsWith('\\[')) {
-      if (stripped.endsWith('\\]') && stripped.length > 4) {
-        htmlBlocks.push(`<p>$$${escapeHtml(stripped.slice(2, -2).trim())}$$</p>`)
-        hasContentBlock = true
-        i++
-        continue
-      }
-      i++
-      const mlines = stripped.length > 2 ? [stripped.slice(2)] : []
-      while (i < n) {
-        const cur = lines[i]
-        if (cur.trim().endsWith('\\]')) {
-          const tail = cur.trim().slice(0, -2)
-          if (tail) mlines.push(tail)
-          i++
-          break
-        }
-        mlines.push(cur)
-        i++
-      }
-      htmlBlocks.push(`<p>$$${escapeHtml(mlines.join(' ').trim())}$$</p>`)
-      hasContentBlock = true
+      i = display.end
       continue
     }
 
@@ -870,6 +918,7 @@ export function markdownToHtml(md: string): string {
       const baseIndent = (om ?? um)![1].length
       const start = om ? Number(om[2]) : 1
       const liParts: string[] = []
+      let itemHasBlocks = false
 
       while (i < n) {
         const curLine = lines[i]
@@ -880,6 +929,7 @@ export function markdownToHtml(md: string): string {
         if (mCur && mCur[1].length === baseIndent) {
           const txt = ordered ? mCur[3] : mCur[2]
           liParts.push(parseInlineMdToHtml(txt))
+          itemHasBlocks = false
           i++
         } else if ((curU || curO) && (curU ?? curO)![1].length > baseIndent) {
           const subIndent = (curU ?? curO)![1].length
@@ -890,6 +940,18 @@ export function markdownToHtml(md: string): string {
           }
           if (liParts.length > 0) {
             liParts[liParts.length - 1] += markdownToHtml(subLines.join('\n'))
+            itemHasBlocks = true
+          }
+        } else if (!curU && !curO && liParts.length && curLine.length - curLine.trimStart().length > baseIndent) {
+          const display = readDisplayMath(lines, i, baseIndent)
+          if (display) {
+            liParts[liParts.length - 1] += formulaHtml(display.latex, true)
+            itemHasBlocks = true
+            i = display.end
+          } else {
+            const content = parseInlineMdToHtml(curLine.trim())
+            liParts[liParts.length - 1] += itemHasBlocks ? `<p>${content}</p>` : '<br>' + content
+            i++
           }
         } else {
           break
@@ -917,8 +979,7 @@ export function markdownToHtml(md: string): string {
         QUOTE_RE.test(cur) ||
         UL_RE.test(cur) ||
         OL_RE.test(cur) ||
-        cs.startsWith('$$') ||
-        cs.startsWith('\\[') ||
+        readDisplayMath(lines, i) !== null ||
         cs.toLowerCase().startsWith('<svg') ||
         cs.toLowerCase().startsWith('<table')
       ) {

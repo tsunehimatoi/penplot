@@ -18,10 +18,11 @@ from .layout import FontsSet, PageInfo, ParagraphFormat, _NO_LINE_START
 from .layout_cache import GlyphPathCache
 from .math_layout import render_handwritten_math
 from .rich_renderers import render_chart_paths, render_svg_paths
+from .text_spacing import SPACE_WIDTH_EM
 from .rich_text import (
     Block, ChartBlock, CodeBlock, HeadingBlock, HrBlock, Inline, InlineMath,
     ListBlock, MathBlock, PageBreakBlock, ParagraphBlock, QuoteBlock, SvgBlock,
-    TableBlock, TextRun, parse_rich,
+    TableBlock, TextRun, parse_rich, utf16_length,
 )
 
 
@@ -34,6 +35,19 @@ class _RichItem:
     is_space: bool = False
     underline: bool = False
     strike: bool = False
+    source: Optional[tuple[int, int]] = None
+    atomic: bool = False
+
+
+def _source_length(run: Inline) -> int:
+    if run.source_length is not None:
+        return run.source_length
+    return utf16_length(run.latex if isinstance(run, InlineMath) else run.text)
+
+
+def _ends_with_break(runs: list[Inline]) -> bool:
+    last = next((run for run in reversed(runs) if isinstance(run, InlineMath) or run.text), None)
+    return isinstance(last, TextRun) and last.text.endswith('\n')
 
 
 class RichTextDocument:
@@ -42,8 +56,13 @@ class RichTextDocument:
                  text_size: float = 1.0, char_space: float = 0.0,
                  font_mix=None, font_roles=None, missing_glyph: str = 'box',
                  rich_style: Optional[dict[str, Any]] = None,
-                 layout_boxes: Optional[list[dict[str, Any]]] = None):
+                 layout_boxes: Optional[list[dict[str, Any]]] = None,
+                 editor_layout: Optional[dict] = None):
         self.page = page
+        self._editor_layout = editor_layout
+        self._editor_block = 0
+        self._editor_cursor = 0
+        self._editor_line_start = None
         self.font = font
         self.fs = fonts_set or FontsSet()
         self.settings = settings
@@ -127,6 +146,9 @@ class RichTextDocument:
         fs = self.fs
         baseline = line_h_mm * 0.75 * fs.baseLine
         eff_size = self.text_size * scale_mult
+        space_width = SPACE_WIDTH_EM.get(ch)
+        if space_width is not None:
+            return [], line_h_mm * eff_size * space_width
         font = self._pick_font(ch)
         g = font.glyph(ch)
         if g is not None and g.ops:
@@ -175,17 +197,15 @@ class RichTextDocument:
                     c[idx] = c[idx] - 0.22 * (c[idx + 1] - baseline)
             if fs.simple > 0 and apply_jitter:
                 p.rdp_simplify(fs.simple * 25.4 / 96.0)
+            if ch.isascii() and ch.isalnum():
+                adv = max(adv, p.bbox()[2] if italic else bb[2] + shift)
             if cache_key is not None:
                 self._glyph_cache.put(cache_key, p, adv)
             return [p], adv
 
-        if ch == '\t':
-            return [], line_h_mm * eff_size * 0.6
         if g is not None and getattr(g, 'advance', None):
             return [], g.advance * (line_h_mm / font.size) * eff_size
         adv = line_h_mm * eff_size * 0.3
-        if ch == ' ':
-            return [], adv
         self.missing.add(ch)
         if self.missing_glyph == 'skip':
             return [], adv
@@ -285,18 +305,44 @@ class RichTextDocument:
 
     # ------------------------------------------------------------------ inline layout & wrapping
 
-    def _build_math_item(self, latex: str, line_h: float, scale_mult: float) -> _RichItem:
+    def _build_math_item(self, formula: InlineMath, line_h: float, scale_mult: float) -> _RichItem:
         em = line_h * self.text_size * scale_mult * self.math_scale * 0.9
-        mpaths, mw, _mh, mb = render_handwritten_math(latex, em, self._math_glyph, display=False)
-        # Align math baseline (mb) with the text baseline
+        mpaths, mw, mh, mb = render_handwritten_math(formula.latex, em, self._math_glyph, display=False)
+        # Keep tall inline fractions inside their ruled row. Prefer the
+        # surrounding baseline when both the numerator and denominator fit.
         text_base = line_h * 0.75 * self.fs.baseLine
-        y_off = text_base - mb
+        pad = min(0.7, 0.12 * line_h) if formula.border and mpaths else 0.0
+        clearance = line_h * 0.04 + pad
+        available_height = line_h - 2 * clearance
+        scale = min(1.0, available_height / mh) if mh > 0 else 1.0
+        mw *= scale
+        mh *= scale
+        y_off = max(clearance, min(text_base - mb * scale, line_h - clearance - mh))
+        transform = Affine2D().translate(pad, y_off).scale(scale, scale)
         for mp in mpaths:
-            mp.transform(Affine2D().translate(0.0, y_off))
+            mp.transform(transform)
+        if pad:
+            border = Path()
+            border.rect(0.0, y_off - pad, mw + 2 * pad, mh + 2 * pad)
+            mpaths.append(border)
+            mw += 2 * pad
         gap_mm = self.char_space + self.page.space
         return _RichItem(mpaths, mw, mw + gap_mm)
 
+    def _fit_inline_math(self, item: _RichItem, width: float) -> _RichItem:
+        if item.adv > width:
+            scale = width / item.adv
+            baseline = self.line_h * 0.75 * self.fs.baseLine
+            transform = Affine2D().translate(0.0, baseline * (1 - scale)).scale(scale, scale)
+            for path in item.paths:
+                path.transform(transform)
+            item.step += width - item.adv
+            item.adv = width
+        return item
+
     def _build_char_item(self, ch: str, run: TextRun, line_h: float, scale_mult: float) -> _RichItem:
+        if SPACE_WIDTH_EM.get(ch) == 0:
+            return _RichItem([], 0.0, 0.0, is_space=True)
         # Bold remains an editor/IR style; a pen writes each glyph only once.
         sc = scale_mult * (0.68 if (run.sup or run.sub) else 1.0)
         y_shift = (-line_h * 0.22) if run.sup else ((line_h * 0.16) if run.sub else 0.0)
@@ -307,20 +353,30 @@ class RichTextDocument:
         p_gap = self.page.space * self._rand(self.fs.randomSpace)
         step = adv + self.char_space + p_gap
         return _RichItem(
-            ps, adv, step, is_space=(ch == ' '),
+            ps, adv, step, is_space=ch in SPACE_WIDTH_EM,
             underline=run.underline, strike=run.strike,
         )
 
     def _runs_to_wrapped_lines(self, runs: list[Inline], first_w: float, rest_w: float,
-                               scale_mult: float = 1.0) -> list[list[_RichItem]]:
+                               scale_mult: float = 1.0, source_start: Optional[int] = None) -> list[list[_RichItem]]:
         """Wrap inline runs (TextRun + InlineMath) into lines of _RichItem."""
         lines: list[list[_RichItem]] = []
         cur: list[_RichItem] = []
         cur_w = 0.0
         avail = first_w
+        cursor = source_start
+
+        def position(item, length, atomic=False):
+            nonlocal cursor
+            if cursor is not None:
+                item.source = (cursor, cursor + length)
+                item.atomic = atomic
+                cursor += length
 
         def push_line():
             nonlocal cur, cur_w, avail
+            if not cur and cursor is not None:
+                cur.append(_RichItem([], 0, 0, source=(cursor, cursor)))
             lines.append(cur)
             cur = []
             cur_w = 0.0
@@ -328,26 +384,37 @@ class RichTextDocument:
 
         for run in runs:
             if isinstance(run, InlineMath):
-                item = self._build_math_item(run.latex, self.line_h, scale_mult)
+                item = self._build_math_item(run, self.line_h, scale_mult)
                 if cur and cur_w + item.adv > avail:
                     push_line()
+                self._fit_inline_math(item, avail)
+                position(item, _source_length(run), True)
                 cur.append(item)
                 cur_w += item.step
                 continue
 
-            for ch in run.text:
+            for index, ch in enumerate(run.text):
                 if ch == '\r':
                     continue
                 if ch == '\n':
                     push_line()
+                    if cursor is not None:
+                        cursor += 1
                     continue
                 item = self._build_char_item(ch, run, self.line_h, scale_mult)
                 if cur and cur_w + item.adv > avail and ch not in _NO_LINE_START:
                     push_line()
+                if cursor is not None:
+                    length = 2 if ord(ch) > 0xffff else 1
+                    if index == 0 and run.source_length is not None:
+                        length += run.source_length - utf16_length(run.text)
+                    position(item, length)
                 cur.append(item)
                 cur_w += item.step
 
-        if cur or not lines:
+        if cur or not lines or _ends_with_break(runs):
+            if not cur and cursor is not None:
+                cur.append(_RichItem([], 0, 0, source=(cursor, cursor)))
             lines.append(cur)
         return lines
 
@@ -359,6 +426,21 @@ class RichTextDocument:
         line_idx = 0
         emitted_any = False
         pending: Optional[tuple[Any, _RichItem, float]] = None
+        line_start = self._editor_cursor
+
+        def emit(items):
+            self._editor_line_start = line_start
+            try:
+                emit_line(line_idx, items)
+            finally:
+                self._editor_line_start = None
+
+        def position(item, length, atomic=False):
+            if self._editor_layout is not None:
+                start = self._editor_cursor
+                self._editor_cursor += length
+                item.source = (start, self._editor_cursor)
+                item.atomic = atomic
 
         def advance_cursor():
             nonlocal run_idx, char_idx
@@ -383,11 +465,17 @@ class RichTextDocument:
             if pending is not None:
                 spec, item, built_lh = pending
                 pending = None
+                source, atomic = item.source, item.atomic
                 if built_lh != cur_lh:
                     if spec[0] == 'math':
                         item = self._build_math_item(spec[1], cur_lh, scale_mult)
                     else:
                         item = self._build_char_item(spec[1], spec[2], cur_lh, scale_mult)
+                    item.source, item.atomic = source, atomic
+                if spec[0] == 'math':
+                    self._fit_inline_math(item, avail)
+                if item.source is not None:
+                    line_start = item.source[0]
                 cur.append(item)
                 cur_w += item.step
 
@@ -395,17 +483,20 @@ class RichTextDocument:
             while run_idx < len(runs) and not line_closed:
                 run = runs[run_idx]
                 if isinstance(run, InlineMath):
-                    item = self._build_math_item(run.latex, cur_lh, scale_mult)
+                    item = self._build_math_item(run, cur_lh, scale_mult)
+                    if self._editor_layout is not None:
+                        position(item, _source_length(run), True)
                     run_idx += 1
                     char_idx = 0
                     advance_cursor()
                     if cur and cur_w + item.adv > avail:
-                        emit_line(line_idx, cur)
+                        emit(cur)
                         line_idx += 1
                         emitted_any = True
-                        pending = (('math', run.latex), item, cur_lh)
+                        pending = (('math', run), item, cur_lh)
                         line_closed = True
                         break
+                    self._fit_inline_math(item, avail)
                     cur.append(item)
                     cur_w += item.step
                     continue
@@ -418,15 +509,23 @@ class RichTextDocument:
                         continue
                     if ch == '\n':
                         advance_cursor()
-                        emit_line(line_idx, cur)
+                        emit(cur)
+                        if self._editor_layout is not None:
+                            self._editor_cursor += 1
+                            line_start = self._editor_cursor
                         line_idx += 1
                         emitted_any = True
                         line_closed = True
                         break
                     item = self._build_char_item(ch, run, cur_lh, scale_mult)
+                    if self._editor_layout is not None:
+                        length = 2 if ord(ch) > 0xffff else 1
+                        if run.source_length is not None and char_idx == 1:
+                            length += run.source_length - utf16_length(run.text)
+                        position(item, length)
                     if cur and cur_w + item.adv > avail and ch not in _NO_LINE_START:
                         advance_cursor()
-                        emit_line(line_idx, cur)
+                        emit(cur)
                         line_idx += 1
                         emitted_any = True
                         pending = (('char', ch, run), item, cur_lh)
@@ -439,13 +538,13 @@ class RichTextDocument:
 
             if not line_closed:
                 if cur or not emitted_any:
-                    emit_line(line_idx, cur)
+                    emit(cur)
                     line_idx += 1
                     emitted_any = True
 
-        if not emitted_any:
-            prepare_line(0)
-            emit_line(0, [])
+        if not emitted_any or _ends_with_break(runs):
+            prepare_line(line_idx)
+            emit([])
 
     def _emit_line(self, items: list[_RichItem], x_start: float, avail_w: float,
                    y_top: float, align: str, scale_mult: float = 1.0):
@@ -467,6 +566,9 @@ class RichTextDocument:
 
         baseline_y = y_top + self.line_h * 0.75 * self.fs.baseLine
         rel = 0.0
+        geometry = self._editor_layout is not None and self._editor_line_start is not None
+        page = len(self._pages) - 1
+        end = self._editor_line_start
         for it in items:
             x = x_start + off + rel
             for p in it.paths:
@@ -485,14 +587,27 @@ class RichTextDocument:
                 s.move_to(x, sy)
                 s.line_to(x + it.step, sy)
                 self._cur_page.append(s)
-            rel += it.step + extra
+            step = it.step + extra
+            if geometry and it.source is not None:
+                start, end = it.source
+                self._editor_layout['charBoxes'].append(dict(blockIdx=self._editor_block, charIdx=start,
+                    endCharIdx=end, atomic=it.atomic, page=page, boxIdx=self._box_idx,
+                    x=x, y=y_top, w=step, h=self.line_h))
+            rel += step
+        if geometry:
+            self._editor_layout['lineAnchors'].append(dict(blockIdx=self._editor_block, page=page,
+                boxIdx=self._box_idx, x=x_start + off, y=y_top, h=self.line_h, endX=x_start + off + rel,
+                startCharIdx=self._editor_line_start, endCharIdx=end))
 
     # ------------------------------------------------------------------ block layout
 
     def _layout_blocks(self, blocks: list[Block], fmt: ParagraphFormat,
                        default_align: str, indent_left: float = 0.0,
                        quote_depth: int = 0):
-        for blk in blocks:
+        for block_index, blk in enumerate(blocks):
+            if quote_depth == 0 and indent_left == 0:
+                self._editor_block = block_index
+                self._editor_cursor = 0
             if isinstance(blk, PageBreakBlock):
                 if self._line_idx > 0 or self._box_idx > 0 or len(self._cur_page) > 0:
                     self._new_page()
@@ -660,26 +775,46 @@ class RichTextDocument:
                     base_left, avail_base = self._box_frame(fmt, indent_left)
                     em = self.line_h * self.text_size * 0.98 * self.math_scale
                     mpaths, mw, mh, _mb = render_handwritten_math(blk.latex, em, self._math_glyph, display=True)
-                    if mw > avail_base and mw > 0:
-                        s = avail_base / mw
+                    pad = min(0.7, 0.12 * self.line_h, 0.12 * avail_base) if blk.border else 0.0
+                    clearance = self.line_h * 0.04 + pad
+                    inner_width = avail_base - 2 * pad
+                    inner_height = self.line_num * self.line_h - 2 * clearance
+                    s = min(1.0, inner_width / mw if mw > 0 else 1.0,
+                            inner_height / mh if mh > 0 else 1.0)
+                    if s < 1.0:
                         for mp in mpaths:
                             mp.transform(Affine2D().scale(s, s))
                         mw *= s
                         mh *= s
-                    needed = max(1, int(math.ceil(mh / self.line_h)))
+                    needed = max(1, int(math.ceil((mh + 2 * clearance) / self.line_h)))
                     needed = min(needed, self.line_num)
-                    return base_left, avail_base, mpaths, mw, mh, needed
+                    return base_left, avail_base, mpaths, mw, mh, needed, pad
 
-                base_left, avail_base, mpaths, mw, mh, needed = _measure_math()
+                base_left, avail_base, mpaths, mw, mh, needed, pad = _measure_math()
                 if self._line_idx > 0 and self._line_idx + needed > self.line_num:
                     self._next_box()
-                    base_left, avail_base, mpaths, mw, mh, needed = _measure_math()
+                    base_left, avail_base, mpaths, mw, mh, needed, pad = _measure_math()
                 y_top = self._line_y()
-                x_off = base_left + max(0.0, (avail_base - mw) * 0.5)
+                x_off = base_left + (pad if indent_left else max(0.0, (avail_base - mw) * 0.5))
                 y_off = y_top + max(0.0, (needed * self.line_h - mh) * 0.5)
                 for mp in mpaths:
                     mp.transform(Affine2D().translate(x_off, y_off))
                     self._cur_page.append(mp)
+                if pad and mpaths:
+                    frame = Path()
+                    frame.rect(x_off - pad, y_off - pad, mw + 2 * pad, mh + 2 * pad)
+                    self._cur_page.append(frame)
+                if self._editor_layout is not None:
+                    page = len(self._pages) - 1
+                    h = needed * self.line_h
+                    x = x_off - pad
+                    w = mw + 2 * pad
+                    start = self._editor_cursor
+                    self._editor_cursor += 1
+                    self._editor_layout['charBoxes'].append(dict(blockIdx=self._editor_block, charIdx=start,
+                        endCharIdx=start + 1, atomic=True, page=page, boxIdx=self._box_idx, x=x, y=y_top, w=w, h=h))
+                    self._editor_layout['lineAnchors'].append(dict(blockIdx=self._editor_block, page=page,
+                        boxIdx=self._box_idx, x=x, y=y_top, h=h, endX=x+w, startCharIdx=start, endCharIdx=start + 1))
                 self._advance_lines(needed)
                 continue
 
@@ -749,6 +884,27 @@ class RichTextDocument:
         if ncols <= 0:
             return
         pad_x = 1.5
+        grid = tbl.border == 'grid' or (tbl.border not in ('none', 'vertical') and self.table_hlines)
+        edges = tbl.border_edges
+        if edges is None:
+            edges = set() if tbl.border == 'none' else (
+                {'top', 'right', 'bottom', 'left', 'horizontal', 'vertical'} if grid
+                else {'left', 'right', 'vertical'})
+        fragment_has_rows = False
+        bottom_edge = None
+
+        def border_line(x1, y1, x2, y2):
+            path = Path()
+            path.move_to(x1, y1)
+            path.line_to(x2, y2)
+            self._cur_page.append(path)
+
+        def finish_fragment():
+            nonlocal fragment_has_rows, bottom_edge
+            if bottom_edge is not None:
+                border_line(*bottom_edge)
+            bottom_edge = None
+            fragment_has_rows = False
 
         def box_table_geom():
             x0, avail_w = self._box_frame(fmt, indent_left)
@@ -756,16 +912,19 @@ class RichTextDocument:
             inner_w = max(4.0, col_w - pad_x * 2)
             return x0, avail_w, col_w, inner_w
 
-        def prepare_row(cells: list[list[Inline]], inner_w: float) -> list[list[list[_RichItem]]]:
+        def prepare_row(cells: list[list[Inline]], inner_w: float, source_start: int) -> list[list[list[_RichItem]]]:
             wrapped_cols = []
             for ci in range(ncols):
                 runs = cells[ci] if ci < len(cells) else []
                 wrapped_cols.append(self._runs_to_wrapped_lines(runs, inner_w, inner_w,
-                                                                scale_mult=0.92))
+                    scale_mult=0.92, source_start=source_start if self._editor_layout is not None else None))
+                if self._editor_layout is not None:
+                    source_start += sum(map(_source_length, runs)) + 1
             return wrapped_cols
 
-        def draw_row(wrapped_cols: list[list[list[_RichItem]]], is_hdr: bool,
+        def draw_row(wrapped_cols: list[list[list[_RichItem]]],
                      x0: float, avail_w: float, col_w: float, inner_w: float):
+            nonlocal fragment_has_rows, bottom_edge
             row_lines = max(1, max(len(wc) for wc in wrapped_cols))
             y_row_top = self._line_y()
             for li in range(row_lines):
@@ -773,67 +932,71 @@ class RichTextDocument:
                 for ci, wc in enumerate(wrapped_cols):
                     if li < len(wc):
                         al = tbl.aligns[ci] if ci < len(tbl.aligns) else 'L'
+                        if wc[li] and wc[li][0].source is not None:
+                            self._editor_line_start = wc[li][0].source[0]
                         self._emit_line(wc[li], x0 + ci * col_w + pad_x, inner_w, y_line, al, scale_mult=0.92)
+                        self._editor_line_start = None
                 self._line_idx += 1
-            row_h = row_lines * self.line_h
-            # Draw cell borders: vertical lines always; horizontal lines only when table_hlines is True
-            if self.table_hlines:
-                box = Path()
-                box.rect(x0, y_row_top, avail_w, row_h)
-                self._cur_page.append(box)
-            else:
-                for vx in (x0, x0 + avail_w):
-                    vp = Path()
-                    vp.move_to(vx, y_row_top)
-                    vp.line_to(vx, y_row_top + row_h)
-                    self._cur_page.append(vp)
-            for ci in range(1, ncols):
-                vx = x0 + ci * col_w
-                vp = Path()
-                vp.move_to(vx, y_row_top)
-                vp.line_to(vx, y_row_top + row_h)
-                self._cur_page.append(vp)
-            if is_hdr and self.table_hlines:
-                hp = Path()
-                hp.move_to(x0, y_row_top + row_h - 0.35)
-                hp.line_to(x0 + avail_w, y_row_top + row_h - 0.35)
-                self._cur_page.append(hp)
+            self._used_pages = len(self._pages)
+            x1 = x0 + avail_w
+            y_bottom = y_row_top + row_lines * self.line_h
+            if ('horizontal' if fragment_has_rows else 'top') in edges:
+                border_line(x0, y_row_top, x1, y_row_top)
+            if 'left' in edges:
+                border_line(x0, y_row_top, x0, y_bottom)
+            if 'right' in edges:
+                border_line(x1, y_row_top, x1, y_bottom)
+            if 'vertical' in edges:
+                for ci in range(1, ncols):
+                    vx = x0 + ci * col_w
+                    border_line(vx, y_row_top, vx, y_bottom)
+            if 'bottom' in edges:
+                bottom_edge = (x0, y_bottom, x1, y_bottom)
+            fragment_has_rows = True
 
         x0, avail_w, col_w, inner_w = box_table_geom()
-        hdr_wrapped = prepare_row(tbl.headers, inner_w) if tbl.headers else None
+        header_source = self._editor_cursor
+        row_source = header_source
+        hdr_wrapped = prepare_row(tbl.headers, inner_w, header_source) if tbl.headers else None
         raw_rows = ([('hdr', tbl.headers)] if tbl.headers else []) + [('row', r) for r in tbl.rows]
 
         for kind, cells in raw_rows:
-            wcols = hdr_wrapped if (kind == 'hdr' and hdr_wrapped is not None) else prepare_row(cells, inner_w)
+            wcols = hdr_wrapped if (kind == 'hdr' and hdr_wrapped is not None) else prepare_row(cells, inner_w, row_source)
             needed = max(1, max(len(wc) for wc in wcols))
             if self._line_idx > 0 and self._line_idx + needed > self.line_num:
                 prev_box = (self.body_w, self.line_h)
+                finish_fragment()
                 self._next_box()
                 x0, avail_w, col_w, inner_w = box_table_geom()
                 if (self.body_w, self.line_h) != prev_box:
-                    hdr_wrapped = prepare_row(tbl.headers, inner_w) if tbl.headers else None
-                    wcols = hdr_wrapped if (kind == 'hdr' and hdr_wrapped is not None) else prepare_row(cells, inner_w)
+                    hdr_wrapped = prepare_row(tbl.headers, inner_w, header_source) if tbl.headers else None
+                    wcols = hdr_wrapped if (kind == 'hdr' and hdr_wrapped is not None) else prepare_row(cells, inner_w, row_source)
                     needed = max(1, max(len(wc) for wc in wcols))
                 if kind == 'row' and hdr_wrapped and self.table_header_repeat:
                     h_need = max(1, max(len(wc) for wc in hdr_wrapped))
                     if self._line_idx + h_need + needed <= self.line_num:
-                        draw_row(hdr_wrapped, True, x0, avail_w, col_w, inner_w)
-            draw_row(wcols, kind == 'hdr', x0, avail_w, col_w, inner_w)
+                        draw_row(hdr_wrapped, x0, avail_w, col_w, inner_w)
+            draw_row(wcols, x0, avail_w, col_w, inner_w)
+            if self._editor_layout is not None:
+                row_source += sum(_source_length(run) for cell in cells for run in cell) + max(ncols, len(cells))
+                self._editor_cursor = row_source
             if self._line_idx >= self.line_num:
                 prev_box = (self.body_w, self.line_h)
+                finish_fragment()
                 self._next_box()
                 x0, avail_w, col_w, inner_w = box_table_geom()
                 if (self.body_w, self.line_h) != prev_box:
-                    hdr_wrapped = prepare_row(tbl.headers, inner_w) if tbl.headers else None
+                    hdr_wrapped = prepare_row(tbl.headers, inner_w, header_source) if tbl.headers else None
+        finish_fragment()
 
     # ------------------------------------------------------------------ public API
 
-    def layout_and_render(self, content: str, fmt_name: str = 'markdown',
+    def layout_and_render(self, content: str | list[Block], fmt_name: str = 'markdown',
                           para_fmt: Optional[ParagraphFormat] = None,
                           align: str = 'L') -> list[list[Path]]:
         """Parse rich content and lay it out into per-page Path lists (mm, y-down)."""
         self._reset_pages()
-        blocks = parse_rich(content, fmt_name)
+        blocks = parse_rich(content, fmt_name) if isinstance(content, str) else content
         self._layout_blocks(blocks, para_fmt or ParagraphFormat(), align)
         # Keep laid-out blank lines, including a continuation page ready for typing.
         while len(self._pages) > self._used_pages and not self._pages[-1]:

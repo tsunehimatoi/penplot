@@ -38,6 +38,10 @@ def _arc(cx: float, cy: float, rx: float, ry: float, a0: float, a1: float, em: f
 
 def _symbol_paths(name: str, em: float) -> Optional[tuple[list[Path], float]]:
     """Return (paths, advance_mm) with baseline at y=0 (y-down) for LaTeX symbols."""
+    if name == 'circ':
+        return ([_arc(0.20, -0.23, 0.12, 0.12, 0, math.tau, em, 16)], 0.4 * em)
+    if name == '°':
+        return ([_arc(0.18, -0.59, 0.10, 0.10, 0, math.tau, em, 16)], 0.35 * em)
     if name in ('pm', '±'):
         return ([
             _poly([(0.10, -0.35), (0.58, -0.35)], em),
@@ -217,6 +221,12 @@ class _MFrac:
 
 
 @dataclass
+class _MAccent:
+    body: _MRow
+    kind: str
+
+
+@dataclass
 class _MSqrt:
     body: _MRow
     deg: Optional[_MRow] = None
@@ -264,7 +274,19 @@ def _tokenize(tex: str) -> list[tuple[str, str]]:
             j = i + 1
             while j < n and tex[j].isalpha():
                 j += 1
-            tokens.append(('cmd', tex[i + 1:j]))
+            name = tex[i + 1:j]
+            if name == 'text':
+                start = j
+                while start < n and tex[start].isspace():
+                    start += 1
+                if start < n and tex[start] == '{':
+                    end = tex.find('}', start + 1)
+                    body = tex[start + 1:end] if end >= 0 else ''
+                    if end >= 0 and '{' not in body and '\\' not in body:
+                        tokens.append(('text', body))
+                        i = end + 1
+                        continue
+            tokens.append(('cmd', name))
             i = j
             continue
         if ch in '{}^_[]&':
@@ -331,6 +353,8 @@ class _MathParser:
         if t is None:
             return _MSym('')
         kind, val = t
+        if kind == 'text':
+            return _MRow([_MSpace(0.25) if ch.isspace() else _MSym(ch) for ch in val])
         if kind == '{':
             r = self.parse_row(stop_at=('}',))
             if self.peek() and self.peek()[0] == '}':
@@ -339,10 +363,12 @@ class _MathParser:
         if kind == 'cmd':
             if val in _SPACES:
                 return _MSpace(_SPACES[val])
-            if val == 'frac':
+            if val in ('frac', 'dfrac', 'tfrac'):
                 num = self.parse_atom_as_row()
                 den = self.parse_atom_as_row()
                 return _MFrac(num, den)
+            if val in ('bar', 'overline', 'underline', 'hat', 'widehat', 'vec'):
+                return _MAccent(self.parse_atom_as_row(), val)
             if val == 'sqrt':
                 deg = None
                 if self.peek() == ('[', '['):
@@ -394,6 +420,8 @@ class _MathParser:
             if val in _FUNC_NAMES:
                 return _MRow([_MSym(ch) for ch in val])
             return _MSym(val, is_cmd=True)
+        if val == '℃':
+            return _MRow([_MSym('°'), _MSym('C')])
         return _MSym(val)
 
 
@@ -443,6 +471,10 @@ def _layout_node(node, em: float, glyph_fn: GlyphFn, display: bool) -> _MBox:
             return _MBox(ps, adv, asc, desc)
         ps, adv = glyph_fn(node.text, em)
         bb = bbox_of(ps)
+        if bb:
+            adv = max(adv, bb[2])
+        if node.text.isalnum():
+            adv += 0.07 * em
         asc = max(0.35 * em, -bb[1]) if bb else 0.7 * em
         desc = max(0.0, bb[3]) if bb else 0.05 * em
         # Slight extra padding around binary operators
@@ -483,6 +515,39 @@ def _layout_node(node, em: float, glyph_fn: GlyphFn, display: bool) -> _MBox:
         asc = -bar_y + gap + nb.descent + nb.ascent
         desc = bar_y + gap + db.ascent + db.descent
         return _MBox(paths, w, max(0.4 * em, asc), max(0.1 * em, desc))
+
+    if isinstance(node, _MAccent):
+        base = _layout_node(node.body, em, glyph_fn, display)
+        if not base.paths:
+            return base
+        left, _, right, _ = bbox_of(base.paths)
+        width = max(right - left, 0.15 * em)
+        right = left + width
+        pad = 0.08 * em
+        y = -base.ascent - pad
+        accent = Path()
+        ascent, descent = base.ascent, base.descent
+        if node.kind == 'underline':
+            y = base.descent + pad
+            accent.move_to(left, y)
+            accent.line_to(right, y)
+            descent = y
+        elif node.kind in ('hat', 'widehat'):
+            accent.move_to(left, y)
+            accent.line_to((left + right) / 2, y - 0.13 * em)
+            accent.line_to(right, y)
+            ascent = -y + 0.13 * em
+        else:
+            accent.move_to(left, y)
+            accent.line_to(right, y)
+            if node.kind == 'vec':
+                head = min(width * 0.3, 0.12 * em)
+                accent.move_to(right - head, y - head)
+                accent.line_to(right, y)
+                ascent = -y + head
+            else:
+                ascent = -y
+        return _MBox([*base.paths, accent], max(base.w, right), ascent, descent)
 
     if isinstance(node, _MSqrt):
         bb = _layout_node(node.body, em, glyph_fn, display)

@@ -25,11 +25,14 @@ class TextRun:
     code: bool = False
     sup: bool = False
     sub: bool = False
+    source_length: Optional[int] = field(default=None, compare=False)
 
 
 @dataclass
 class InlineMath:
     latex: str
+    border: bool = False
+    source_length: Optional[int] = field(default=None, compare=False)
 
 
 Inline = Union[TextRun, InlineMath]
@@ -75,6 +78,7 @@ class CodeBlock:
 @dataclass
 class MathBlock:
     latex: str
+    border: bool = False
 
 
 @dataclass
@@ -93,6 +97,8 @@ class TableBlock:
     headers: list[list[Inline]]
     rows: list[list[list[Inline]]]
     aligns: list[str] = field(default_factory=list)
+    border: Optional[str] = None
+    border_edges: Optional[set[str]] = None
 
 
 @dataclass
@@ -142,9 +148,14 @@ def _parse_chart_spec(raw: str) -> Optional[dict[str, Any]]:
 
 # ------------------------------------------------------------------ Inline parser (Markdown + LaTeX)
 
+_MATH_TOKEN = (
+    r'\\\((?:\\.|[^\\])+?\\\)|\\\[(?:\\.|[^\\])+?\\\]'
+    r'|(?<![\\$])\$\$(?!\$)(?:\\.|[^$\n])+?\$\$(?!\$)'
+    r'|(?<![\\$])\$(?![\s$])(?:\\.|[^$\n])+?(?<![\s$])\$(?!\$)'
+)
+
 _INLINE_TOKEN_RE = re.compile(
-    r'(\\\((?:\\.|[^\\])+?\\\)'           # \( ... \)
-    r'|\$(?!\s)(?:\\.|[^$\n])+?(?<!\s)\$'  # $ ... $ (allows LaTeX backslashes!)
+    r'(' + _MATH_TOKEN +
     r'|`[^`]+`'                            # `code`
     r'|\*\*(?=\S)(?:\\.|[^*])+?(?<=\S)\*\*' # **bold**
     r'|__(?=\S)(?:\\.|[^_])+?(?<=\S)__'    # __bold__
@@ -165,8 +176,12 @@ _INLINE_TOKEN_RE = re.compile(
 _BARE_LATEX_RE = re.compile(
     r'(?<![A-Za-z0-9_\\])'
     r'(?:'
-    r'(?:[A-Za-z0-9()]+(?:\^|\_)\{[^{}]*\\[A-Za-z]+[^{}]*\}(?:\s*[+\-*/=<>]\s*[A-Za-z0-9()\\^{}_+\-*/=<> ]*)?)'
-    r'|(?:\([A-Za-z0-9]+\)|[A-Za-z0-9]+)?\\(?:frac|sqrt|lim|sum|prod|int|iint|oint|pi|phi|alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|Delta|Omega|infty|pm|mp|times|div|cdot|to|rightarrow|leftarrow|Rightarrow|leq|geq|neq|approx|partial|nabla|sin|cos|tan|log|ln|exp)(?![A-Za-z])'
+    r'(?:\d+(?:\.\d+)?(?:\\[,;: ]|[ \t])*)?\^\s*(?:\{\s*\\circ\s*\}|\\circ(?![A-Za-z]))'
+    r'(?:[ \t]*(?:\\(?:text|mathrm)\{\s*C\s*\}|C(?![A-Za-z])))?'
+    r'|(?:\d+(?:\.\d+)?[ \t]*)?(?:℃|°[ \t]*C(?![A-Za-z])|°)'
+    r'|(?:[+-]?\d+(?:\.\d+)?[ \t]*)?\\(?:text|mathrm)\{[^{}\n]+\}'
+    r'|(?:[A-Za-z0-9()]+(?:\^|\_)\{[^{}]*\\[A-Za-z]+[^{}]*\}(?:\s*[+\-*/=<>]\s*[A-Za-z0-9()\\^{}_+\-*/=<> ]*)?)'
+    r'|(?:\([A-Za-z0-9]+\)|[A-Za-z0-9]+)?\\(?:frac|dfrac|tfrac|bar|overline|underline|hat|widehat|vec|sqrt|lim|sum|prod|int|iint|oint|pi|phi|alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|Delta|Omega|infty|pm|mp|times|div|cdot|to|rightarrow|leftarrow|Rightarrow|leq|geq|neq|approx|partial|nabla|sin|cos|tan|log|ln|exp)(?![A-Za-z])'
     r'(?:[A-Za-z0-9\s+\-*/=<>^_{}()\[\]\\.,]*[A-Za-z0-9)}\\]|[^{}\s]*)'
     r')'
 )
@@ -193,9 +208,9 @@ def _split_bare_scripts(text: str, **style) -> list[Inline]:
         sup_txt = m.group(1) or m.group(2)
         sub_txt = m.group(3) or m.group(4)
         if sup_txt is not None:
-            out.append(TextRun(sup_txt, **{**style, 'sup': True}))
+            out.append(TextRun(sup_txt, source_length=len(m.group()), **{**style, 'sup': True}))
         elif sub_txt is not None:
-            out.append(TextRun(sub_txt, **{**style, 'sub': True}))
+            out.append(TextRun(sub_txt, source_length=len(m.group()), **{**style, 'sub': True}))
         pos = m.end()
     if pos < len(text):
         out.append(TextRun(text[pos:], **style))
@@ -204,7 +219,7 @@ def _split_bare_scripts(text: str, **style) -> list[Inline]:
 
 def _split_bare_latex(text: str, **style) -> list[Inline]:
     """Detect bare LaTeX expressions (without $...$) and bare ^/_ scripts in plain text runs."""
-    if '\\' not in text:
+    if not any(mark in text for mark in ('\\', '°', '℃')):
         return _split_bare_scripts(text, **style)
     out: list[Inline] = []
     pos = 0
@@ -213,11 +228,35 @@ def _split_bare_latex(text: str, **style) -> list[Inline]:
             out.extend(_split_bare_scripts(text[pos:m.start()], **style))
         expr = m.group(0).strip()
         if expr:
-            out.append(InlineMath(expr))
+            out.append(InlineMath(expr, source_length=utf16_length(m.group())))
         pos = m.end()
     if pos < len(text):
         out.extend(_split_bare_scripts(text[pos:], **style))
     return out or [TextRun(text, **style)]
+
+
+_INLINE_MATH_RE = re.compile(_MATH_TOKEN)
+
+
+def utf16_length(text: str) -> int:
+    return len(text.encode('utf-16-le', errors='surrogatepass')) // 2
+
+
+def _parse_inline_math(text: str, **style) -> list[Inline]:
+    """Parse math in HTML or plain text without interpreting Markdown emphasis."""
+    out: list[Inline] = []
+    pos = 0
+    for match in _INLINE_MATH_RE.finditer(text):
+        if match.start() > pos:
+            out.extend(_split_bare_latex(text[pos:match.start()], **style))
+        token = match.group()
+        edge = 1 if token.startswith('$') and not token.startswith('$$') else 2
+        if token[edge:-edge].strip():
+            out.append(InlineMath(token[edge:-edge].strip(), source_length=utf16_length(token)))
+        pos = match.end()
+    if pos < len(text):
+        out.extend(_split_bare_latex(text[pos:], **style))
+    return out
 
 
 def parse_inline(text: str, *, bold=False, italic=False, underline=False,
@@ -239,10 +278,9 @@ def parse_inline(text: str, *, bold=False, italic=False, underline=False,
                                                  strike=strike, code=code, sup=sup, sub=sub))
         tok = m.group(0)
         low = tok.lower()
-        if tok.startswith('\\(') and tok.endswith('\\)'):
-            out.append(InlineMath(tok[2:-2].strip()))
-        elif tok.startswith('$') and tok.endswith('$'):
-            out.append(InlineMath(tok[1:-1].strip()))
+        if _INLINE_MATH_RE.fullmatch(tok):
+            edge = 1 if tok.startswith('$') and not tok.startswith('$$') else 2
+            out.append(InlineMath(tok[edge:-edge].strip(), source_length=1))
         elif tok.startswith('`') and tok.endswith('`'):
             out.append(TextRun(tok[1:-1], bold=bold, italic=italic, underline=underline,
                                strike=strike, code=True, sup=sup, sub=sub))
@@ -326,19 +364,47 @@ def _parse_table_aligns(sep_line: str, ncols: int) -> list[str]:
     return aligns
 
 
+def _read_display_math(lines: list[str], start: int, parent_indent: Optional[int] = None) -> Optional[tuple[str, int]]:
+    first = lines[start].strip()
+    close = '$$' if first.startswith('$$') else '\\]' if first.startswith('\\[') else None
+    if not close:
+        return None
+    if len(first) > 4 and first.endswith(close):
+        return first[2:-2].strip(), start + 1
+    body = [first[2:]]
+    for index in range(start + 1, len(lines)):
+        raw = lines[index]
+        line = raw.strip()
+        if parent_indent is not None and line and len(raw) - len(raw.lstrip()) <= parent_indent:
+            break
+        if line.startswith('\\[') or (line.startswith('$$') and line != '$$'):
+            break
+        if line.endswith(close):
+            body.append(line[:-2])
+            return '\n'.join(body).strip(), index + 1
+        body.append(lines[index])
+    return None
+
+
 def parse_markdown(text: str) -> list[Block]:
     """Parse Markdown (+ GFM tables, LaTeX math, ```chart, inline <svg>) into IR blocks."""
     lines = text.replace('\u00a0', ' ').replace('\r\n', '\n').replace('\r', '\n').split('\n')
     n = len(lines)
     i = 0
     blocks: list[Block] = []
+    if not text.strip():
+        return [ParagraphBlock([]) for _ in range(max(1, n - 1))]
 
     while i < n:
         line = lines[i]
         stripped = line.strip()
 
         if not stripped:
-            i += 1
+            start = i
+            while i < n and not lines[i].strip():
+                i += 1
+            blanks = i - start - (1 if start else 0)
+            blocks.extend(ParagraphBlock([]) for _ in range(blanks))
             continue
 
         # Page break
@@ -385,45 +451,10 @@ def parse_markdown(text: str) -> list[Block]:
             blocks.append(CodeBlock(body, lang))
             continue
 
-        # Display math $$ ... $$ or \[ ... \]
-        if stripped.startswith('$$'):
-            if stripped.endswith('$$') and len(stripped) > 4:
-                blocks.append(MathBlock(stripped[2:-2].strip()))
-                i += 1
-                continue
-            i += 1
-            mlines = [stripped[2:]] if len(stripped) > 2 else []
-            while i < n:
-                cur = lines[i]
-                if cur.strip().endswith('$$'):
-                    tail = cur.strip()[:-2]
-                    if tail:
-                        mlines.append(tail)
-                    i += 1
-                    break
-                mlines.append(cur)
-                i += 1
-            blocks.append(MathBlock('\n'.join(mlines).strip()))
-            continue
-
-        if stripped.startswith('\\['):
-            if stripped.endswith('\\]') and len(stripped) > 4:
-                blocks.append(MathBlock(stripped[2:-2].strip()))
-                i += 1
-                continue
-            i += 1
-            mlines = [stripped[2:]] if len(stripped) > 2 else []
-            while i < n:
-                cur = lines[i]
-                if cur.strip().endswith('\\]'):
-                    tail = cur.strip()[:-2]
-                    if tail:
-                        mlines.append(tail)
-                    i += 1
-                    break
-                mlines.append(cur)
-                i += 1
-            blocks.append(MathBlock('\n'.join(mlines).strip()))
+        display = _read_display_math(lines, i)
+        if display:
+            latex, i = display
+            blocks.append(MathBlock(latex))
             continue
 
         # Inline <svg> ... </svg>
@@ -516,6 +547,18 @@ def parse_markdown(text: str) -> list[Block]:
                         i += 1
                     if items:
                         items[-1].children.extend(parse_markdown('\n'.join(sub_lines)))
+                elif not (cur_u or cur_o) and items and len(cur_line) - len(cur_line.lstrip()) > base_indent:
+                    item = items[-1]
+                    display = _read_display_math(lines, i, base_indent)
+                    if display:
+                        latex, i = display
+                        item.children.append(MathBlock(latex))
+                    elif item.children:
+                        item.children.append(ParagraphBlock(parse_inline(cur_line.strip())))
+                        i += 1
+                    else:
+                        item.runs.extend([TextRun('\n'), *parse_inline(cur_line.strip())])
+                        i += 1
                 else:
                     break
             blocks.append(ListBlock(ordered=ordered, items=items, start=start))
@@ -528,15 +571,22 @@ def parse_markdown(text: str) -> list[Block]:
             cs = cur.strip()
             if (not cs or _HEADING_RE.match(cur) or _FENCE_RE.match(cur) or _HR_RE.match(cur)
                     or _PAGEBREAK_RE.match(cur) or _QUOTE_RE.match(cur) or _UL_RE.match(cur)
-                    or _OL_RE.match(cur) or cs.startswith('$$') or cs.startswith('\\[')
+                    or _OL_RE.match(cur) or _read_display_math(lines, i)
                     or cs.lower().startswith('<svg') or cs.lower().startswith('<table')):
                 break
             if '|' in cur and i + 1 < n and _TABLE_SEP_RE.match(lines[i + 1]):
                 break
             plines.append(cur)
             i += 1
-        para_text = ' '.join(l.strip() for l in plines)
-        blocks.append(ParagraphBlock(parse_inline(para_text)))
+        runs: list[Inline] = []
+        for index, source_line in enumerate(plines):
+            if index:
+                runs.append(TextRun('\n'))
+            clean = source_line.rstrip()
+            if index < len(plines) - 1:
+                clean = re.sub(r'(?<!\\)\\$', '', clean)
+            runs.extend(parse_inline(clean))
+        blocks.append(ParagraphBlock(runs))
 
     return blocks
 
@@ -585,6 +635,7 @@ class _RichHTMLParser(HTMLParser):
         self.block_stack: list[dict[str, Any]] = []
         self.math_mode: Optional[str] = None
         self.math_buf: list[str] = []
+        self.math_border = False
 
     def _cur_style(self) -> dict[str, bool]:
         s = {'bold': False, 'italic': False, 'underline': False, 'strike': False,
@@ -604,6 +655,13 @@ class _RichHTMLParser(HTMLParser):
 
     def _emit_block(self, blk: Block):
         self._mark_block_output()
+        if isinstance(blk, MathBlock):
+            if self.table_stack and self.table_stack[-1]['in_cell'] is not None:
+                self.table_stack[-1]['in_cell'].append(InlineMath(blk.latex, blk.border, source_length=1))
+                return
+            if self.list_stack and self.list_stack[-1][1]:
+                self.list_stack[-1][1][-1].children.append(blk)
+                return
         self._target_blocks().append(blk)
 
     def _sync_block_state(self):
@@ -650,15 +708,17 @@ class _RichHTMLParser(HTMLParser):
     def _flush_runs(self, as_paragraph=True):
         if not self.runs:
             return
-        # Trim leading/trailing pure whitespace if empty
-        if all(isinstance(r, TextRun) and not r.text.strip() for r in self.runs):
+        # Ignore pretty-printed HTML outside blocks and the placeholder <br>.
+        if (all(isinstance(r, TextRun) and not (r.text.strip('\r\n') if self.block_stack else r.text.strip())
+                for r in self.runs)
+                and sum(r.text.count('\n') for r in self.runs) <= 1):
             self.runs.clear()
             return
         # Split inline math / text into runs (also handle $...$ inside text runs)
         final_runs: list[Inline] = []
         for r in self.runs:
-            if isinstance(r, TextRun) and ('$' in r.text or '\\(' in r.text):
-                final_runs.extend(parse_inline(
+            if isinstance(r, TextRun) and not r.code and any(mark in r.text for mark in ('$', '\\', '°', '℃')):
+                final_runs.extend(_parse_inline_math(
                     r.text, bold=r.bold, italic=r.italic, underline=r.underline,
                     strike=r.strike, code=r.code, sup=r.sup, sub=r.sub,
                 ))
@@ -674,7 +734,11 @@ class _RichHTMLParser(HTMLParser):
         if self.list_stack and not self.heading_level:
             _, items = self.list_stack[-1]
             if items:
-                items[-1].runs.extend(final_runs)
+                item = items[-1]
+                if item.children:
+                    item.children.append(ParagraphBlock(final_runs, self.cur_align))
+                else:
+                    item.runs.extend(final_runs)
                 return
         if self.heading_level:
             self._emit_block(HeadingBlock(self.heading_level, final_runs, self.cur_align))
@@ -729,10 +793,12 @@ class _RichHTMLParser(HTMLParser):
             self._mark_block_output()
             self.math_mode = 'block'
             self.math_buf = []
+            self.math_border = attrs.get('data-border') == 'box'
             return
         if 'math-inline' in cls:
             self.math_mode = 'inline'
             self.math_buf = []
+            self.math_border = attrs.get('data-border') == 'box'
             return
 
         if tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
@@ -776,19 +842,26 @@ class _RichHTMLParser(HTMLParser):
         elif tag == 'table':
             self._flush_runs()
             self._mark_block_output()
-            self.table_stack.append({'headers': [], 'rows': [], 'cur_row': None, 'in_cell': None, 'is_header_row': False})
+            self.table_stack.append({'headers': [], 'rows': [], 'cur_row': None, 'in_cell': None,
+                                     'is_header_row': False, 'aligns': [], 'row_aligns': [],
+                                     'border': attrs.get('data-border'),
+                                     'border_edges': set(attrs['data-border-edges'].split()) if 'data-border-edges' in attrs else None})
         elif tag == 'tr' and self.table_stack:
             self.table_stack[-1]['cur_row'] = []
             self.table_stack[-1]['is_header_row'] = False
+            self.table_stack[-1]['row_aligns'] = []
         elif tag in ('th', 'td') and self.table_stack:
             tbl = self.table_stack[-1]
             if tag == 'th':
                 tbl['is_header_row'] = True
             tbl['in_cell'] = []
+            tbl['row_aligns'].append(_parse_align_attr(attrs) or 'L')
         elif tag in ('b', 'strong'):
             self.style_stack.append({'bold': True})
         elif tag in ('i', 'em'):
             self.style_stack.append({'italic': True})
+        elif tag == 'code':
+            self.style_stack.append({'code': True})
         elif tag in ('u', 'ins'):
             self.style_stack.append({'underline': True})
         elif tag in ('s', 'del', 'strike'):
@@ -835,9 +908,9 @@ class _RichHTMLParser(HTMLParser):
         if self.math_mode and (tag in ('span', 'div', 'math')):
             latex = ''.join(self.math_buf).strip().strip('$')
             if self.math_mode == 'block':
-                self._emit_block(MathBlock(latex))
+                self._emit_block(MathBlock(latex, self.math_border))
             else:
-                self.runs.append(InlineMath(latex))
+                self.runs.append(InlineMath(latex, self.math_border, source_length=1))
             self.math_mode = None
             self.math_buf = []
             return
@@ -890,7 +963,10 @@ class _RichHTMLParser(HTMLParser):
             if row is not None:
                 if tbl['is_header_row'] and not tbl['headers']:
                     tbl['headers'] = row
+                    tbl['aligns'] = tbl['row_aligns']
                 else:
+                    if not tbl['aligns']:
+                        tbl['aligns'] = tbl['row_aligns']
                     tbl['rows'].append(row)
         elif tag == 'table' and self.table_stack:
             tbl = self.table_stack.pop()
@@ -906,8 +982,10 @@ class _RichHTMLParser(HTMLParser):
                 for r in rows:
                     while len(r) < ncols:
                         r.append([])
-                self._emit_block(TableBlock(headers=headers, rows=rows, aligns=['L'] * ncols))
-        elif tag in ('b', 'strong', 'i', 'em', 'u', 'ins', 's', 'del', 'strike', 'sup', 'sub', 'a'):
+                aligns = (tbl['aligns'] + ['L'] * ncols)[:ncols]
+                self._emit_block(TableBlock(headers=headers, rows=rows, aligns=aligns,
+                                            border=tbl['border'], border_edges=tbl['border_edges']))
+        elif tag in ('b', 'strong', 'i', 'em', 'code', 'u', 'ins', 's', 'del', 'strike', 'sup', 'sub', 'a'):
             if len(self.style_stack) > 1:
                 self.style_stack.pop()
 
@@ -923,8 +1001,10 @@ class _RichHTMLParser(HTMLParser):
         if self.in_pre:
             self.pre_buf.append(data)
             return
-        # Collapse HTML whitespace outside <pre>
-        collapsed = re.sub(r'[ \t\r\n]+', ' ', data)
+        # HTML source line breaks are formatting; horizontal whitespace is editable text.
+        if not data.strip() and '\n' in data and not self.runs:
+            return
+        collapsed = re.sub(r'[ \t]*[\r\n]+[ \t\r\n]*', ' ', data)
         if not collapsed:
             return
         # Check for block-level $$...$$ inside text
@@ -954,6 +1034,49 @@ def parse_html(html_str: str) -> list[Block]:
     return parser.blocks
 
 
+_EDITOR_TAGS = {
+    'paragraph': 'p', 'group': 'div', 'heading1': 'h1', 'heading2': 'h2', 'heading3': 'h3',
+    'heading4': 'h4', 'heading5': 'h5', 'heading6': 'h6', 'lineBreak': 'br', 'rule': 'hr',
+    'quote': 'blockquote', 'bulletList': 'ul', 'numberedList': 'ol', 'listItem': 'li',
+    'table': 'table', 'tableHeader': 'thead', 'tableBody': 'tbody', 'tableFooter': 'tfoot',
+    'tableRow': 'tr', 'headerCell': 'th', 'cell': 'td', 'codeBlock': 'pre', 'code': 'code',
+    'bold': 'strong', 'italic': 'em', 'underline': 'u', 'strike': 's', 'superscript': 'sup',
+    'subscript': 'sub', 'span': 'span', 'link': 'a',
+}
+
+
+def parse_editor_document(document, expand=lambda text: text) -> Optional[list[Block]]:
+    """Adapt native paragraph/run nodes to the common layout IR without re-parsing HTML."""
+    parser = _RichHTMLParser()
+
+    def visit(node):
+        kind = node['kind']
+        if kind == 'text':
+            parser.handle_data(expand(node.get('text') or ''))
+            return
+        attrs = {key: expand(value) for key, value in (node.get('attributes') or {}).items()}
+        if kind in ('displayFormula', 'inlineFormula'):
+            tag, cls = ('div', 'math-display') if kind == 'displayFormula' else ('span', 'math-inline')
+            parser.handle_starttag(tag, [*attrs.items(), ('class', cls)])
+            parser.handle_data(expand(node.get('text') or ''))
+            parser.handle_endtag(tag)
+            return
+        tag = _EDITOR_TAGS[kind]
+        parser.handle_starttag(tag, list(attrs.items()))
+        for child in node.get('children') or []:
+            visit(child)
+        if tag not in _VOID_TAGS:
+            parser.handle_endtag(tag)
+
+    try:
+        for node in document['blocks']:
+            visit(node)
+        parser._flush_runs()
+        return parser.blocks
+    except (KeyError, TypeError, AttributeError, RecursionError):
+        return None
+
+
 def parse_rich(content: str, fmt: str = 'markdown') -> list[Block]:
     """Parse rich content ('markdown', 'html', or 'plain') into IR blocks."""
     if fmt == 'html':
@@ -964,5 +1087,6 @@ def parse_rich(content: str, fmt: str = 'markdown') -> list[Block]:
     for index, part in enumerate(content.replace('\r\n', '\n').replace('\r', '\n').split('\f')):
         if index:
             blocks.append(PageBreakBlock())
-        blocks.extend(ParagraphBlock([TextRun(line)]) for line in part.split('\n'))
+        blocks.extend(ParagraphBlock(_parse_inline_math(line) if any(mark in line for mark in ('$', '\\', '°', '℃'))
+                                     else [TextRun(line)]) for line in part.split('\n'))
     return blocks

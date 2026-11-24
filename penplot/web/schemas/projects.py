@@ -93,6 +93,7 @@ class Paragraph(Model):
     spe_value: float = 0.0
     left: float = 0.0
     right: float = 0.0
+    indent_configured: Optional[bool] = None
 
 
 Align = Literal['L', 'C', 'R', 'D']
@@ -122,9 +123,23 @@ class RichStyle(OpenModel):
     code_box: bool = True
 
 
+class EditorDocumentNode(Model):
+    kind: str
+    text: Optional[str] = None
+    children: Optional[list[EditorDocumentNode]] = None
+    attributes: Optional[dict[str, str]] = None
+
+
+class FlowEditorDocument(Model):
+    version: Literal[1] = 1
+    source_crc32: int = Field(ge=0, le=0xffffffff)
+    blocks: list[EditorDocumentNode]
+
+
 class FlowTextProps(OpenModel):
     text: str = ''
     format: Literal['plain', 'markdown', 'html'] = 'plain'
+    editor_document: Optional[FlowEditorDocument] = None
     rich_style: Optional[RichStyle] = None
     font_id: Optional[str] = None
     font_mix: Optional[list[FontMixEntry]] = None
@@ -463,10 +478,39 @@ class ElementPreviewPage(Model):
     warnings: PageWarnings = PageWarnings()
 
 
+class EditorLayoutPosition(Model):
+    """Element-local position on a physical continuation page, in millimetres."""
+    blockIdx: int
+    page: int
+    boxIdx: int
+    x: float
+    y: float
+    h: float
+
+
+class EditorLayoutAtom(EditorLayoutPosition):
+    charIdx: int
+    endCharIdx: int
+    atomic: bool
+    w: float
+
+
+class EditorLayoutLine(EditorLayoutPosition):
+    startCharIdx: int
+    endCharIdx: int
+    endX: float
+
+
+class EditorLayout(Model):
+    charBoxes: list[EditorLayoutAtom]
+    lineAnchors: list[EditorLayoutLine]
+
+
 class ElementPreviewResult(Model):
     rid: str
     preview_only: Literal[True] = True
     pages: list[ElementPreviewPage]
+    editor_layouts: dict[int, EditorLayout] = Field(default_factory=dict)
     elapsed_ms: float = 0.0
 
 

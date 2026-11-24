@@ -80,8 +80,10 @@ def _render_preview(args, progress):
     mc, _, _ = effective(args['profile_doc'], args.get('project_print'), args.get('overrides'))
     resolver = Resolver(args.get('fonts'), args.get('files'), args.get('default_font'), cache_dir=args.get('el_cache'))
     progress(0, '正在排版并生成路径')
+    editor_layouts = {}
     pages = compose_pages(args['doc'], args['papers'], resolver, mc, args.get('variables'),
-                          set(args['page_filter']) if args.get('page_filter') is not None else None, progress)
+                          set(args['page_filter']) if args.get('page_filter') is not None else None, progress,
+                          editor_layouts=editor_layouts)
     out = args['out_dir']
     os.makedirs(out, exist_ok=True)
     infos = []
@@ -92,7 +94,7 @@ def _render_preview(args, progress):
                       'warnings': {'missing_glyphs': sorted(warn['missing']), 'overflow': bool(warn.get('overflow')),
                                    'clipped': False, 'messages': warn.get('messages') or []}})
         progress(0.6 + 0.4 * (index + 1) / max(1, len(pages)), '已生成 %d / %d 页路径' % (index + 1, len(pages)))
-    result = {'rid': args['rid'], 'preview_only': True, 'pages': infos,
+    result = {'rid': args['rid'], 'preview_only': True, 'pages': infos, 'editor_layouts': editor_layouts,
               'elapsed_ms': round((time.perf_counter() - start) * 1000, 1)}
     with open(os.path.join(out, 'result.json'), 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False)

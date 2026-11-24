@@ -52,6 +52,82 @@ $$
     assert isinstance(blocks[7], ParagraphBlock)
 
 
+def test_markdown_keeps_line_boundaries_around_unclosed_math_and_list_continuations():
+    from penplot.rich_text import TextRun
+
+    paragraph, items = parse_markdown('First\n$$ unfinished\nThird\n\n- Item\n  Continued\n- Next')
+    assert isinstance(paragraph, ParagraphBlock)
+    assert ''.join(run.text for run in paragraph.runs if isinstance(run, TextRun)) == 'First\n$$ unfinished\nThird'
+    assert isinstance(items, ListBlock)
+    assert ''.join(run.text for run in items.items[0].runs if isinstance(run, TextRun)) == 'Item\nContinued'
+    complete = parse_markdown('Before\n$$\nx+1\n$$\nAfter')
+    assert [type(block) for block in complete] == [ParagraphBlock, MathBlock, ParagraphBlock]
+
+
+def test_report_list_keeps_display_math_and_following_text_in_order():
+    from penplot.rich_text import TextRun, parse_inline
+
+    formula = r'P=\bar{V}_1\times\frac{1000.9}{V_2}'
+    md = ('- **氯化物含量计算**\n'
+          r'  $$\text{氯化物}=\frac{(V_2-V_1)\times0.5\times1000}{50}$$' '\n'
+          '- **水中总硬度计算**\n'
+          '  $$\n' f'  {formula}\n' '  $$\n'
+          r'  $$H_T=0.0560P$$' '\n'
+          '  （分别计算平行样）\n')
+    listing, = parse_markdown(md)
+    assert isinstance(listing, ListBlock)
+    first, second = listing.items
+    assert isinstance(first.children[0], MathBlock)
+    assert second.children[:2] == [MathBlock(formula), MathBlock('H_T=0.0560P')]
+    assert second.children[2] == ParagraphBlock([TextRun('（分别计算平行样）')])
+    assert parse_inline('硬度 $$%s$$' % formula) == [TextRun('硬度 '), InlineMath(formula)]
+    html = f'<ul><li>硬度<div class="math-display">{formula}</div><p>后续说明</p></li></ul>'
+    parsed, = parse_html(html)
+    assert parsed.items[0].children == [MathBlock(formula), ParagraphBlock([TextRun('后续说明')])]
+    assert parsed.items[0].runs == [TextRun('硬度')]
+
+
+def test_average_accent_and_tall_inline_fraction_stay_on_ruled_line():
+    from penplot.geometry import Path, bbox_of
+    from penplot.layout import PageInfo
+    from penplot.math_layout import render_handwritten_math
+    from penplot.rich_layout import RichTextDocument
+
+    glyphs = []
+
+    def glyph(ch, em):
+        glyphs.append(ch)
+        stroke = Path()
+        stroke.move_to(0, -0.7 * em)
+        stroke.line_to(0.6 * em, 0)
+        return [stroke], 0.66 * em
+
+    paths, *_ = render_handwritten_math(r'\bar{V}_1', 10, glyph)
+    assert glyphs == ['V', '1']
+    symbol, bar, _subscript = paths
+    assert bar.bbox()[3] < symbol.bbox()[1]
+
+    doc = RichTextDocument(PageInfo(), None, text_size=1.8)
+    doc._math_glyph = glyph
+    fraction = doc._build_math_item(InlineMath(r'\dfrac{\frac{5.1-0.4}{2}}{50}', border=True), 10, 1)
+    _, top, _, bottom = bbox_of(fraction.paths)
+    assert 0 < top < bottom < 10
+
+
+def test_trailing_soft_breaks_keep_caret_lines_in_markdown_layout():
+    from penplot.compose import Resolver, compose_pages
+    from penplot.settings import MachineConfig
+
+    el = {'id': 'line-breaks', 'type': 'flow_text',
+          'props': {'text': 'First<br><br>\n\nLast', 'format': 'markdown', 'line_num': 4}}
+    paper = {'width_mm': 150, 'height_mm': 80}
+    geometry = {}
+    compose_pages({'pages': [{'elements': [el]}]}, [paper], Resolver(), MachineConfig(), editor_layouts=geometry)
+    assert [(line['blockIdx'], line['y']) for line in geometry[0]['lineAnchors']] == [
+        (0, 0), (0, 20), (0, 40), (1, 60),
+    ]
+
+
 def test_parse_word_pasted_html():
     html_str = """
     <!--[if gte mso 9]><xml><w:WordDocument></w:WordDocument></xml><![endif]-->
@@ -64,6 +140,146 @@ def test_parse_word_pasted_html():
     assert isinstance(blocks[1], ParagraphBlock)
     assert any(isinstance(r, InlineMath) for r in blocks[1].runs)
     assert isinstance(blocks[2], TableBlock) and len(blocks[2].rows) == 1
+
+
+def test_temperature_and_cell_formulas_render_without_latex_commands():
+    from penplot.geometry import Path
+    from penplot.math_layout import render_handwritten_math
+    from penplot.rich_text import parse_rich
+
+    typed = r'16.4\,^\circ\text{C}'
+    for fmt, source in [('plain', typed), ('html', f'<p>{typed}</p>'), ('markdown', typed)]:
+        assert parse_rich(source, fmt)[0].runs == [InlineMath(typed)]
+
+    seen = []
+
+    def glyph(ch, em):
+        seen.append(ch)
+        stroke = Path()
+        stroke.move_to(0, -em * 0.6)
+        stroke.line_to(em * 0.7, 0)
+        return [stroke], em * 0.4
+
+    paths, *_ = render_handwritten_math(typed, 10, glyph)
+    assert ''.join(seen) == '16.4C'
+    assert any(len(path.ops) >= 16 for path in paths)
+    paths, *_ = render_handwritten_math('12AB', 10, glyph)
+    assert all(a.bbox()[2] < b.bbox()[0] for a, b in zip(paths, paths[1:]))
+
+
+def test_component_border_settings_reach_page_paths():
+    from penplot.settings import Settings
+
+    html = r'<p><span class="math-inline" data-border="box">16.4^\circ C</span></p>'
+    html += '<table data-border="grid"><tr><th>Unit</th><th style="text-align:center">Value</th></tr>'
+    html += r'<tr><td>A</td><td>$1234567890\text{ m/s}$</td></tr></table>'
+    paragraph, table = parse_html(html)
+    assert paragraph.runs[0].border
+    assert table.aligns == ['L', 'C']
+    assert table.border == 'grid'
+    paper = {'width_mm': 70, 'height_mm': 90, 'ruling': {'line_num': 10}}
+    res = _make_fake_res(ascender=True)
+
+    def render(source):
+        warnings = {'missing': set(), 'overflow': False, 'messages': []}
+        return flow_text_pages({'id': 'components', 'props': {'text': source, 'format': 'html'}},
+                               paper, res, {}, Settings(), warnings)[0]
+
+    with_borders = render(html)
+    without_borders = render(html.replace(' data-border="box"', '').replace('data-border="grid"', 'data-border="none"'))
+    assert len(with_borders) > len(without_borders)
+    assert max(p.bbox()[2] for p in with_borders) <= 70
+
+
+def test_editor_document_lays_out_blocks_without_parsing_compatibility_markup(monkeypatch):
+    from zlib import crc32
+    from penplot import rich_text
+    from penplot.compose import Resolver, compose_pages
+    from penplot.settings import MachineConfig
+
+    latex = r'\frac{12}{34}'
+    markup = f'<p>Before <span class="math-inline">{latex}</span> after</p>'
+    document = {'version': 1, 'source_crc32': crc32(markup.encode()), 'blocks': [
+        {'kind': 'paragraph', 'children': [
+            {'kind': 'text', 'text': 'Before '}, {'kind': 'inlineFormula', 'text': latex},
+            {'kind': 'text', 'text': ' after'},
+        ]},
+    ]}
+    el = {'id': 'native', 'type': 'flow_text', 'props': {
+        'text': markup, 'format': 'html', 'editor_document': document, 'seed': 1,
+    }}
+    doc = {'pages': [{'elements': [el]}]}
+    paper = {'width_mm': 150, 'height_mm': 80, 'ruling': {'line_num': 5}}
+
+    def unexpected_parse(_):
+        raise AssertionError('native layouts should not reparse the H5 projection')
+
+    monkeypatch.setattr(rich_text, 'parse_html', unexpected_parse)
+    editor_layouts = {}
+    pages = compose_pages(doc, [paper], Resolver(), MachineConfig(), editor_layouts=editor_layouts)
+    assert pages[0][2]
+    atom, = (box for box in editor_layouts[0]['charBoxes'] if box['atomic'])
+    assert (atom['charIdx'], atom['endCharIdx']) == (7, 8)
+    following = next(box for box in editor_layouts[0]['charBoxes'] if box['charIdx'] == 8)
+    assert abs(following['x'] - (atom['x'] + atom['w'])) < 1e-9
+
+
+def test_table_border_edges_and_editable_whitespace_reach_print_geometry():
+    from penplot.compose import Resolver, compose_pages
+    from penplot.settings import MachineConfig
+
+    el = {'id': 'borders-indent', 'type': 'flow_text', 'props': {
+        'text': '<p>A</p><p>  \tB</p>'
+                '<table data-border-edges="top vertical"><tr><th></th><th></th></tr>'
+                '<tr><td></td><td></td></tr></table>',
+        'format': 'html', 'line_num': 4,
+        'paragraph': {'spe_type': 1, 'spe_value': 8, 'left': 5},
+    }}
+    layouts = {}
+    paper = {'width_mm': 105, 'height_mm': 40}
+    pages = compose_pages({'pages': [{'elements': [el]}]}, [paper], Resolver(), MachineConfig(),
+                          editor_layouts=layouts)
+    paragraph_lines = [line for line in layouts[0]['lineAnchors'] if line['blockIdx'] < 2]
+    assert [line['x'] for line in paragraph_lines] == [0, 0]
+    boxes = layouts[0]['charBoxes']
+    assert next(box for box in boxes if box['blockIdx'] == 0)['x'] == 0
+    spaces_and_letter = [box for box in boxes if box['blockIdx'] == 1]
+    assert [box['charIdx'] for box in spaces_and_letter] == [0, 1, 2, 3]
+    assert spaces_and_letter[-1]['x'] > spaces_and_letter[2]['x'] > 0
+    border_paths = [list(path.coords) for path in pages[0][2] if path.bbox()[1] >= 20]
+    assert border_paths == [[0, 20, 105, 20], [52.5, 20, 52.5, 30], [52.5, 30, 52.5, 40]]
+
+    el['props'].update(format='markdown', text='A\n  \tB')
+    markdown_layouts = {}
+    compose_pages({'pages': [{'elements': [el]}]}, [paper], Resolver(), MachineConfig(),
+                  editor_layouts=markdown_layouts)
+    assert [box['x'] for box in markdown_layouts[0]['charBoxes']] == [
+        box['x'] for box in boxes[:5]
+    ]
+
+
+def test_whitespace_has_no_font_lookup_or_missing_glyph_warning(monkeypatch):
+    from math import isclose
+    from penplot.layout import PageInfo, TextDocument
+    from penplot.rich_layout import RichTextDocument
+    from penplot.rich_text import TextRun
+
+    def unexpected_lookup(*_):
+        raise AssertionError('layout spaces must bypass font lookup')
+
+    page = PageInfo()
+    flow = RichTextDocument(page, None)
+    plain = TextDocument(page, None)
+    monkeypatch.setattr(flow, '_pick_font', unexpected_lookup)
+    monkeypatch.setattr(plain, '_pick_font', unexpected_lookup)
+    for ch, width in [(' ', 3), ('\t', 6), ('\u00a0', 3), ('\u202f', 1.8), ('\u3000', 10), ('\u200b', 0)]:
+        item = flow._build_char_item(ch, TextRun(ch), 10, 1)
+        assert not item.paths and isclose(item.adv, width)
+        path, advance = plain._char_path(ch, 10)
+        assert path is None and isclose(advance, width)
+        if width == 0:
+            assert item.step == 0
+    assert not flow.missing and not plain.missing
 
 
 def _make_sample_docx() -> bytes:
@@ -236,6 +452,7 @@ def test_paper_layout_boxes_schema_and_backward_compat(client):
 
 def test_html_blank_lines_containers_pagebreaks_and_alignment():
     from penplot.geometry import bbox_of
+    from penplot.rich_text import TextRun
     from penplot.settings import Settings
 
     html = (
@@ -253,8 +470,9 @@ def test_html_blank_lines_containers_pagebreaks_and_alignment():
     blocks = parse_html(html)
     assert len(blocks) == 10
     assert isinstance(blocks[0], ParagraphBlock) and blocks[0].align == 'C'
-    for idx in (1, 2, 3, 4):
+    for idx in (1, 2, 4):
         assert isinstance(blocks[idx], ParagraphBlock) and blocks[idx].runs == []
+    assert blocks[3].runs == [TextRun('\xa0')]
     assert isinstance(blocks[5], ParagraphBlock) and len(blocks[5].runs) == 1
     assert blocks[5].runs[0].text == 'hi'
     assert isinstance(blocks[6], ParagraphBlock) and blocks[6].align == 'R'
@@ -289,7 +507,7 @@ def test_html_blank_lines_containers_pagebreaks_and_alignment():
     # One blank line between A (line 0) and B (line 2) -> dy == 2 * line_h (2 * 10mm = 20mm)
     assert abs((bb_b[1] - bb_a[1]) - 20.0) < 0.01
 
-    # Centered & right-aligned paragraphs ignore first-line / hanging indent (spe_type 1/2)
+    # Old paragraph settings have no effect on text boxes.
     el_indented_center = {
         'id': 'center-with-indent',
         'type': 'flow_text',
@@ -308,8 +526,7 @@ def test_html_blank_lines_containers_pagebreaks_and_alignment():
     # Paper width 120, margins l=10, r=10 -> box center is 60.0, box right edge is 110.0
     assert abs((bb_center[0] + bb_center[2]) / 2.0 - 60.0) < 1.5
     assert abs(bb_right[2] - 110.0) < 1.5
-    # Left-aligned paragraph still honors spe_type=1 indent (10 + 8 = 18.0)
-    assert bb_left[0] >= 17.9
+    assert abs(bb_left[0] - 10.0) < 1.5
 
 
 def test_flow_prefix_and_blank_continuation_match_print():

@@ -452,7 +452,7 @@ export function elementKey(el: Element, paper: PaperBase, vars: Record<string, s
   const p = el.type === 'flow_text' ? JSON.stringify([paper.width_mm, paper.height_mm, paper.orientation, paper.margins, paper.ruling, paper.layout_boxes ?? []]) : ''
   const usesVars = (el.type === 'text' || el.type === 'flow_text') && el.props.text.includes('{{')
   const textRenderKey = el.type === 'flow_text' || el.type === 'text'
-    ? `text-layout-v3|${el.props.seed == null ? el.id : ''}|`
+    ? `text-layout-v9|${el.props.seed == null ? el.id : ''}|`
     : ''
   return `${textRenderKey}${el.type}|${JSON.stringify(el.props)}|${p}|${usesVars ? JSON.stringify(vars) : ''}`
 }

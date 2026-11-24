@@ -155,22 +155,22 @@ def _font_roles(pr, res):
     return out or None
 
 
-def flow_text_pages(el, paper, res, variables, settings, warn):
+def flow_text_pages(el, paper, res, variables, settings, warn, editor_layout=None):
     from .layout_cache import cached_flow
-    return cached_flow(_flow_text_pages, el, paper, res, variables, settings, warn)
+    return cached_flow(_flow_text_pages, el, paper, res, variables, settings, warn, editor_layout)
 
 
-def _flow_text_pages(el, paper, res, variables, settings, warn):
+def _flow_text_pages(el, paper, res, variables, settings, warn, editor_layout=None):
     """-> list of path lists (page mm, y down), one per laid-out page."""
     pr = el.get('props') or {}
-    text = substitute(pr.get('text', ''), variables)
+    raw_text = pr.get('text', '')
+    text = substitute(raw_text, variables)
     page = page_info(paper, pr.get('line_num'))
     mix = _font_mix(pr, res)
     roles = _font_roles(pr, res)
     font = mix[0][0] if mix else res.font(pr.get('font_id'))
-    para = pr.get('paragraph') or {}
-    fmt = ParagraphFormat(int(para.get('spe_type', 0)), float(para.get('spe_value', 0.0)),
-                          float(para.get('left', 0.0)), float(para.get('right', 0.0)))
+    # Studio indentation is represented by editable whitespace in the text.
+    fmt = ParagraphFormat()
     rich_fmt = pr.get('format') or 'plain'
     layout_boxes = paper.get('layout_boxes')
     if rich_fmt == 'legacy' and not layout_boxes:
@@ -193,6 +193,14 @@ def _flow_text_pages(el, paper, res, variables, settings, warn):
         return out or [[]]
 
     from .rich_layout import RichTextDocument
+    editor_document = pr.get('editor_document')
+    content = text
+    if (rich_fmt == 'html' and editor_document and editor_document.get('version') == 1
+            and editor_document.get('source_crc32') == zlib.crc32(raw_text.encode('utf-8', errors='replace'))):
+        from .rich_text import parse_editor_document
+        blocks = parse_editor_document(editor_document, lambda value: substitute(value, variables))
+        if blocks is not None:
+            content = blocks
     rdoc = RichTextDocument(
         page, font, _fonts_set(pr.get('jitter')), settings=settings,
         rng=random.Random(_seed(pr, el.get('id'))),
@@ -202,8 +210,9 @@ def _flow_text_pages(el, paper, res, variables, settings, warn):
         missing_glyph=pr.get('missing_glyph', 'box'),
         rich_style=pr.get('rich_style'),
         layout_boxes=layout_boxes,
+        editor_layout=editor_layout,
     )
-    out = rdoc.layout_and_render(text, fmt_name=rich_fmt, para_fmt=fmt,
+    out = rdoc.layout_and_render(content, fmt_name=rich_fmt, para_fmt=fmt,
                                  align=pr.get('align', 'L'))
     warn['missing'] |= rdoc.missing
     return out
@@ -795,7 +804,7 @@ def _element_paths(el, paper, res, variables, mc, warn):
     t = el.get('type')
     pr = el.get('props') or {}
     if t == 'text':
-        key = {'layout_version': 2, 'props': pr, 'text': substitute(pr.get('text', ''), variables), 'id': el.get('id'),
+        key = {'layout_version': 3, 'props': pr, 'text': substitute(pr.get('text', ''), variables), 'id': el.get('id'),
                'fonts': _font_idents(pr, res), 'settings': mc.settings}
         return _cached_element(res, t, key, lambda w: text_box_paths(el, res, variables, mc.settings, w),
                                warn)
@@ -817,12 +826,17 @@ def _element_paths(el, paper, res, variables, mc, warn):
     raise ComposeError('bad_element', '未知元素类型：%s' % t)
 
 
-def compose_pages(doc, papers, res, mc, variables=None, page_filter=None, progress=None):
+def compose_pages(doc, papers, res, mc, variables=None, page_filter=None, progress=None, editor_layouts=None):
+    if editor_layouts is not None and any(
+        [el.get('type') for el in p.get('elements', []) if not el.get('hidden')] == ['flow_text']
+        for p in doc.get('pages', [])
+    ):
+        return _compose_pages(doc, papers, res, mc, variables, page_filter, progress, editor_layouts)
     from .layout_cache import cached_compose
     return cached_compose(_compose_pages, doc, papers, res, mc, variables, page_filter, progress)
 
 
-def _compose_pages(doc, papers, res, mc, variables=None, page_filter=None, progress=None):
+def _compose_pages(doc, papers, res, mc, variables=None, page_filter=None, progress=None, editor_layouts=None):
     """-> list of (source_page, paper, [paths page mm]). papers: resolved
     paper dict per doc page. flow_text overflow adds pages after its page."""
     variables = dict(variables or {})
@@ -841,7 +855,12 @@ def _compose_pages(doc, papers, res, mc, variables=None, page_filter=None, progr
                      key=lambda e: e.get('z', 0))
         for ei, el in enumerate(els):
             if el.get('type') == 'flow_text':
-                fps = flow_text_pages(el, paper, res, variables, mc.settings, warn)
+                if editor_layouts is not None and len(els) == 1:
+                    geometry = {'charBoxes': [], 'lineAnchors': []}
+                    fps = flow_text_pages(el, paper, res, variables, mc.settings, warn, geometry)
+                    editor_layouts[pi] = geometry
+                else:
+                    fps = flow_text_pages(el, paper, res, variables, mc.settings, warn)
                 for k, fp in enumerate(fps):
                     apply_transform(fp, el.get('transform'))
                     if k == 0:

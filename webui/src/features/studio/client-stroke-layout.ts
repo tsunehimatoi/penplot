@@ -12,14 +12,18 @@ import type {
   RichStyle,
   TextElement,
 } from '@/api/studio'
-import { markdownToHtml } from '@/lib/html-to-md'
+import { BARE_TEX_SOURCE, DELIMITED_FORMULA_SOURCE, markdownToHtml } from '@/lib/html-to-md'
+import { crc32Utf8 } from '@/lib/crc32'
 import { defaultFontId } from './actions'
 import { pickFontForChar, useGlyphCache } from './glyph-cache'
 import { boxLineNum, effectiveLayoutBoxes, NO_JITTER } from './model'
+import { spacingWidthEm } from './text-spacing'
 
 export interface CharBox {
   blockIdx: number
   charIdx: number
+  endCharIdx?: number
+  atomic?: boolean
   page: number
   boxIdx: number
   x: number
@@ -70,6 +74,8 @@ const NO_LINE_START = new Set([
 ])
 
 const VAR_RE = /\{\{\s*([^{}\s]+)\s*\}\}/g
+const BARE_MATH_RE = new RegExp(BARE_TEX_SOURCE)
+const DELIMITED_MATH_RE = new RegExp(DELIMITED_FORMULA_SOURCE)
 
 export function substituteVars(text: string, vars: Record<string, string>): string {
   if (!text || !text.includes('{{')) return text
@@ -81,28 +87,13 @@ export function needsBackendRich(el: FlowTextElement | TextElement, vars: Record
   if (el.type !== 'flow_text') return false
   const text = substituteVars(el.props.text ?? '', vars)
   if (!text) return false
-  if (text.includes('$$') || /\$[^$\n]+\$/.test(text)) return true
-  if (text.includes('\\(') || text.includes('\\[')) return true
-  if (text.includes('language-chart') || text.includes('```chart')) return true
-  if (/<svg[\s>]/i.test(text)) return true
-  return false
+  return DELIMITED_MATH_RE.test(text) || /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]/.test(text)
+    || BARE_MATH_RE.test(text)
+    || /<math[\s>]|math-(?:display|inline)|```(?:math|latex|tex)\b/i.test(text)
+    || /language-chart|```chart|<svg[\s>]|<table\b[^>]*\bdata-border(?:-edges)?=/i.test(text)
 }
 
 // ------------------------------------------------------------------ Deterministic PRNG (CPython 3 MT19937)
-
-const utf8Encoder = new TextEncoder()
-
-export function crc32Utf8(str: string): number {
-  const bytes = utf8Encoder.encode(str)
-  let crc = 0xffffffff
-  for (let i = 0; i < bytes.length; i++) {
-    crc ^= bytes[i]
-    for (let j = 0; j < 8; j++) {
-      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
-    }
-  }
-  return (crc ^ 0xffffffff) >>> 0
-}
 
 /**
  * Bit-for-bit CPython 3 `random.Random(int_seed)` MT19937 implementation
@@ -284,6 +275,7 @@ class PageCollector {
 
 interface TextRun {
   text: string
+  formula?: string
   italic?: boolean
   underline?: boolean
   strike?: boolean
@@ -293,6 +285,10 @@ interface TextRun {
 }
 
 type AlignType = 'L' | 'C' | 'R' | 'D'
+
+function endsWithBreak(runs: TextRun[]): boolean {
+  return runs.findLast((run) => run.text.length > 0)?.text.endsWith('\n') ?? false
+}
 
 type RichBlock =
   | { kind: 'pagebreak' }
@@ -330,13 +326,18 @@ function collectRuns(node: Node, style: Omit<TextRun, 'text'> = {}): TextRun[] {
   const walk = (n: Node, cur: Omit<TextRun, 'text'>, inPre = false) => {
     if (n.nodeType === 3) {
       const raw = n.textContent ?? ''
-      const txt = inPre ? raw : raw.replace(/[ \t\r\n]+/g, ' ')
+      if (!inPre && !raw.trim() && raw.includes('\n') && !out.length) return
+      const txt = inPre ? raw : raw.replace(/[ \t]*[\r\n]+[ \t\r\n]*/g, ' ')
       if (txt) out.push({ text: txt, ...cur })
       return
     }
     if (n.nodeType !== 1) return
     const el = n as Element
     const tag = el.tagName.toLowerCase()
+    if (el.matches('.math-inline, .math-display')) {
+      out.push({ text: '\uFFFC', formula: el.textContent ?? '' })
+      return
+    }
     if (tag === 'br') {
       out.push({ text: '\n', ...cur })
       return
@@ -498,8 +499,9 @@ function parseHtmlToBlocks(html: string): RichBlock[] {
         } else {
           // Collapse trailing single <br> inside empty <p><br></p> so it occupies 1 line instead of 2
           const runs = collectRuns(el)
-          const nonNl = runs.some((r) => r.text.replace(/[\n \t\r\u00a0]/g, '').length > 0)
-          const finalRuns = nonNl ? runs : [{ text: '' }]
+          const nonNl = runs.some((r) => r.text.replace(/[\n\r]/g, '').length > 0)
+          const explicitBreaks = runs.reduce((n, run) => n + (run.text.match(/\n/g)?.length ?? 0), 0)
+          const finalRuns = nonNl || explicitBreaks > 1 ? runs : [{ text: '' }]
           target.push({
             kind: 'paragraph',
             align: parseAlignAttr(el),
@@ -525,20 +527,7 @@ function parseRichBlocks(text: string, format: 'plain' | 'markdown' | 'html' | u
   if (!text) return [{ kind: 'paragraph', runs: [{ text: '' }] }]
   if (format === 'html') return parseHtmlToBlocks(text)
   if (format === 'markdown') {
-    const stripMdBlankParas = (bs: RichBlock[]): RichBlock[] =>
-      bs.filter((b) => b.kind !== 'paragraph' || b.runs.some((r) => r.text.replace(/[\n \t\r\u00a0]/g, '').length > 0))
-    // Support === pagebreak in markdown just like backend parse_rich
-    const parts = text.split(/^[ \t]*===[ \t]*$/m)
-    if (parts.length > 1) {
-      const blocks: RichBlock[] = []
-      parts.forEach((part, idx) => {
-        if (idx > 0) blocks.push({ kind: 'pagebreak' })
-        if (part.trim()) blocks.push(...stripMdBlankParas(parseHtmlToBlocks(markdownToHtml(part))))
-      })
-      return blocks.length ? blocks : [{ kind: 'paragraph', runs: [{ text: '' }] }]
-    }
-    const blocks = stripMdBlankParas(parseHtmlToBlocks(markdownToHtml(text)))
-    return blocks.length ? blocks : [{ kind: 'paragraph', runs: [{ text: '' }] }]
+    return parseHtmlToBlocks(markdownToHtml(text))
   }
   // Plain text: each line is a paragraph
   const blocks: RichBlock[] = []
@@ -553,6 +542,7 @@ function parseRichBlocks(text: string, format: 'plain' | 'markdown' | 'html' | u
 
 interface RichItem {
   segs: Float32Array[]
+  atomic?: boolean
   /** Extra non-glyph shapes (missing box) in local line coords */
   rects?: [number, number, number, number][]
   adv: number
@@ -583,6 +573,7 @@ interface LayoutOpts {
   charSpace: number
   pageSpace: number
   missingGlyph: 'box' | 'skip'
+  preserveLatinSpacing?: boolean
   richStyle?: RichStyle | null
   missing: Set<string>
 }
@@ -605,14 +596,14 @@ function buildGlyphItem(
   const baseline = lineH * 0.75 * (fs.baseLine ?? 1)
   const effSize = opts.textSize * scaleMult
 
+  const spaceWidth = spacingWidthEm(ch)
+  if (spaceWidth !== undefined) {
+    const adv = lineH * effSize * spaceWidth
+    const step = spaceWidth === 0 ? 0 : adv + opts.charSpace + opts.pageSpace * randPair(fs.randomSpace, opts.rng, 1)
+    return { segs: [], adv, step, isSpace: true, underline, strike }
+  }
   const picked = pickFontForChar(ch, opts.primaryFontId, opts.fontRoles, opts.fontMix, opts.rng)
   const g = picked.glyph
-
-  if (ch === '\t') {
-    const adv = lineH * effSize * 0.6
-    const pGap = opts.pageSpace * randPair(fs.randomSpace, opts.rng, 1)
-    return { segs: [], adv, step: adv + opts.charSpace + pGap, isSpace: true, underline, strike }
-  }
 
   if (g && g.segs.length > 0) {
     const jSize = applyJitter ? randPair(fs.randomFontSize, opts.rng, 1) : 1
@@ -662,6 +653,7 @@ function buildGlyphItem(
       adv += shift
     }
     const yOff = baseline + jY
+    const preserveAdvance = opts.preserveLatinSpacing && /^[A-Za-z0-9]$/.test(ch)
     for (let sIdx = 0; sIdx < transformedSegs.length; sIdx++) {
       const dst = transformedSegs[sIdx]
       for (let i = 0; i < dst.length; i += 2) {
@@ -669,6 +661,7 @@ function buildGlyphItem(
         const y = dst[i + 1] + yOff
         dst[i] = italic ? x - 0.22 * (y - baseline) : x
         dst[i + 1] = y
+        if (preserveAdvance) adv = Math.max(adv, dst[i])
       }
     }
 
@@ -677,7 +670,7 @@ function buildGlyphItem(
       segs: transformedSegs,
       adv,
       step: adv + opts.charSpace + pGap,
-      isSpace: ch === ' ',
+      isSpace: false,
       underline,
       strike,
     }
@@ -687,13 +680,7 @@ function buildGlyphItem(
   if (g && g.w > 0) {
     const adv = g.w * (lineH / picked.refSize) * effSize
     const pGap = opts.pageSpace * randPair(fs.randomSpace, opts.rng, 1)
-    return { segs: [], adv, step: adv + opts.charSpace + pGap, isSpace: ch === ' ', underline, strike }
-  }
-
-  if (ch === ' ') {
-    const adv = lineH * effSize * 0.3
-    const pGap = opts.pageSpace * randPair(fs.randomSpace, opts.rng, 1)
-    return { segs: [], adv, step: adv + opts.charSpace + pGap, isSpace: true, underline, strike }
+    return { segs: [], adv, step: adv + opts.charSpace + pGap, isSpace: false, underline, strike }
   }
 
   if (picked.pending) {
@@ -723,6 +710,11 @@ function buildGlyphItem(
 }
 
 function buildCharRunItem(ch: string, run: TextRun, lineH: number, scaleMult: number, opts: LayoutOpts): RichItem {
+  if (run.formula !== undefined) {
+    const adv = Math.max(1, run.formula.length * 0.35) * lineH * opts.textSize
+    return { segs: [], atomic: true, adv, step: adv + opts.charSpace + opts.pageSpace,
+      isSpace: false, underline: false, strike: false }
+  }
   const sc = scaleMult * (run.sup || run.sub ? 0.68 : 1.0)
   const yShift = run.sup ? -lineH * 0.22 : run.sub ? lineH * 0.16 : 0
   const item = buildGlyphItem(ch, lineH, sc, !!run.italic, !!run.underline, !!run.strike, true, opts)
@@ -798,6 +790,7 @@ function emitLineItems(
       geomOut.charBoxes.push({
         blockIdx: geomOut.blockIdx,
         charIdx: it.charIdx,
+        atomic: it.atomic,
         page: geomOut.page,
         boxIdx: geomOut.boxIdx,
         x,
@@ -904,6 +897,7 @@ function buildFlowLayout(el: FlowTextElement, paper: PaperBase, rawText: string)
     pageSpace: 1.0,
     missingGlyph: pr.missing_glyph ?? 'box',
     richStyle: pr.rich_style,
+    preserveLatinSpacing: true,
     missing: new Set(),
   }
 
@@ -961,17 +955,12 @@ function buildFlowLayout(el: FlowTextElement, paper: PaperBase, rawText: string)
 
   const lineY = (li = lineIdx) => curBox().topMm + li * curBox().lineH
 
-  const para = pr.paragraph ?? { spe_type: 0, spe_value: 0, left: 0, right: 0 }
-  const fmtLeft = Number(para.left ?? 0) || 0
-  const fmtRight = Number(para.right ?? 0) || 0
-  const speType = Number(para.spe_type ?? 0) || 0
-  const speValue = Number(para.spe_value ?? 0) || 0
   const defaultAlign: AlignType = pr.align ?? 'L'
 
   const boxFrame = (indentLeft = 0): [number, number] => {
     const b = curBox()
-    const baseLeft = b.leftMm + fmtLeft + indentLeft
-    const avail = Math.max(Math.min(10, b.bodyW), b.bodyW - fmtLeft - indentLeft - fmtRight)
+    const baseLeft = b.leftMm + indentLeft
+    const avail = Math.max(Math.min(10, b.bodyW), b.bodyW - indentLeft)
     return [baseLeft, avail]
   }
 
@@ -1077,9 +1066,9 @@ function buildFlowLayout(el: FlowTextElement, paper: PaperBase, rawText: string)
       }
     }
 
-    if (!emittedAny) {
-      prepareLine(0)
-      emitLine(0, [], charCursor.val, charCursor.val)
+    if (!emittedAny || endsWithBreak(runs)) {
+      prepareLine(li)
+      emitLine(li, [], charCursor.val, charCursor.val)
     }
   }
 
@@ -1119,7 +1108,7 @@ function buildFlowLayout(el: FlowTextElement, paper: PaperBase, rawText: string)
         curW += item.step
       }
     }
-    if (cur.length > 0 || lines.length === 0) {
+    if (cur.length > 0 || lines.length === 0 || endsWithBreak(runs)) {
       lines.push({ items: cur, startCharIdx: lineStart, endCharIdx: charCursor?.val ?? 0 })
     }
     return lines
@@ -1195,27 +1184,18 @@ function buildFlowLayout(el: FlowTextElement, paper: PaperBase, rawText: string)
       }
       if (blk.kind === 'paragraph') {
         const align = blk.align ?? defaultAlign
-        const spe1 = align === 'C' || align === 'R' ? 0 : speType === 1 ? speValue : 0
-        const spe2 = align === 'C' || align === 'R' ? 0 : speType === 2 ? speValue : 0
-
-        const paraGeom = (li: number) => {
-          const [baseLeft, availBase] = boxFrame(indentLeft)
-          const ind = li === 0 ? spe1 : spe2
-          const wLine = Math.max(Math.min(8, availBase), availBase - ind)
-          return [baseLeft, ind, wLine] as const
-        }
         layoutRuns(
           blk.runs,
           1.0,
-          (li) => {
+          () => {
             ensureLines(1)
-            const [, , wLine] = paraGeom(li)
+            const [, wLine] = boxFrame(indentLeft)
             return [wLine, curBox().lineH]
           },
-          (li, wl, startCharIdx, endCharIdx) => {
-            const [baseLeft, ind, wLine] = paraGeom(li)
+          (_li, wl, startCharIdx, endCharIdx) => {
+            const [baseLeft, wLine] = boxFrame(indentLeft)
             const yTop = lineY()
-            emitLineItems(curPage, wl, baseLeft + ind, wLine, yTop, curBox().lineH, align, 1.0, opts, {
+            emitLineItems(curPage, wl, baseLeft, wLine, yTop, curBox().lineH, align, 1.0, opts, {
               charBoxes,
               lineAnchors,
               blockIdx: blkIdx,

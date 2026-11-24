@@ -15,7 +15,7 @@ import tempfile
 
 from .geometry import Path
 
-VERSION = 3
+VERSION = 9
 MAX_BYTES = 256 * 1024 * 1024
 MAX_ENTRIES = 16
 _MAGIC = b'PPLC\x01'
@@ -197,30 +197,40 @@ def flow_key(el, paper, res, variables, settings):
     return 'flow-' + hashlib.sha256(raw).hexdigest()
 
 
-def cached_flow(build, el, paper, res, variables, settings, warn):
+def cached_flow(build, el, paper, res, variables, settings, warn, editor_layout=None):
     """Reuse flow_text_pages before element transform, across scratch/real docs.
 
     Warnings are recorded independently of the caller's accumulated warnings,
     then merged on both miss and hit. Each load owns its paths and metadata.
     """
+    def render(target_warn, geometry):
+        if geometry is None:
+            return build(el, paper, res, variables, settings, target_warn)
+        return build(el, paper, res, variables, settings, target_warn, geometry)
+
     directory = getattr(res, 'cache_dir', None)
     if not directory:
-        return build(el, paper, res, variables, settings, warn)
+        return render(warn, editor_layout)
     try:
         key = flow_key(el, paper, res, variables, settings)
     except (OSError, TypeError, ValueError, AttributeError):
-        return build(el, paper, res, variables, settings, warn)
+        return render(warn, editor_layout)
 
     def build_pages():
         local = {'missing': set(), 'overflow': False, 'messages': []}
-        pages = build(el, paper, res, variables, settings, local)
+        geometry = {'charBoxes': [], 'lineAnchors': []} if editor_layout is not None else None
+        pages = render(local, geometry)
+        if geometry is not None:
+            local['editor_layout'] = geometry
         # A metadata record also preserves warnings for an empty page list.
         return [(0, {}, [], local)] + [(i, {}, paths, {'missing': set()})
                                        for i, paths in enumerate(pages)]
 
-    records = _cached_pages(directory, key, build_pages,
-                            validate=lambda rows: bool(rows) and not rows[0][2])
+    records = _cached_pages(directory, key, build_pages, validate=lambda rows:
+        bool(rows) and not rows[0][2] and (editor_layout is None or 'editor_layout' in rows[0][3]))
     local = records[0][3]
+    if editor_layout is not None:
+        editor_layout.update(local['editor_layout'])
     warn['missing'] |= local['missing']
     if local.get('overflow'):
         warn['overflow'] = True

@@ -7,6 +7,7 @@ import { create } from 'zustand'
 import { api } from '@/api/client'
 import type { FontMixEntry, FontRoles } from '@/api/studio'
 import { defaultFontId } from './actions'
+import { needsStrokeGlyph } from './text-spacing'
 
 export interface GlyphData {
   w: number
@@ -202,12 +203,13 @@ export function prewarmFont(fontId: string | null | undefined): void {
 }
 
 /**
- * Ensure all unique characters in `text` (ignoring \r\n) are cached for `fontId`.
+ * Ensure all unique characters that need strokes are cached for `fontId`.
  * Returns immediately if all characters are already cached.
  */
 export async function ensureGlyphs(fontId: string | null | undefined, text: string): Promise<void> {
   const fid = fontId || 'builtin'
   if (!prewarmedFonts.has(fid)) {
+    if (![...text].some(needsStrokeGlyph)) return
     prewarmedFonts.add(fid)
     // Merge prewarm chars on first encounter of a font so one request covers common glyphs
     text = text + PREWARM_CHARS
@@ -220,7 +222,7 @@ export async function ensureGlyphs(fontId: string | null | undefined, text: stri
   const seen = new Set<string>()
 
   for (const ch of text) {
-    if (ch === '\r' || ch === '\n') continue
+    if (!needsStrokeGlyph(ch)) continue
     if (seen.has(ch)) continue
     seen.add(ch)
     if (entry?.glyphs.has(ch)) continue

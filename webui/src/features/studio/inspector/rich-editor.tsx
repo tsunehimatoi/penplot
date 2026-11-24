@@ -12,16 +12,22 @@ import { errorMessage } from '@/api/client'
 import {
   Button, Dialog, DialogContent, DialogHeader, DialogTitle,
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  Input, Popover, PopoverAnchor, PopoverContent,
   Segmented, Textarea,
 } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import {
-  htmlToMarkdown, looksLikeMarkdown, markdownToHtml, plainToHtml, sanitizePastedHtml,
+  BARE_TEX_SOURCE, DELIMITED_FORMULA_SOURCE, formulaBody, formulaHtml, htmlToMarkdown,
+  isEmptyList, looksLikeMarkdown, markdownToHtml, plainToHtml, sanitizePastedHtml,
 } from '@/lib/html-to-md'
 import { toast } from '@/lib/toast'
+import { editorDocumentHtml } from '../editor-document'
+import { formulaParts, type FormulaPart } from '../formula-fields'
+import { TableBorderEditor } from './table-border-editor'
 import { studio, useStudio } from '../store'
 
 export type FlowFormat = 'plain' | 'markdown' | 'html'
+type SourceFormat = Exclude<FlowFormat, 'html'>
 export type EditorMode = 'visual' | 'source'
 export type AlignKind = 'left' | 'center' | 'right' | 'justify'
 export type BlockTag = 'p' | 'h1' | 'h2' | 'h3'
@@ -31,8 +37,7 @@ export const MODE_OPTIONS: { value: EditorMode; label: string }[] = [
   { value: 'source', label: '源码' },
 ]
 
-export const FORMAT_OPTIONS: { value: FlowFormat; label: string }[] = [
-  { value: 'html', label: 'H5' },
+const SOURCE_FORMAT_OPTIONS: { value: SourceFormat; label: string }[] = [
   { value: 'markdown', label: 'MD' },
   { value: 'plain', label: 'TXT' },
 ]
@@ -84,6 +89,83 @@ const TOP_BLOCK_TAGS = new Set([
 ])
 const ALIGNABLE_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'th', 'td', 'blockquote'])
 const HEADING_SWITCH_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+const RICH_COMPONENT_SELECTOR = 'table, span.math-inline, div.math-display'
+const FORMULA_SELECTOR = 'span.math-inline, div.math-display'
+export const EDIT_SELECTED_FORMULA_EVENT = 'penplot:edit-selected-formula'
+const COMPONENT_FORMULA_RE = new RegExp(
+  `${DELIMITED_FORMULA_SOURCE}|${BARE_TEX_SOURCE}`, 'g',
+)
+
+function lockFormulaElements(root: ParentNode) {
+  for (const node of root.querySelectorAll<HTMLElement>(FORMULA_SELECTOR)) node.contentEditable = 'false'
+}
+
+function commitTypedFormula(editor: HTMLElement) {
+  const range = getSelectionInside(editor)
+  const node = range?.startContainer
+  if (!range?.collapsed || !(node instanceof Text) || range.startOffset !== node.length ||
+      node.parentElement?.closest('pre, code, .math-inline, .math-display')) return
+  const block = node.parentElement
+  const display = block?.matches('p, div') && block.childNodes.length === 1
+    ? /^(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\])$/.exec(node.data.trim())
+    : null
+  const inline = Array.from(node.data.matchAll(new RegExp(DELIMITED_FORMULA_SOURCE, 'g'))).at(-1)
+  if (!display && (!inline || inline.index + inline[0].length !== node.length)) return
+  const template = editor.ownerDocument.createElement('template')
+  const token = inline?.[0] ?? ''
+  template.innerHTML = formulaHtml(display ? (display[1] ?? display[2]).trim() : formulaBody(token), !!display)
+  const formula = template.content.firstElementChild as HTMLElement
+  formula.contentEditable = 'false'
+  if (display && block) {
+    const next = editor.ownerDocument.createElement('p')
+    next.append(editor.ownerDocument.createElement('br'))
+    block.replaceWith(formula, next)
+    placeCaretInsideBlock(next, true)
+  } else if (inline) {
+    node.deleteData(inline.index, token.length)
+    node.after(formula)
+    range.setStartAfter(formula)
+    range.collapse(true)
+    setSelectionRange(range)
+  }
+}
+
+function materializeFormulas(editor: HTMLElement) {
+  const doc = editor.ownerDocument
+  const template = doc.createElement('template')
+  for (const p of editor.querySelectorAll('p')) {
+    if (p.children.length) continue
+    const match = /^(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\])$/.exec(p.textContent?.trim() ?? '')
+    if (match) {
+      template.innerHTML = formulaHtml((match[1] ?? match[2]).trim(), true)
+      p.replaceWith(template.content)
+    }
+  }
+  const walker = doc.createTreeWalker(editor, NodeFilter.SHOW_TEXT)
+  const nodes: Text[] = []
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.parentElement?.closest('pre, code, .math-inline, .math-display, math, svg')) nodes.push(node as Text)
+  }
+  for (const node of nodes) {
+    const text = node.data
+    const matches = [...text.matchAll(COMPONENT_FORMULA_RE)]
+    if (!matches.length) continue
+    const parts = doc.createDocumentFragment()
+    let position = 0
+    for (const match of matches) {
+      const start = match.index!
+      const token = match[0]
+      const latex = token.startsWith('$') || /^\\[([]/.test(token) ? formulaBody(token) : token
+      parts.append(text.slice(position, start))
+      template.innerHTML = formulaHtml(latex.trim(), false)
+      parts.append(template.content)
+      position = start + match[0].length
+    }
+    parts.append(text.slice(position))
+    node.replaceWith(parts)
+  }
+  lockFormulaElements(editor)
+}
 
 export interface ActiveFormatState {
   block: string
@@ -111,11 +193,39 @@ export const DEFAULT_ACTIVE: ActiveFormatState = {
   pre: false,
 }
 
+function richClipboardHtml(clipboard: DataTransfer, plain: string): string {
+  const raw = clipboard.getData('text/html')
+  if (!raw) return ''
+  const html = sanitizePastedHtml(raw, { discardEmptyLists: true })
+  if (!html || !plain) return html
+  const hasRichFormatting =
+    /<(h[1-6]|b|strong|i|em|u|ins|s|del|strike|sup|sub|ul|ol|li|table|blockquote|pre|code|svg|math|hr)\b|class="[^"]*(?:katex|math-)|text-align\s*:|data-pagebreak=/i.test(html)
+  return hasRichFormatting || (/<p\b/i.test(html) && !looksLikeMarkdown(plain)) ? html : ''
+}
+
 export function toVisualHtml(text: string, format: FlowFormat): string {
   if (!text) return ''
   if (format === 'html') return sanitizePastedHtml(text)
   if (format === 'markdown') return markdownToHtml(text)
   return plainToHtml(text)
+}
+
+function sourceTextFor(text: string, from: FlowFormat, to: SourceFormat): string {
+  if (from === to) return text
+  const html = toVisualHtml(text, from)
+  if (to === 'markdown') return htmlToMarkdown(html)
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const textOf = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').replaceAll('\u00a0', ' ')
+    if (!(node instanceof Element)) return ''
+    if (node.matches('br')) return '\n'
+    if (node.matches('.math-inline')) return `$${node.textContent ?? ''}$`
+    if (node.matches('.math-display')) return `$$${node.textContent ?? ''}$$\n`
+    if (node.matches('tr')) return Array.from(node.children, (cell) => textOf(cell).trim()).join('\t') + '\n'
+    const content = Array.from(node.childNodes, textOf).join('')
+    return TOP_BLOCK_TAGS.has(node.localName) && !content.endsWith('\n') ? content + '\n' : content
+  }
+  return Array.from(doc.body.childNodes, textOf).join('').replace(/\n$/, '')
 }
 
 function isPageBreakNode(el: Element): boolean {
@@ -124,23 +234,22 @@ function isPageBreakNode(el: Element): boolean {
   return (st.includes('page-break-after') && st.includes('always')) || (st.includes('page-break-before') && st.includes('always'))
 }
 
+function isInsertTab(e: React.KeyboardEvent): boolean {
+  return e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey
+}
+
 function isBlockElement(node: Node | null): node is HTMLElement {
   return !!node && node.nodeType === Node.ELEMENT_NODE && TOP_BLOCK_TAGS.has((node as Element).tagName.toLowerCase())
 }
 
 function isEmptyBlockNode(el: Element): boolean {
   if (el.querySelector('svg, math, [data-chart], [data-pagebreak], table, pre, hr, ul, ol')) return false
-  return (el.textContent ?? '').replace(/[\u00a0\u200b\ufeff\s]+/g, '').length === 0
+  return (el.textContent ?? '').replace(/[\r\n\u200b\ufeff]+/g, '').length === 0
 }
 
-function stripTrailingSentinelBr(el: Element): void {
-  if (isEmptyBlockNode(el)) {
+function normalizeEmptyParagraph(el: Element): void {
+  if (isEmptyBlockNode(el) && el.querySelectorAll('br').length <= 1) {
     el.innerHTML = '<br>'
-    return
-  }
-  const last = el.lastChild
-  if (last && last.nodeType === Node.ELEMENT_NODE && (last as Element).tagName.toLowerCase() === 'br') {
-    el.removeChild(last)
   }
 }
 
@@ -177,7 +286,10 @@ export function normalizeEditorHtml(rawHtml: string): string {
   const flushInlineBuf = () => {
     if (!inlineBuf.length) return
     const hasMeaningful = inlineBuf.some((n) => {
-      if (n.nodeType === Node.TEXT_NODE) return (n.textContent ?? '').replace(/[\r\n\t ]+/g, '').length > 0
+      if (n.nodeType === Node.TEXT_NODE) {
+        const text = n.textContent ?? ''
+        return text.length > 0 && (!/[\r\n]/.test(text) || text.trim().length > 0)
+      }
       return true
     })
     if (hasMeaningful) {
@@ -213,12 +325,7 @@ export function normalizeEditorHtml(rawHtml: string): string {
   for (const block of [...body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li')]) {
     block.removeAttribute('align')
     if (block.tagName.toLowerCase() === 'p' || block.tagName.toLowerCase() === 'li') {
-      stripTrailingSentinelBr(block)
-    } else {
-      const last = block.lastChild
-      if (!isEmptyBlockNode(block) && last && last.nodeType === Node.ELEMENT_NODE && (last as Element).tagName.toLowerCase() === 'br') {
-        block.removeChild(last)
-      }
+      normalizeEmptyParagraph(block)
     }
   }
 
@@ -227,7 +334,8 @@ export function normalizeEditorHtml(rawHtml: string): string {
     body.children.length === 1 &&
     body.firstElementChild?.tagName.toLowerCase() === 'p' &&
     !body.firstElementChild.getAttribute('style') &&
-    isEmptyBlockNode(body.firstElementChild)
+    isEmptyBlockNode(body.firstElementChild) &&
+    body.firstElementChild.querySelectorAll('br').length <= 1
   ) {
     return ''
   }
@@ -237,6 +345,7 @@ export function normalizeEditorHtml(rawHtml: string): string {
 
 export function hydrateEditorDom(editor: HTMLElement, html: string): void {
   editor.innerHTML = html
+  lockFormulaElements(editor)
   for (const pb of editor.querySelectorAll('[data-pagebreak="true"], div[style*="page-break-after"], div[style*="page-break-before"]')) {
     pb.setAttribute('contenteditable', 'false')
     pb.setAttribute('data-pagebreak', 'true')
@@ -556,15 +665,6 @@ export function RichFlowEditor({
           aria-label="编辑模式"
         />
         <div className="flex items-center gap-1">
-          {mode === 'source' && (
-            <Segmented
-              value={fmt}
-              onValueChange={(v) => commitProps({ format: v as FlowFormat })}
-              options={FORMAT_OPTIONS}
-              size="sm"
-              aria-label="源码格式"
-            />
-          )}
           <Button
             type="button"
             size="sm"
@@ -608,6 +708,7 @@ export function RichFlowEditor({
         mode={mode}
         fmt={fmt}
         text={text}
+        editorDocument={el.props.editor_document}
         compact
         sourceRef={activeSourceRef}
         onCommit={(nextText, nextFmt, coalesce) => commitProps({ text: nextText, format: nextFmt }, coalesce ? 'text' : undefined)}
@@ -621,8 +722,8 @@ export function RichFlowEditor({
         onModeChange={setMode}
         fmt={fmt}
         text={text}
+        editorDocument={el.props.editor_document}
         onCommit={(nextText, nextFmt, coalesce) => commitProps({ text: nextText, format: nextFmt }, coalesce ? 'text' : undefined)}
-        onFormatChange={(nextFmt) => commitProps({ format: nextFmt })}
         onUpgradeRich={handleUpgradeToRichHtml}
         onImportClick={() => fileRef.current?.click()}
       />
@@ -635,12 +736,12 @@ export interface WysiwygSurfaceProps {
   mode: EditorMode
   fmt: FlowFormat
   text: string
+  editorDocument?: FlowTextElement['props']['editor_document']
   compact?: boolean
   sourceRef?: React.RefObject<HTMLTextAreaElement | null>
   onCommit: (text: string, format: FlowFormat, coalesce?: boolean) => void
   autoFocus?: boolean
   onModeChange?: (m: EditorMode) => void
-  onFormatChange?: (f: FlowFormat) => void
   onImportClick?: () => void
   onDone?: () => void
   doneLabel?: string
@@ -659,12 +760,12 @@ export function WysiwygSurface({
   mode,
   fmt,
   text,
+  editorDocument,
   compact = false,
   sourceRef: externalSourceRef,
   onCommit,
   autoFocus = false,
   onModeChange,
-  onFormatChange,
   onImportClick,
   onDone,
   doneLabel = '完成',
@@ -685,8 +786,35 @@ export function WysiwygSurface({
   const hydratedNodeRef = React.useRef<HTMLDivElement | null>(null)
   const savedRangeRef = React.useRef<Range | null>(null)
   const [active, setActive] = React.useState<ActiveFormatState>(DEFAULT_ACTIVE)
+  const [components, setComponents] = React.useState<HTMLElement[]>([])
+  const [componentIndex, setComponentIndex] = React.useState(0)
+  const [componentBorder, setComponentBorder] = React.useState('')
+  const [componentLatex, setComponentLatex] = React.useState('')
+  const [formulaEdit, setFormulaEdit] = React.useState<{
+    node: HTMLElement | null
+    range: Range | null
+    latex: string
+    parts: FormulaPart[]
+    mode: 'content' | 'source'
+    x: number
+    y: number
+  } | null>(null)
+  const formulaInput = React.useRef<HTMLTextAreaElement>(null)
+  const formulaPanel = React.useRef<HTMLDivElement>(null)
+  const component = components[componentIndex]
+  const [sourceFormat, setSourceFormat] = React.useState<SourceFormat | null>(null)
+  const sourceFmt = sourceFormat ?? (fmt === 'plain' ? 'plain' : 'markdown')
+  const sourceText = React.useMemo(() => mode === 'source' ? sourceTextFor(text, fmt, sourceFmt) : '',
+    [mode, text, fmt, sourceFmt])
+  React.useEffect(() => {
+    if (mode !== 'source') setSourceFormat(null)
+  }, [mode, elId])
 
   const editTextOf = useStudio((s) => s.editTextOf)
+  const tableGrid = useStudio((s) => {
+    const element = s.doc?.pages[s.view.page]?.elements.find((el) => el.id === elId)
+    return element?.type === 'flow_text' && !!element.props.rich_style?.table_hlines
+  })
   React.useEffect(() => {
     if (mode === 'visual' && (editTextOf === elId || autoFocus) && editorRef.current) {
       editorRef.current.focus()
@@ -697,8 +825,8 @@ export function WysiwygSurface({
   }, [editTextOf, elId, mode, autoFocus, sourceRef])
 
   const externalVisualHtml = React.useMemo(
-    () => normalizeEditorHtml(toVisualHtml(text, fmt)),
-    [text, fmt],
+    () => normalizeEditorHtml((fmt === 'html' ? editorDocumentHtml(editorDocument, text) : null) ?? toVisualHtml(text, fmt)),
+    [text, fmt, editorDocument],
   )
 
   // Sync external state into contentEditable only when it did not originate from this surface
@@ -754,6 +882,73 @@ export function WysiwygSurface({
     onCommit(normalized, 'html', coalesce)
     setActive(readActiveFormat(ed))
   }, [onCommit])
+
+  const editFormulaAt = React.useCallback((anchor?: { x: number; y: number }, target?: HTMLElement) => {
+    const ed = editorRef.current
+    if (!ed) return false
+    const range = getSelectionInside(ed)
+    const source = range?.toString().trim() ?? ''
+    const node = target ?? (range && !range.collapsed ? [...ed.querySelectorAll<HTMLElement>(FORMULA_SELECTOR)]
+      .find((el) => range.intersectsNode(el) && el.textContent?.trim() === source) : null)
+    let latex = node?.textContent ?? ''
+    if (!node) {
+      if (!source || !range || range.startContainer !== range.endContainer) return false
+      const tokens = [...source.matchAll(COMPONENT_FORMULA_RE)]
+      if (tokens.length !== 1 || tokens[0][0] !== source) return false
+      latex = source.startsWith('$') || /^\\[([]/.test(source) ? formulaBody(source) : source
+    }
+    const rect = node?.getBoundingClientRect() ?? range?.getBoundingClientRect()
+    const parts = formulaParts(latex)
+    const mode = parts.some((part) => part.kind !== 'syntax') ? 'content' : 'source'
+    setFormulaEdit({ node: node ?? null, range: range?.cloneRange() ?? null, latex, parts, mode,
+      x: anchor?.x ?? rect?.left ?? 0, y: anchor?.y ?? rect?.bottom ?? 0 })
+    return true
+  }, [])
+
+  React.useEffect(() => {
+    if (mode !== 'visual' || !editorRef.current) return
+    const ed = editorRef.current
+    const open = (event: Event) => {
+      const { x, y } = (event as CustomEvent<{ x: number; y: number }>).detail
+      editFormulaAt({ x, y })
+    }
+    ed.addEventListener(EDIT_SELECTED_FORMULA_EVENT, open)
+    return () => ed.removeEventListener(EDIT_SELECTED_FORMULA_EVENT, open)
+  }, [mode, editFormulaAt])
+
+  const applyFormulaEdit = () => {
+    const ed = editorRef.current
+    if (!ed || !formulaEdit || !formulaEdit.latex.trim()) return
+    const { node, range, latex } = formulaEdit
+    let formula = node
+    if (formula && ed.contains(formula)) formula.textContent = latex.trim()
+    else if (!formula && range && ed.contains(range.commonAncestorContainer)) {
+      formula = ed.ownerDocument.createElement('span')
+      formula.className = 'math-inline'
+      formula.contentEditable = 'false'
+      formula.textContent = latex.trim()
+      range.deleteContents()
+      range.insertNode(formula)
+    } else {
+      setFormulaEdit(null)
+      return
+    }
+    emitVisualDom()
+    setFormulaEdit(null)
+    requestAnimationFrame(() => {
+      ed.focus({ preventScroll: true })
+      if (!ed.contains(formula)) return
+      const caret = ed.ownerDocument.createRange()
+      caret.setStartAfter(formula)
+      caret.collapse(true)
+      setSelectionRange(caret)
+    })
+  }
+
+  const cancelFormulaEdit = () => {
+    setFormulaEdit(null)
+    requestAnimationFrame(() => editorRef.current?.focus({ preventScroll: true }))
+  }
 
   const saveSelection = () => {
     const ed = editorRef.current
@@ -913,23 +1108,62 @@ export function WysiwygSurface({
 
   const insertFormula = (preset: (typeof FORMULA_PRESETS)[number]) => {
     withVisualSelection((ed, range) => {
+      const tpl = document.createElement('template')
+      const edge = preset.block ? 2 : 1
+      tpl.innerHTML = formulaHtml(preset.md.slice(edge, -edge), preset.block)
+      const formula = tpl.content.firstElementChild as HTMLElement
+      formula.contentEditable = 'false'
       if (preset.block) {
-        const p = document.createElement('p')
-        p.textContent = preset.md
-        insertBlockNodeAfterCaret(ed, range, p, true)
-        placeCaretInsideBlock(p, false)
+        insertBlockNodeAfterCaret(ed, range, formula, true)
+        const after = document.createRange()
+        after.setStartAfter(formula)
+        after.collapse(true)
+        setSelectionRange(after)
       } else {
         ensureCaretInBlock(ed, range)
         const curRange = getSelectionInside(ed) ?? range
         curRange.deleteContents()
-        const tn = document.createTextNode(preset.md)
-        curRange.insertNode(tn)
+        curRange.insertNode(formula)
         const nextRange = document.createRange()
-        nextRange.setStartAfter(tn)
+        nextRange.setStartAfter(formula)
         nextRange.collapse(true)
         setSelectionRange(nextRange)
       }
     })
+  }
+
+  const selectComponent = (nodes: HTMLElement[], index: number) => {
+    setComponents(nodes)
+    setComponentIndex(index)
+    setComponentBorder(nodes[index].hasAttribute('data-border-edges') ? 'custom' : nodes[index].dataset.border ?? '')
+    setComponentLatex(nodes[index].textContent ?? '')
+  }
+
+  const openComponentSettings = () => {
+    const ed = editorRef.current
+    if (!ed) return
+    const anchor = getSelectionInside(ed)?.startContainer ?? savedRangeRef.current?.startContainer
+    const current = (anchor instanceof Element ? anchor : anchor?.parentElement)?.closest(RICH_COMPONENT_SELECTOR)
+    materializeFormulas(ed)
+    const nodes = [...ed.querySelectorAll<HTMLElement>(RICH_COMPONENT_SELECTOR)]
+    if (!nodes.length) {
+      toast.info('先插入表格或使用 $…$ 输入公式')
+      return
+    }
+    selectComponent(nodes, Math.max(0, nodes.findIndex((node) => node === current)))
+  }
+
+  const applyComponentSettings = () => {
+    if (!component || !editorRef.current?.contains(component)) return
+    if (componentBorder !== 'custom') {
+      component.removeAttribute('data-border-edges')
+      if (componentBorder) component.dataset.border = componentBorder
+      else delete component.dataset.border
+    }
+    if (component.localName !== 'table') component.textContent = componentLatex
+    emitVisualDom()
+    setComponents([])
+    requestAnimationFrame(() => editorRef.current?.focus({ preventScroll: true }))
   }
 
   const insertPageBreak = () => {
@@ -944,27 +1178,16 @@ export function WysiwygSurface({
   }
 
   const handleVisualPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    const htmlData = e.clipboardData.getData('text/html')
     const plainData = e.clipboardData.getData('text/plain')
-    if (!htmlData && !plainData) return
+    const richHtml = richClipboardHtml(e.clipboardData, plainData)
+    if (!richHtml && !plainData) {
+      if (e.clipboardData.getData('text/html')) e.preventDefault()
+      return
+    }
 
     e.preventDefault()
 
-    const isWordHtml = /class="[^"]*Mso|urn:schemas-microsoft-com:office|<!--\[if/i.test(htmlData)
-    const hasRichFormatting =
-      /<(h[1-6]|b|strong|i|em|u|ins|s|del|strike|sup|sub|ul|ol|li|table|blockquote|pre|code|svg|math|hr)\b|class="[^"]*(?:katex|math-)|text-align\s*:|font-weight\s*:\s*(?:bold|bolder|[6-9]00)|font-style\s*:\s*italic|text-decoration[^;]*(?:underline|line-through)/i.test(
-        htmlData,
-      )
-    const useHtml =
-      Boolean(htmlData) &&
-      (isWordHtml || hasRichFormatting || (/<p\b/i.test(htmlData) && !looksLikeMarkdown(plainData)))
-
-    let htmlToInsert = ''
-    if (useHtml) {
-      htmlToInsert = sanitizePastedHtml(htmlData)
-    } else if (plainData) {
-      htmlToInsert = looksLikeMarkdown(plainData) ? markdownToHtml(plainData) : plainToHtml(plainData)
-    }
+    const htmlToInsert = richHtml || (looksLikeMarkdown(plainData) ? markdownToHtml(plainData) : plainToHtml(plainData))
     if (!htmlToInsert) return
 
     const ed = editorRef.current
@@ -982,6 +1205,7 @@ export function WysiwygSurface({
     const tpl = document.createElement('template')
     tpl.innerHTML = htmlToInsert
     const frag = tpl.content
+    lockFormulaElements(frag)
 
     const containsBlockTags = [...frag.children].some(
       (c) => TOP_BLOCK_TAGS.has(c.tagName.toLowerCase()) || isPageBreakNode(c),
@@ -1022,17 +1246,19 @@ export function WysiwygSurface({
 
     const ensuredBlk = ensureCaretInBlock(ed, range)
     const topBlk = findTopBlockChild(ed, ensuredBlk) ?? ensuredBlk
+    const splitRange = getSelectionInside(ed) ?? range
 
     // Split tail content after caret in `topBlk`
     const tailRange = document.createRange()
-    tailRange.setStart(range.endContainer, range.endOffset)
+    tailRange.setStart(splitRange.endContainer, splitRange.endOffset)
     tailRange.setEnd(topBlk, topBlk.childNodes.length)
     const tailFrag = tailRange.extractContents()
     const tailHasContent =
       (tailFrag.textContent ?? '').replace(/[\u00a0\u200b\ufeff\s]+/g, '').length > 0 ||
       !!tailFrag.querySelector('svg, math, [data-chart], table, pre')
 
-    const replaceCurrentEmpty = isEmptyBlockNode(topBlk) && topBlk.tagName.toLowerCase() === 'p' && !topBlk.style.textAlign
+    const replaceCurrentEmpty = isEmptyList(topBlk) ||
+      (topBlk.matches('p') && isEmptyBlockNode(topBlk) && !topBlk.style.textAlign)
 
     let anchorNode: Node = topBlk
     let lastPasted: Node | null = null
@@ -1079,6 +1305,29 @@ export function WysiwygSurface({
     if (composingRef.current || e.nativeEvent.isComposing) return
     const ed = editorRef.current
     if (!ed) return
+    if (isInsertTab(e)) {
+      const range = getSelectionInside(ed)
+      if (!range) return
+      e.preventDefault()
+      range.deleteContents()
+      const block = ensureCaretInBlock(ed, range)
+      const placeholder = block.childNodes.length === 1 && block.firstChild instanceof HTMLBRElement
+        ? block.firstChild : null
+      const current = getSelectionInside(ed) ?? range
+      const tab = document.createTextNode('\t')
+      current.insertNode(tab)
+      current.setStartAfter(tab)
+      current.collapse(true)
+      placeholder?.remove()
+      setSelectionRange(current)
+      emitVisualDom()
+      return
+    }
+    if ((e.key === 'F2' || (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey)) && editFormulaAt()) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
 
     if (e.key === 'Enter') {
       const range = getSelectionInside(ed)
@@ -1104,6 +1353,25 @@ export function WysiwygSurface({
           nextR.collapse(true)
           setSelectionRange(nextR)
         }
+        emitVisualDom()
+        return
+      }
+
+      if (e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        ensureCaretInBlock(ed, range)
+        const current = getSelectionInside(ed) ?? range
+        current.deleteContents()
+        const br = document.createElement('br')
+        current.insertNode(br)
+        if (!br.nextSibling || (br.nextSibling instanceof Text && !br.nextSibling.length && !br.nextSibling.nextSibling)) {
+          const sentinel = document.createElement('br')
+          sentinel.dataset.editorSentinel = ''
+          br.after(sentinel)
+        }
+        current.setStartAfter(br)
+        current.collapse(true)
+        setSelectionRange(current)
         emitVisualDom()
         return
       }
@@ -1155,8 +1423,9 @@ export function WysiwygSurface({
 
   // Source mode handlers
   const handleSourceInsert = (snippet: string, wrapEnd?: string) => {
-    const nextFmt = fmt === 'plain' ? 'markdown' : fmt
-    const { next, selStart, selEnd } = insertAtCursor(sourceRef.current, text, snippet, wrapEnd)
+    const nextFmt = sourceFmt === 'plain' ? 'markdown' : sourceFmt
+    const { next, selStart, selEnd } = insertAtCursor(sourceRef.current, sourceText, snippet, wrapEnd)
+    setSourceFormat(nextFmt)
     onCommit(next, nextFmt)
     requestAnimationFrame(() => {
       sourceRef.current?.focus()
@@ -1165,45 +1434,28 @@ export function WysiwygSurface({
   }
 
   const handleSourcePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const htmlData = e.clipboardData.getData('text/html')
-    const plainData = e.clipboardData.getData('text/plain')
-    if (!htmlData) {
-      if (fmt === 'plain' && plainData) {
-        if (/<(h[1-6]|table|ul|ol|blockquote|svg)\b/i.test(plainData)) {
-          onCommit(text, 'html')
-          toast.info('检测到 HTML 内容，已自动切换为 H5 富文本格式')
-        } else if (looksLikeMarkdown(plainData)) {
-          onCommit(text, 'markdown')
-          toast.info('检测到 Markdown / 公式内容，已自动切换为 MD 富文本格式')
-        }
-      }
-      return
-    }
-    const hasRich = /<(h[1-6]|b|strong|i|em|u|s|del|ul|ol|li|table|blockquote|pre|code|svg)\b/i.test(htmlData)
-    if (!hasRich && fmt === 'plain') {
-      if (plainData && looksLikeMarkdown(plainData)) {
-        onCommit(text, 'markdown')
-        toast.info('检测到 Markdown / 公式内容，已自动切换为 MD 富文本格式')
-      }
-      return
-    }
+    if (sourceFmt === 'plain' || !e.clipboardData.getData('text/html')) return
     e.preventDefault()
-    const converted = fmt === 'html' ? sanitizePastedHtml(htmlData) : htmlToMarkdown(htmlData)
-    const nextFmt = fmt === 'plain' ? 'markdown' : fmt
-    const { next, selStart, selEnd } = insertAtCursor(sourceRef.current, text, converted)
-    onCommit(next, nextFmt)
+    const plainData = e.clipboardData.getData('text/plain')
+    const html = richClipboardHtml(e.clipboardData, plainData)
+    const converted = html ? htmlToMarkdown(html) : plainData
+    if (!converted) return
+    const { next, selStart, selEnd } = insertAtCursor(sourceRef.current, sourceText, converted)
+    onCommit(next, sourceFmt)
     requestAnimationFrame(() => {
       sourceRef.current?.setSelectionRange(selStart, selEnd)
     })
   }
 
   const isEmptyVisual = externalVisualHtml.length === 0
+  const canRecoverRichText = fmt !== 'html' &&
+    /^\s*<(?:p|div|h[1-6]|table|ul|ol|blockquote|pre)\b[\s\S]*<\/(?:p|div|h[1-6]|table|ul|ol|blockquote|pre)>\s*$/i.test(text)
 
   return (
     <div className={cn('flex flex-col gap-1.5', !compact && 'min-h-0 flex-1')}>
       <RichFormatToolbar
         mode={mode}
-        fmt={fmt}
+        sourceFmt={sourceFmt}
         compact={compact}
         active={active}
         onSourceInsert={handleSourceInsert}
@@ -1216,11 +1468,36 @@ export function WysiwygSurface({
         onCodeBlock={insertCodeBlock}
         onTable={insertTable}
         onFormula={insertFormula}
+        onComponentSettings={openComponentSettings}
+        tableBorderControl={/<table\b/i.test(externalVisualHtml) && (
+          <TableBorderEditor
+            getTables={() => [...(editorRef.current?.querySelectorAll('table') ?? [])]}
+            getActiveTable={() => {
+              const start = savedRangeRef.current?.startContainer
+              return (start instanceof Element ? start : start?.parentElement)?.closest('table') ?? null
+            }}
+            documentGrid={tableGrid}
+            onApply={(table, edges) => {
+              const ed = editorRef.current
+              if (!ed?.contains(table)) return
+              table.removeAttribute('data-border')
+              if (edges === null) table.removeAttribute('data-border-edges')
+              else table.setAttribute('data-border-edges', edges.join(' '))
+              emitVisualDom()
+              const selection = savedRangeRef.current
+              requestAnimationFrame(() => {
+                ed.focus({ preventScroll: true })
+                if (selection && ed.contains(selection.commonAncestorContainer)) setSelectionRange(selection)
+              })
+            }}
+          />
+        )}
+        onRecoverRichText={canRecoverRichText ? () => onCommit(normalizeEditorHtml(text), 'html') : undefined}
         onPageBreak={insertPageBreak}
         onSaveSelection={saveSelection}
         showModeToggle={showModeToggle}
         onModeChange={onModeChange}
-        onFormatChange={onFormatChange}
+        onFormatChange={setSourceFormat}
         onImportClick={onImportClick}
         onDone={onDone}
         doneLabel={doneLabel}
@@ -1270,40 +1547,167 @@ export function WysiwygSurface({
             }}
             onCompositionEnd={() => {
               composingRef.current = false
+              if (editorRef.current) commitTypedFormula(editorRef.current)
               emitVisualDom(true)
             }}
             onInput={() => {
-              if (!composingRef.current) emitVisualDom(true)
+              if (!composingRef.current && editorRef.current) {
+                commitTypedFormula(editorRef.current)
+                emitVisualDom(true)
+              }
             }}
             onPaste={handleVisualPaste}
+            onDoubleClick={(e) => {
+              const target = (e.target as Element).closest<HTMLElement>(FORMULA_SELECTOR)
+              if (target && editFormulaAt({ x: e.clientX, y: e.clientY }, target)) e.stopPropagation()
+            }}
             onKeyDown={handleVisualKeyDown}
           />
         </div>
       ) : (
         <Textarea
           ref={sourceRef}
-          value={text}
-          onChange={(e) => onCommit(e.currentTarget.value, fmt, true)}
+          value={sourceText}
+          onChange={(e) => onCommit(e.currentTarget.value, sourceFmt, true)}
+          onKeyDown={(e) => {
+            if (!isInsertTab(e) || e.nativeEvent.isComposing) return
+            e.preventDefault()
+            if (document.execCommand('insertText', false, '\t')) return
+            const { next, selEnd } = insertAtCursor(e.currentTarget, sourceText, '\t')
+            onCommit(next, sourceFmt)
+            requestAnimationFrame(() => sourceRef.current?.setSelectionRange(selEnd, selEnd))
+          }}
           onPaste={handleSourcePaste}
           rows={compact ? 10 : 18}
-          className={cn('font-mono leading-relaxed', compact ? 'text-footnote' : 'min-h-[360px] flex-1 resize-none text-body')}
+          className={cn('font-mono leading-relaxed [tab-size:2]', compact ? 'text-footnote' : 'min-h-[360px] flex-1 resize-none text-body')}
           placeholder={
-            fmt === 'html'
-              ? '支持粘贴 Word / 网页 HTML、<table>、$LaTeX$ 公式、图表代码块…'
-              : fmt === 'markdown'
+            sourceFmt === 'markdown'
                 ? '支持 Markdown、直接粘贴 Word/网页内容、$LaTeX$ 公式、```chart 图表、表格…'
                 : '直接输入纯文本，自动换行分页；也可切换为可视化编辑器或 Markdown/HTML…'
           }
           aria-label="文本框内容"
         />
       )}
+      <Popover open={!!formulaEdit} onOpenChange={(open) => { if (!open) setFormulaEdit(null) }}>
+        {formulaEdit && (
+          <PopoverAnchor asChild>
+            <span aria-hidden className="pointer-events-none fixed" style={{ left: formulaEdit.x, top: formulaEdit.y }} />
+          </PopoverAnchor>
+        )}
+        <PopoverContent ref={formulaPanel} align="start" className="w-96 space-y-2" aria-label="就地编辑公式"
+          onOpenAutoFocus={(e) => {
+            const field = formulaInput.current ?? formulaPanel.current?.querySelector('input')
+            if (!field) return
+            e.preventDefault()
+            field.focus({ preventScroll: true })
+            if (field instanceof HTMLInputElement) field.select()
+            else field.setSelectionRange(field.value.length, field.value.length)
+          }}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => {
+            e.preventDefault()
+            cancelFormulaEdit()
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing &&
+                (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+              e.preventDefault()
+              applyFormulaEdit()
+            }
+          }}>
+          <div className="flex items-center justify-between">
+            <span className="text-footnote font-medium">编辑公式</span>
+            <Segmented value={formulaEdit?.mode ?? 'source'} size="sm" aria-label="公式编辑模式"
+              options={[{ value: 'content', label: '内容' }, { value: 'source', label: 'LaTeX' }]}
+              onValueChange={(mode) => setFormulaEdit((current) => current
+                ? { ...current, mode, parts: mode === 'content' ? formulaParts(current.latex) : current.parts }
+                : null)} />
+          </div>
+          {formulaEdit?.mode === 'content' ? (
+            <div className="max-h-52 overflow-y-auto">
+              {formulaEdit.parts.some((part) => part.kind !== 'syntax') ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {formulaEdit.parts.map((part, index) => {
+                    if (part.kind === 'syntax') return null
+                    const label = part.kind === 'number' ? '数字' : part.kind === 'symbol' ? '字母' : '文本'
+                    const order = formulaEdit.parts.slice(0, index + 1).filter((item) => item.kind === part.kind).length
+                    return (
+                      <label key={index} className="flex min-w-0 flex-col gap-1 text-footnote">
+                        {label} {order}
+                        <Input value={part.value} className="font-mono"
+                          inputMode={part.kind === 'number' ? 'decimal' : 'text'}
+                          onChange={(e) => {
+                            const value = e.currentTarget.value
+                            if (part.kind === 'number' && !/^[\d.]*$/.test(value)) return
+                            if (part.kind === 'symbol' && !/^\p{L}*$/u.test(value)) return
+                            if (part.kind === 'text' && /[{}\\]/.test(value)) return
+                            setFormulaEdit((current) => {
+                              if (!current) return null
+                              const parts = current.parts.map((item, i) => i === index ? { ...item, value } : item)
+                              return { ...current, parts, latex: parts.map((item) => item.value).join('') }
+                            })
+                          }} />
+                      </label>
+                    )
+                  })}
+                </div>
+              ) : <p className="text-footnote text-secondary-label">此公式可在 LaTeX 视图中编辑。</p>}
+            </div>
+          ) : (
+            <Textarea aria-label="LaTeX 公式" ref={formulaInput} rows={2} className="min-h-0 font-mono"
+              value={formulaEdit?.latex ?? ''}
+              onChange={(e) => {
+                const latex = e.currentTarget.value
+                setFormulaEdit((current) => current ? { ...current, latex } : null)
+              }} />
+          )}
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="plain" onClick={cancelFormulaEdit}>取消</Button>
+            <Button size="sm" disabled={!formulaEdit?.latex.trim()} onClick={applyFormulaEdit}>应用公式</Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+      <Dialog open={!!component} onOpenChange={(open) => { if (!open) setComponents([]) }}>
+        <DialogContent className="space-y-3 p-5">
+          <DialogHeader><DialogTitle>表格与公式设置</DialogTitle></DialogHeader>
+          <label className="flex flex-col gap-1 text-footnote">
+            组件
+            <select value={componentIndex} onChange={(e) => selectComponent(components, Number(e.currentTarget.value))} className="rounded border border-separator bg-bg-elevated p-1.5">
+              {components.map((node, index) => (
+                <option key={index} value={index}>{index + 1}. {node.localName === 'table' ? '表格' : '公式'}</option>
+              ))}
+            </select>
+          </label>
+          {component?.localName !== 'table' && (
+            <label className="flex flex-col gap-1 text-footnote">
+              LaTeX
+              <Textarea value={componentLatex} onChange={(e) => setComponentLatex(e.currentTarget.value)} />
+            </label>
+          )}
+          <label className="flex flex-col gap-1 text-footnote">
+            边框
+            <select value={componentBorder} onChange={(e) => setComponentBorder(e.currentTarget.value)} className="rounded border border-separator bg-bg-elevated p-1.5">
+              {component?.localName === 'table' ? (
+                <>
+                  {component.hasAttribute('data-border-edges') && <option value="custom" disabled>自定义边框</option>}
+                  <option value="">跟随文档</option><option value="none">无边框</option><option value="vertical">仅竖线</option><option value="grid">完整网格</option>
+                </>
+              ) : (
+                <><option value="">无边框</option><option value="box">外框</option></>
+              )}
+            </select>
+          </label>
+          <Button type="button" size="sm" onClick={applyComponentSettings}>应用</Button>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
 export interface RichFormatToolbarProps {
   mode: EditorMode
-  fmt: FlowFormat
+  sourceFmt: SourceFormat
   compact?: boolean
   active: ActiveFormatState
   onSourceInsert: (snippet: string, wrapEnd?: string) => void
@@ -1316,11 +1720,14 @@ export interface RichFormatToolbarProps {
   onCodeBlock: (lang?: string, body?: string) => void
   onTable: () => void
   onFormula: (preset: (typeof FORMULA_PRESETS)[number]) => void
+  onComponentSettings?: () => void
+  tableBorderControl?: React.ReactNode
+  onRecoverRichText?: () => void
   onPageBreak: () => void
   onSaveSelection: () => void
   showModeToggle?: boolean
   onModeChange?: (m: EditorMode) => void
-  onFormatChange?: (f: FlowFormat) => void
+  onFormatChange?: (f: SourceFormat) => void
   onImportClick?: () => void
   onDone?: () => void
   doneLabel?: string
@@ -1331,7 +1738,7 @@ export interface RichFormatToolbarProps {
 
 export function RichFormatToolbar({
   mode,
-  fmt,
+  sourceFmt,
   compact = false,
   active,
   onSourceInsert,
@@ -1344,6 +1751,9 @@ export function RichFormatToolbar({
   onCodeBlock,
   onTable,
   onFormula,
+  onComponentSettings,
+  tableBorderControl,
+  onRecoverRichText,
   onPageBreak,
   onSaveSelection,
   showModeToggle = false,
@@ -1358,10 +1768,9 @@ export function RichFormatToolbar({
 }: RichFormatToolbarProps) {
   const btnCls = compact ? 'h-6 px-1.5 text-footnote' : 'h-7 px-2 text-footnote'
   const activeBtnCls = 'bg-accent/15 text-accent'
-  const isSourceHtml = fmt === 'html'
   const keepFocus = (e: React.MouseEvent) => e.preventDefault()
 
-  const extraTail = (showModeToggle || onImportClick || onDone) ? (
+  const extraTail = (showModeToggle || onImportClick || onDone || (mode === 'source' && onFormatChange)) ? (
     <>
       <span className="mx-0.5 h-4 w-px bg-separator/60" aria-hidden />
       {onImportClick ? (
@@ -1374,7 +1783,7 @@ export function RichFormatToolbar({
         <Segmented value={mode} onValueChange={onModeChange} options={MODE_OPTIONS} size="sm" aria-label="画布编辑模式" />
       ) : null}
       {mode === 'source' && onFormatChange ? (
-        <Segmented value={fmt} onValueChange={(v) => onFormatChange(v as FlowFormat)} options={FORMAT_OPTIONS} size="sm" aria-label="画布源码格式" />
+        <Segmented value={sourceFmt} onValueChange={onFormatChange} options={SOURCE_FORMAT_OPTIONS} size="sm" aria-label="源码格式" />
       ) : null}
       {onDone ? (
         <Button type="button" size="sm" variant="filled" className="h-6 px-2 text-footnote" icon={<Check className="size-3.5" />} onClick={onDone}>
@@ -1392,23 +1801,23 @@ export function RichFormatToolbar({
         onPointerDown={onPointerDown}
       >
         <Button type="button" size="sm" variant="plain" className={btnCls} title="一级标题"
-          onClick={() => onSourceInsert(isSourceHtml ? '<h1>' : '# ', isSourceHtml ? '</h1>' : undefined)}>
+          onClick={() => onSourceInsert('# ')}>
           <Heading1 className="size-3.5" />
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="二级标题"
-          onClick={() => onSourceInsert(isSourceHtml ? '<h2>' : '## ', isSourceHtml ? '</h2>' : undefined)}>
+          onClick={() => onSourceInsert('## ')}>
           <Heading2 className="size-3.5" />
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="三级标题"
-          onClick={() => onSourceInsert(isSourceHtml ? '<h3>' : '### ', isSourceHtml ? '</h3>' : undefined)}>
+          onClick={() => onSourceInsert('### ')}>
           <Heading3 className="size-3.5" />
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="加粗"
-          onClick={() => onSourceInsert(isSourceHtml ? '<strong>' : '**', isSourceHtml ? '</strong>' : '**')}>
+          onClick={() => onSourceInsert('**', '**')}>
           <Bold className="size-3.5" />
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="斜体"
-          onClick={() => onSourceInsert(isSourceHtml ? '<em>' : '*', isSourceHtml ? '</em>' : '*')}>
+          onClick={() => onSourceInsert('*', '*')}>
           <Italic className="size-3.5" />
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="下划线"
@@ -1416,35 +1825,33 @@ export function RichFormatToolbar({
           <Underline className="size-3.5" />
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="删除线"
-          onClick={() => onSourceInsert(isSourceHtml ? '<s>' : '~~', isSourceHtml ? '</s>' : '~~')}>
+          onClick={() => onSourceInsert('~~', '~~')}>
           <Strikethrough className="size-3.5" />
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="插入空行"
-          onClick={() => onSourceInsert(isSourceHtml ? '\n<p><br></p>\n' : '\n\n')}>
+          onClick={() => onSourceInsert('\n\n')}>
           <CornerDownLeft className="size-3.5" />
           {!compact && <span>插入空行</span>}
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="无序列表"
-          onClick={() => onSourceInsert(isSourceHtml ? '\n<ul>\n  <li>项目一</li>\n  <li>项目二</li>\n</ul>\n' : '\n- 项目一\n- 项目二\n')}>
+          onClick={() => onSourceInsert('\n- 项目一\n- 项目二\n')}>
           <List className="size-3.5" />
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="有序列表"
-          onClick={() => onSourceInsert(isSourceHtml ? '\n<ol>\n  <li>第一项</li>\n  <li>第二项</li>\n</ol>\n' : '\n1. 第一项\n2. 第二项\n')}>
+          onClick={() => onSourceInsert('\n1. 第一项\n2. 第二项\n')}>
           <ListOrdered className="size-3.5" />
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="引用"
-          onClick={() => onSourceInsert(isSourceHtml ? '\n<blockquote><p>引用内容</p></blockquote>\n' : '\n> 引用内容\n')}>
+          onClick={() => onSourceInsert('\n> 引用内容\n')}>
           <Quote className="size-3.5" />
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="代码块"
-          onClick={() => onSourceInsert(isSourceHtml ? '\n<pre><code>' : '\n```\n', isSourceHtml ? '</code></pre>\n' : '\n```\n')}>
+          onClick={() => onSourceInsert('\n```\n', '\n```\n')}>
           <Code className="size-3.5" />
         </Button>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="插入表格"
           onClick={() => onSourceInsert(
-            isSourceHtml
-              ? '\n<table><thead><tr><th>列1</th><th>列2</th></tr></thead><tbody><tr><td>数据1</td><td>数据2</td></tr></tbody></table>\n'
-              : '\n| 列1 | 列2 |\n| --- | --- |\n| 数据1 | 数据2 |\n',
+            '\n| 列1 | 列2 |\n| --- | --- |\n| 数据1 | 数据2 |\n',
           )}>
           <Table className="size-3.5" />
         </Button>
@@ -1474,9 +1881,7 @@ export function RichFormatToolbar({
                 key={p.label}
                 onSelect={() => {
                   const json = JSON.stringify(p.spec, null, 2)
-                  const snippet = isSourceHtml
-                    ? `\n<pre><code class="language-chart">\n${json}\n</code></pre>\n`
-                    : `\n\`\`\`chart\n${json}\n\`\`\`\n`
+                  const snippet = `\n\`\`\`chart\n${json}\n\`\`\`\n`
                   onSourceInsert(snippet)
                 }}
               >
@@ -1486,7 +1891,7 @@ export function RichFormatToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
         <Button type="button" size="sm" variant="plain" className={btnCls} title="插入分页符"
-          onClick={() => onSourceInsert(isSourceHtml ? '\n<div style="page-break-after: always" data-pagebreak="true"></div>\n' : '\n===\n')}>
+          onClick={() => onSourceInsert('\n===\n')}>
           <SeparatorHorizontal className="size-3.5" />
         </Button>
         {extraTail}
@@ -1624,6 +2029,17 @@ export function RichFormatToolbar({
         onMouseDown={keepFocus} onClick={onPageBreak}>
         <SeparatorHorizontal className="size-3.5" />
       </Button>
+      {onComponentSettings && (
+        <Button type="button" size="sm" variant="plain" className={btnCls} onMouseDown={keepFocus} onClick={onComponentSettings}>
+          组件设置
+        </Button>
+      )}
+      {tableBorderControl}
+      {onRecoverRichText && (
+        <Button type="button" size="sm" variant="tinted" className={btnCls} onMouseDown={keepFocus} onClick={onRecoverRichText}>
+          恢复富文本
+        </Button>
+      )}
       {extraTail}
     </div>
   )
@@ -1637,8 +2053,8 @@ export function RichEditorDialog({
   onModeChange,
   fmt,
   text,
+  editorDocument,
   onCommit,
-  onFormatChange,
   onUpgradeRich,
   onImportClick,
 }: {
@@ -1649,8 +2065,8 @@ export function RichEditorDialog({
   onModeChange: (m: EditorMode) => void
   fmt: FlowFormat
   text: string
+  editorDocument?: FlowTextElement['props']['editor_document']
   onCommit: (nextText: string, nextFmt: FlowFormat, coalesce?: boolean) => void
-  onFormatChange: (v: FlowFormat) => void
   onUpgradeRich: () => void
   onImportClick: () => void
 }) {
@@ -1662,15 +2078,6 @@ export function RichEditorDialog({
           <DialogTitle>文本框富文本编辑器</DialogTitle>
           <div className="flex flex-wrap items-center gap-2">
             <Segmented value={mode} onValueChange={onModeChange} options={MODE_OPTIONS} size="sm" aria-label="大窗编辑模式" />
-            {mode === 'source' && (
-              <Segmented
-                value={fmt}
-                onValueChange={(v) => onFormatChange(v as FlowFormat)}
-                options={FORMAT_OPTIONS}
-                size="sm"
-                aria-label="大窗源码格式"
-              />
-            )}
             <Button type="button" size="sm" variant="gray" icon={<FileUp />} onClick={onImportClick}>
               导入 MD / Word / HTML
             </Button>
@@ -1696,6 +2103,7 @@ export function RichEditorDialog({
           mode={mode}
           fmt={fmt}
           text={text}
+          editorDocument={editorDocument}
           compact={false}
           sourceRef={dlgSourceRef}
           onCommit={onCommit}

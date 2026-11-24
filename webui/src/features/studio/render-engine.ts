@@ -18,6 +18,7 @@ import {
 import { uid } from '@/lib/id'
 import { onLinkRestored } from '@/api/net'
 import { cacheGetMany, cachePutMany } from './el-cache'
+import type { CharBox, LineAnchor } from './client-stroke-layout'
 import { streamPathPreviews } from './path-conversion'
 import type { PathPreview } from './path-data'
 import { IDENTITY } from './model'
@@ -30,6 +31,7 @@ export interface ElRender {
   bbox?: [number, number, number, number] | null
   /** flow_text: one entry per laid-out page (page 0 = host page). */
   pages?: { d: string; bbox: [number, number, number, number] | null }[]
+  editorLayout?: { charBoxes: CharBox[]; lineAnchors: LineAnchor[] }
   strokes?: number
   missing?: string[]
   overflow?: boolean
@@ -244,6 +246,7 @@ async function renderBatch(pid: string, batch: RenderItem[]): Promise<void> {
       const value: ElRender = {
         status: done ? 'ok' : 'pending', d: ds[0]?.d ?? '', bbox: ds[0]?.bbox ?? null,
         pages: it.el.type === 'flow_text' ? ds.slice() : undefined,
+        editorLayout: res.editor_layouts?.[i],
         strokes: ds.reduce((n, p) => n + p.strokes, 0), missing: w?.missing_glyphs ?? [], overflow: !!w?.overflow,
         progress: done ? 1 : 0.8 + 0.2 * completed[i] / Math.max(1, ds.length),
         completedPages: completed[i], totalPages: ds.length,

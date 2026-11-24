@@ -8612,6 +8612,193 @@
     ],
     "title": "DxfElement"
    },
+   "EditorDocumentNode": {
+    "properties": {
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text"
+     },
+     "children": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/EditorDocumentNode"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Children"
+     },
+     "attributes": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "string"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Attributes"
+     }
+    },
+    "type": "object",
+    "required": [
+     "kind"
+    ],
+    "title": "EditorDocumentNode"
+   },
+   "EditorLayout": {
+    "properties": {
+     "charBoxes": {
+      "items": {
+       "$ref": "#/components/schemas/EditorLayoutAtom"
+      },
+      "type": "array",
+      "title": "Charboxes"
+     },
+     "lineAnchors": {
+      "items": {
+       "$ref": "#/components/schemas/EditorLayoutLine"
+      },
+      "type": "array",
+      "title": "Lineanchors"
+     }
+    },
+    "type": "object",
+    "required": [
+     "charBoxes",
+     "lineAnchors"
+    ],
+    "title": "EditorLayout"
+   },
+   "EditorLayoutAtom": {
+    "properties": {
+     "blockIdx": {
+      "type": "integer",
+      "title": "Blockidx"
+     },
+     "page": {
+      "type": "integer",
+      "title": "Page"
+     },
+     "boxIdx": {
+      "type": "integer",
+      "title": "Boxidx"
+     },
+     "x": {
+      "type": "number",
+      "title": "X"
+     },
+     "y": {
+      "type": "number",
+      "title": "Y"
+     },
+     "h": {
+      "type": "number",
+      "title": "H"
+     },
+     "charIdx": {
+      "type": "integer",
+      "title": "Charidx"
+     },
+     "endCharIdx": {
+      "type": "integer",
+      "title": "Endcharidx"
+     },
+     "atomic": {
+      "type": "boolean",
+      "title": "Atomic"
+     },
+     "w": {
+      "type": "number",
+      "title": "W"
+     }
+    },
+    "type": "object",
+    "required": [
+     "blockIdx",
+     "page",
+     "boxIdx",
+     "x",
+     "y",
+     "h",
+     "charIdx",
+     "endCharIdx",
+     "atomic",
+     "w"
+    ],
+    "title": "EditorLayoutAtom"
+   },
+   "EditorLayoutLine": {
+    "properties": {
+     "blockIdx": {
+      "type": "integer",
+      "title": "Blockidx"
+     },
+     "page": {
+      "type": "integer",
+      "title": "Page"
+     },
+     "boxIdx": {
+      "type": "integer",
+      "title": "Boxidx"
+     },
+     "x": {
+      "type": "number",
+      "title": "X"
+     },
+     "y": {
+      "type": "number",
+      "title": "Y"
+     },
+     "h": {
+      "type": "number",
+      "title": "H"
+     },
+     "startCharIdx": {
+      "type": "integer",
+      "title": "Startcharidx"
+     },
+     "endCharIdx": {
+      "type": "integer",
+      "title": "Endcharidx"
+     },
+     "endX": {
+      "type": "number",
+      "title": "Endx"
+     }
+    },
+    "type": "object",
+    "required": [
+     "blockIdx",
+     "page",
+     "boxIdx",
+     "x",
+     "y",
+     "h",
+     "startCharIdx",
+     "endCharIdx",
+     "endX"
+    ],
+    "title": "EditorLayoutLine"
+   },
    "ElementPatch": {
     "properties": {
      "rev": {
@@ -8753,6 +8940,13 @@
       },
       "type": "array",
       "title": "Pages"
+     },
+     "editor_layouts": {
+      "additionalProperties": {
+       "$ref": "#/components/schemas/EditorLayout"
+      },
+      "type": "object",
+      "title": "Editor Layouts"
      },
      "elapsed_ms": {
       "type": "number",
@@ -8933,6 +9127,35 @@
     },
     "type": "object",
     "title": "FilePatch"
+   },
+   "FlowEditorDocument": {
+    "properties": {
+     "version": {
+      "type": "integer",
+      "const": 1,
+      "title": "Version",
+      "default": 1
+     },
+     "source_crc32": {
+      "type": "integer",
+      "maximum": 4294967295.0,
+      "minimum": 0.0,
+      "title": "Source Crc32"
+     },
+     "blocks": {
+      "items": {
+       "$ref": "#/components/schemas/EditorDocumentNode"
+      },
+      "type": "array",
+      "title": "Blocks"
+     }
+    },
+    "type": "object",
+    "required": [
+     "source_crc32",
+     "blocks"
+    ],
+    "title": "FlowEditorDocument"
    },
    "FlowTextElement": {
     "properties": {
@@ -9212,6 +9435,16 @@
       ],
       "title": "Missing Glyph",
       "default": "box"
+     },
+     "editor_document": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FlowEditorDocument"
+       },
+       {
+        "type": "null"
+       }
+      ]
      }
     },
     "additionalProperties": true,
@@ -11989,6 +12222,17 @@
       "type": "number",
       "title": "Right",
       "default": 0.0
+     },
+     "indent_configured": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Indent Configured"
      }
     },
     "type": "object",

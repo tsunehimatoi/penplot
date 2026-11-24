@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand'
 import type { DocPage, Element, Project, ProjectDoc } from '@/api/studio'
+import { buildEditorDocument } from './editor-document'
 import { elementOnPage, clone, normalizeZ } from './model'
 
 export type Tool = 'select' | 'hand' | 'text' | 'rect' | 'ellipse' | 'line'
@@ -347,7 +348,15 @@ export const studio = {
   },
   /** Patch props of one element (typed loosely; callers know the element type). */
   setProps(id: string, patch: Record<string, unknown>, coalesce?: string) {
-    studio.updateElement(id, (e) => ({ ...e, props: { ...e.props, ...patch } }) as Element, { coalesce: coalesce ? `${id}.${coalesce}` : undefined })
+    studio.updateElement(id, (e) => {
+      const props = { ...e.props, ...patch }
+      if (e.type === 'flow_text' && ('text' in patch || 'format' in patch)) {
+        Object.assign(props, { editor_document: props.format === 'html' && typeof props.text === 'string'
+          ? buildEditorDocument(props.text)
+          : null })
+      }
+      return { ...e, props } as Element
+    }, { coalesce: coalesce ? `${id}.${coalesce}` : undefined })
   },
   addElements(els: Element[], pageIndex?: number) {
     const st = useStudio.getState()

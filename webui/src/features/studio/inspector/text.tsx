@@ -187,10 +187,10 @@ export function TextContent({ el, autoFocus }: { el: TextElement | FlowTextEleme
           onModeChange={setDlgMode}
           fmt={el.props.format ?? 'plain'}
           text={el.props.text ?? ''}
+          editorDocument={el.props.editor_document}
           onCommit={(nextText, nextFmt, coalesce) =>
             studio.setProps(el.id, { text: nextText, format: nextFmt }, coalesce ? 'text' : undefined)
           }
-          onFormatChange={(nextFmt) => studio.setProps(el.id, { format: nextFmt })}
           onUpgradeRich={() => {
             const html = normalizeEditorHtml(toVisualHtml(el.props.text ?? '', el.props.format ?? 'plain'))
             studio.setProps(el.id, { text: html, format: 'html' })
@@ -273,15 +273,6 @@ export function TextStyle({ el }: { el: TextElement | FlowTextElement }) {
         />
       ) : (
         <>
-          <SegRow
-            label="段首"
-            value={String(el.props.paragraph.spe_type) as '0' | '1' | '2'}
-            onChange={(v) => set({ paragraph: { ...el.props.paragraph, spe_type: Number(v) } })}
-            options={[{ value: '0', label: '无' }, { value: '1', label: '缩进' }, { value: '2', label: '悬挂' }]}
-          />
-          <Num label="缩进量" value={el.props.paragraph.spe_value} onChange={(v) => set({ paragraph: { ...el.props.paragraph, spe_value: v } })} unit="mm" step={1} min={0} max={80} />
-          <Num label="段左" value={el.props.paragraph.left} onChange={(v) => set({ paragraph: { ...el.props.paragraph, left: v } })} unit="mm" step={1} min={0} max={80} />
-          <Num label="段右" value={el.props.paragraph.right} onChange={(v) => set({ paragraph: { ...el.props.paragraph, right: v } })} unit="mm" step={1} min={0} max={80} />
           {(el.props.format === 'markdown' || el.props.format === 'html') && (
             <details className="group px-1 pt-1 [&_summary::-webkit-details-marker]:hidden" open>
               <summary className="flex cursor-default list-none items-center gap-1 py-1 text-footnote font-medium text-accent">

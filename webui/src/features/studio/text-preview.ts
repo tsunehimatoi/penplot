@@ -22,6 +22,9 @@ export function useElementPreview(el: Element, paper: PaperBase, sub: number) {
     if (r?.status === 'ok' && !stale && (!editing || rich)) {
       return { d: exact?.d, bbox: exact?.bbox, r, stale: false, isText }
     }
+    if (rich && exact?.d && (r?.status === 'pending' || (r?.status === 'ok' && stale))) {
+      return { d: exact.d, bbox: exact.bbox, r, stale, isText }
+    }
     void glyphVersion
     const client = resolveTextRender(el, paper, vars, sub)
     return { d: client.d, bbox: client.bbox, r: rich ? r : undefined, stale: false, isText }

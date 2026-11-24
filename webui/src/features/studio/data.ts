@@ -1,5 +1,6 @@
 /** Shared queries used across the studio (papers, fonts, profiles, settings). */
 import { useMemo } from 'react'
+import { needsStrokeGlyph } from './text-spacing'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { qk } from '@/api/query'
@@ -18,7 +19,7 @@ export function useFontCoverage(text: string, enabled = true) {
   const uniq = useMemo(() => {
     const chars = new Set<string>()
     for (const c of text) {
-      if (c.trim()) chars.add(c)
+      if (needsStrokeGlyph(c)) chars.add(c)
       if (chars.size >= 400) break
     }
     return [...chars].join('').slice(0, 400)
