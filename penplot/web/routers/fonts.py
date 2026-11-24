@@ -5,8 +5,8 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
 from ..errors import ApiError
-from ..schemas import (FontConvert, FontCoverage, FontDetail, FontPatch, FontSummary, GlyphPage,
-                       TaskRef)
+from ..schemas import (FontConvert, FontCoverage, FontDetail, FontPatch, FontSummary,
+                       GlyphBatchRequest, GlyphPage, TaskRef)
 
 router = APIRouter(prefix='/fonts', tags=['fonts'])
 
@@ -58,6 +58,12 @@ def glyphs(font_id: str, request: Request, from_: int = Query(0, alias='from', g
            count: int = 200, text: Optional[str] = None):
     """`from` is an index into the font's sorted codepoint list; with `text` only those chars."""
     return request.app.state.ctx.fonts.glyph_page(font_id, from_, min(max(count, 1), 500), text)
+
+
+@router.post('/{font_id}/glyphs', response_model=GlyphPage)
+def glyphs_batch(font_id: str, body: GlyphBatchRequest, request: Request):
+    """Return deduplicated glyph outlines for arbitrary-length text (not limited by GET URL length)."""
+    return request.app.state.ctx.fonts.glyph_page(font_id, 0, 5000, body.text)
 
 
 @router.get('/{font_id}/sample.svg', response_class=Response,

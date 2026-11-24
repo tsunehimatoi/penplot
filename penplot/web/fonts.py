@@ -321,29 +321,51 @@ class FontIndex:
         return svg, etag
 
     def glyph_page(self, fid, start, count, text=None):
-        r = self._row(fid)
+        r = self._rows.get(fid)
+        if r is not None:
+            f = self.font(fid)
+            ref_size = float(r['ref_size'] or 100.0)
+        elif fid in ('builtin', 'penplot-sans', ''):
+            from ..builtin_font import load_builtin
+            f = load_builtin()
+            ref_size = float(getattr(f, 'size', None) or 100.0)
+        else:
+            raise not_found('字体', {'font_id': fid})
+
         if text:
+            seen = set()
             codes = []
             for ch in text:
-                if ord(ch) not in codes:
-                    codes.append(ord(ch))
-        else:
+                cp = ord(ch)
+                if cp not in seen:
+                    seen.add(cp)
+                    codes.append(cp)
+        elif r is not None:
             codes = self.cov(fid).codes()
+        else:
+            codes = sorted(f.glyphs)
+
         total = len(codes)
         sel = codes[start:start + count]
-        f = self.font(fid)
         out = []
         for cp in sel:
             g = f.glyph(cp)
             if g is None:
                 continue
+            xs = g.coords[0::2] if g.coords else []
+            x0 = round(float(min(xs)), 2) if xs else 0.0
             w = getattr(g, 'advance', None)
             if not w:
-                xs = g.coords[0::2]
-                w = (max(xs) - min(0.0, min(xs))) if xs else float(r['ref_size']) * 0.3
-            out.append({'cp': cp, 'char': chr(cp), 'w': round(float(w), 2), 'path_d': self._glyph_d(g)})
+                w = (max(xs) - min(0.0, min(xs))) if xs else ref_size * 0.3
+            out.append({
+                'cp': cp,
+                'char': chr(cp),
+                'w': round(float(w), 2),
+                'x0': x0,
+                'path_d': self._glyph_d(g),
+            })
         nxt = start + count if start + count < total else None
-        return {'font_id': fid, 'ref_size': r['ref_size'], 'total': total, 'next_from': nxt, 'glyphs': out}
+        return {'font_id': fid, 'ref_size': ref_size, 'total': total, 'next_from': nxt, 'glyphs': out}
 
     def sample_job(self, fid, text, size_mm=8.0, width_mm=None):
         """-> (cache_key, cached_svg_or_None, task_args). Rendering runs in a task

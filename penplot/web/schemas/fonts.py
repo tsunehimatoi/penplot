@@ -56,7 +56,12 @@ class GlyphInfo(Model):
     cp: int
     char: str
     w: float = Field(description='advance/width in font units')
+    x0: float = Field(0.0, description='minimum X coordinate in font units')
     path_d: str = Field(description='SVG path data in font units (y down, baseline 0)')
+
+
+class GlyphBatchRequest(Model):
+    text: str = Field('', max_length=20000)
 
 
 class GlyphPage(Model):

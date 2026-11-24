@@ -118,3 +118,26 @@ def test_compose_text_and_flow_text_with_font_roles():
     assert len(pages) == 1
     assert len(pages[0]) == 9
     assert not warn2['missing']
+
+
+def test_post_builtin_glyphs_batch(app):
+    from fastapi.testclient import TestClient
+
+    with TestClient(app, base_url='http://testserver') as c:
+        r = c.post(
+            '/api/v1/fonts/builtin/glyphs',
+            json={'text': 'AB中A文B'},
+            headers={'X-Penplot': '1'},
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data['font_id'] == 'builtin'
+        assert isinstance(data['ref_size'], (int, float)) and data['ref_size'] > 0
+        assert data['total'] == 4
+        chars = [g['char'] for g in data['glyphs']]
+        assert chars == ['A', 'B']
+        for g in data['glyphs']:
+            assert 'cp' in g
+            assert isinstance(g['x0'], (int, float))
+            assert isinstance(g['w'], (int, float)) and g['w'] > 0
+            assert isinstance(g['path_d'], str) and len(g['path_d']) > 0
