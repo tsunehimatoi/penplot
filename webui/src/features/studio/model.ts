@@ -105,7 +105,7 @@ export function effectiveLayoutBoxes(paper: PaperBase): NormalizedLayoutBox[] {
     y_mm: m.t,
     w_mm: Math.max(1, w - m.l - m.r),
     h_mm: Math.max(1, h - m.t - m.b),
-    line_num: paper.ruling?.line_num ?? 20,
+    line_num: null,
   }]
 }
 
