@@ -1,12 +1,16 @@
 import * as React from 'react'
 import { api } from '@/api/client'
 import type { Element, PaperBase } from '@/api/studio'
-import { type Box, localBox, svgTransform } from '../geometry'
+import { resolveTextRender, substituteVars } from '../client-stroke-layout'
 import { useElementRender } from '../element-render'
+import { type Box, localBox, svgTransform } from '../geometry'
+import { ensureElementGlyphs, useGlyphCache } from '../glyph-cache'
+import { variableValues } from '../model'
+import { useStudio } from '../store'
 export { useElementRender } from '../element-render'
 
 export const ElementView = React.memo(function ElementView({
-  el, paper, zoom, sub, dim, showSource, outPaper, outWork, hovered, strokePreview = true,
+  el, paper, zoom, sub, dim, showSource, outPaper, outWork, hovered,
 }: {
   el: Element
   paper: PaperBase
@@ -17,19 +21,50 @@ export const ElementView = React.memo(function ElementView({
   outPaper: boolean
   outWork: boolean
   hovered: boolean
-  strokePreview?: boolean
 }) {
   const { r, stale } = useElementRender(el)
-  const lb = localBox(el, paper, r?.bbox)
-  const strokeW = Math.max(0.9, 0.3 * zoom)
+  const glyphVersion = useGlyphCache((s) => s.version)
+  const doc = useStudio((s) => (el.type === 'flow_text' || el.type === 'text' ? s.doc : undefined))
+
   const isTextEl = el.type === 'flow_text' || el.type === 'text'
-  const hideStrokeAndPlaceholder = !strokePreview && isTextEl
-  const d = hideStrokeAndPlaceholder
-    ? undefined
-    : el.type === 'flow_text'
-      ? r?.pages?.[sub]?.d ?? (sub === 0 ? r?.d : '')
-      : r?.d
+  React.useEffect(() => {
+    if (!isTextEl) return
+    const text = substituteVars(el.props.text ?? '', doc ? variableValues(doc) : {})
+    ensureElementGlyphs(text, el.props.font_id, el.props.font_roles, el.props.font_mix)
+  }, [isTextEl, el, doc])
+  const clientText = React.useMemo(() => {
+    void glyphVersion
+    if (!isTextEl) return null
+    return resolveTextRender(el, paper, doc ? variableValues(doc) : {}, sub)
+  }, [isTextEl, el, paper, doc, sub, glyphVersion])
+
+  const useBackend =
+    isTextEl &&
+    !!clientText?.isBackendRich &&
+    r?.status === 'ok' &&
+    (el.type === 'flow_text' ? !!(r.pages?.[sub]?.d ?? (sub === 0 ? r.d : '')) : !!r.d)
+
+  const effectiveBbox = isTextEl
+    ? useBackend
+      ? r?.bbox
+      : clientText?.bbox ?? undefined
+    : r?.bbox
+  const lb = localBox(el, paper, effectiveBbox)
+  const strokeW = Math.max(0.9, 0.3 * zoom)
+
+  const d = isTextEl
+    ? useBackend
+      ? el.type === 'flow_text'
+        ? r?.pages?.[sub]?.d ?? (sub === 0 ? r?.d : '')
+        : r?.d
+      : clientText?.d ?? ''
+    : r?.d
+
   const isSourceImage = el.type === 'image' && (showSource || !d)
+  const showPending = (!isTextEl || !!clientText?.isBackendRich) && !d && (!r || r.status === 'pending')
+  const showError = (!isTextEl || !!clientText?.isBackendRich) && r?.status === 'error'
+  const pathOpacity = dim ? 0.18 : stale && (!isTextEl || useBackend) ? 0.45 : 1
+
   return (
     <g transform={svgTransform(el.transform)} opacity={el.hidden ? 0.3 : 1} data-el={el.id}>
       {isSourceImage && el.type === 'image' ? (
@@ -53,12 +88,12 @@ export const ElementView = React.memo(function ElementView({
           strokeLinecap="round"
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
-          opacity={dim ? 0.18 : stale ? 0.45 : 1}
+          opacity={pathOpacity}
           style={{ pointerEvents: 'none' }}
         />
       ) : null}
-      {!hideStrokeAndPlaceholder && !d && (!r || r.status === 'pending') ? <Placeholder box={lb} label={r?.progress ? `渲染中 ${Math.round(r.progress * 100)}%` : '渲染中…'} /> : null}
-      {!hideStrokeAndPlaceholder && r?.status === 'error' ? <Placeholder box={lb} label={r.error ?? '渲染失败'} error /> : null}
+      {showPending ? <Placeholder box={lb} label={r?.progress ? `渲染中 ${Math.round(r.progress * 100)}%` : '渲染中…'} /> : null}
+      {showError ? <Placeholder box={lb} label={r?.error ?? '渲染失败'} error /> : null}
       {outPaper || outWork ? (
         <rect
           x={lb.x}
@@ -83,7 +118,7 @@ export const ElementView = React.memo(function ElementView({
         height={Math.max(lb.h, 2 / zoom)}
         fill="transparent"
         data-el-id={el.locked ? undefined : el.id}
-        style={{ pointerEvents: el.locked ? 'none' : 'all', cursor: 'move' }}
+        style={{ pointerEvents: el.locked ? 'none' : 'all', cursor: isTextEl ? 'text' : 'move' }}
       />
     </g>
   )

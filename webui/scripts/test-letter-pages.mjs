@@ -77,6 +77,25 @@ try {
   await page.routeWebSocket('**/api/v1/ws', () => {})
   await page.route('**/api/v1/**', route => {
     const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith('/glyphs')) {
+      const body = route.request().postDataJSON() || {}
+      const chars = [...new Set((body.text || '').split(''))]
+      return route.fulfill({
+        json: {
+          font_id: 'builtin',
+          ref_size: 100,
+          total: chars.length,
+          next_from: null,
+          glyphs: chars.map((ch) => ({
+            cp: ch.codePointAt(0) || 0,
+            char: ch,
+            w: ch === ' ' ? 30 : 80,
+            x0: 0,
+            path_d: ch === ' ' ? '' : 'M10 -70 L70 -70 L70 0 L10 0 Z',
+          })),
+        },
+      })
+    }
     if (pathname.endsWith('/paths')) {
       const binary = Buffer.alloc(32)
       binary.writeUInt32LE(0x314c5050, 0); binary.writeUInt32LE(1, 4)
@@ -93,17 +112,27 @@ try {
   const options = page.locator('#pages [role="option"]')
   await options.nth(3).waitFor()
   assert.deepEqual(await options.evaluateAll(els => els.map(e => e.getAttribute('aria-label'))), ['第 1 页', '第 2 页', '第 3 页', '第 4 页'])
-  await page.evaluate(() => fixture.useStudio.getState().setStrokePreview(true))
   for (const number of [1, 2, 3]) {
     await page.getByRole('option', { name: '第 ' + number + ' 页', exact: true }).click()
-    const hit = page.locator('#canvas [data-el-id="letter"]')
-    await hit.click({ position: { x: 30, y: 30 } })
+    const textbox = page.locator('#canvas [data-inline-editor="letter"] [role="textbox"]')
+    await textbox.click({ position: { x: 30, y: 30 } })
     await page.locator('#inspector').getByRole('heading', { name: '文本框', exact: true, level: 2 }).waitFor()
     assert.deepEqual(await page.evaluate(() => fixture.useStudio.getState().selection), ['letter'])
-    assert.equal(await page.locator('#canvas [data-el="letter"] path').first().getAttribute('d'), 'M40 ' + (40 + (number - 1) * 20) + 'h100')
+    const dAttr = await page.locator('#canvas [data-el="letter"] path').first().getAttribute('d')
+    assert.ok(dAttr && dAttr.length > 10, 'client-side single-stroke path rendered on page ' + number)
     assert.equal(await page.locator('#canvas polygon').count() > 0, true, 'selection outline on every page')
   }
-  await page.evaluate(() => fixture.useStudio.getState().setStrokePreview(false))
+  // Move handle drags the flow_text element smoothly without entering text edit
+  const moveHandle = page.locator('#canvas [data-move-handle="letter"]')
+  await moveHandle.waitFor()
+  const mhBox = await moveHandle.boundingBox()
+  await page.mouse.move(mhBox.x + mhBox.width / 2, mhBox.y + mhBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(mhBox.x + mhBox.width / 2 + 20, mhBox.y + mhBox.height / 2 + 15, { steps: 3 })
+  await page.mouse.up()
+  const movedTf = await page.evaluate(() => fixture.useStudio.getState().doc.pages[0].elements[0].transform)
+  assert.ok(Math.abs(movedTf.x) > 0.5 || Math.abs(movedTf.y) > 0.5, 'move handle translates text box')
+  await page.evaluate(() => fixture.useStudio.getState().undo())
   // Every letter page anchors to the component frame, and its origin can be dragged.
   for (const number of [1, 2, 3]) {
     await page.evaluate(() => fixture.useStudio.getState().edit(d => {
@@ -142,10 +171,9 @@ try {
   assert.equal(await page.locator('#layers [role="option"]').count(), 1, 'continuation only lists its letter')
   await page.evaluate(() => fixture.selectAll())
   assert.deepEqual(await page.evaluate(() => fixture.useStudio.getState().selection), ['letter'])
-  await page.locator('#canvas [data-el-id="letter"]').dblclick({ position: { x: 80, y: 80 } })
   const inlineTextbox = page.locator('#canvas').getByLabel('文本框内容')
   await inlineTextbox.waitFor()
-  await inlineTextbox.focus()
+  await inlineTextbox.click()
   await page.keyboard.type('修改后的文本框')
   assert.ok((await page.evaluate(() => fixture.useStudio.getState().doc.pages[0].elements[0].props.text)).includes('修改后的文本框'))
   assert.equal(await page.evaluate(() => fixture.useStudio.getState().doc.pages[0].elements[0].props.format), 'html')
@@ -153,12 +181,12 @@ try {
   assert.equal(await page.evaluate(() => fixture.useStudio.getState().view.sub), 2, 'undo stays on the continuation')
   await page.evaluate(() => fixture.useStudio.getState().redo())
   assert.equal(await page.evaluate(() => fixture.useStudio.getState().view.sub), 2, 'redo stays on the continuation')
-  await page.evaluate(() => fixture.useStudio.getState().setInlineEdit(null))
+  await page.evaluate(() => fixture.useStudio.getState().setFocusedTextId(null))
   await page.evaluate(() => fixture.useStudio.getState().select([]))
   await page.getByRole('button', { name: '编辑文本框…' }).click()
   assert.equal(await page.evaluate(() => fixture.useStudio.getState().view.sub), 2, 'document inspector edits this continuation')
   assert.deepEqual(await page.evaluate(() => fixture.useStudio.getState().selection), ['letter'])
-  await page.evaluate(() => fixture.useStudio.getState().setInlineEdit(null))
+  await page.evaluate(() => fixture.useStudio.getState().setFocusedTextId(null))
   await page.evaluate(() => fixture.openPrint())
   const printDialog = page.getByRole('dialog', { name: '打印', exact: true })
   await printDialog.getByRole('radio', { name: '当前页', exact: true }).click()
@@ -217,11 +245,12 @@ try {
   await page.getByRole('option', {name:'第 3 页',exact:true}).click()
   await page.evaluate(id => { fixture.useStudio.getState().select([id]); fixture.deleteSelection() }, addedId)
   await page.evaluate(() => fixture.useStudio.getState().select(['letter']))
-  // A new render key must not temporarily collapse pages or lose the selected continuation.
+  // A new render key on backend-rich text must not temporarily collapse pages or lose the selected continuation.
   await page.evaluate(() => {
-    fixture.useStudio.getState().setStrokePreview(true)
+    fixture.useStudio.getState().edit(d => {
+      d.pages[0].elements[0].props.text = '<p>$x^2$ 第一页</p><div data-pagebreak="true" style="page-break-after: always"></div><p>第二页</p><div data-pagebreak="true" style="page-break-after: always"></div><p>第三页</p>'
+    })
     fixture.lastKeys.set('letter', 'next-render')
-    fixture.useStudio.getState().edit(d => { d.pages[0].elements[0].props.seed += 1 })
     fixture.useRender.getState().set('next-render', { status: 'pending', at: 2 })
   })
   await page.waitForFunction(() => document.querySelector('#pages [aria-selected="true"]')?.getAttribute('aria-label') === '第 3 页')
@@ -232,7 +261,9 @@ try {
   assert.equal(await options.count(), 4, 'a failed render must not discard continuation pages')
   assert.equal(await page.evaluate(() => fixture.useStudio.getState().view.sub), 2)
   // Shortening the text clamps to the last remaining page, and the following page is renumbered.
-  await page.evaluate(() => fixture.useRender.getState().set('next-render', { status: 'ok', pages: fixture.paths.slice(0, 1), at: 3 }))
+  await page.evaluate(() => fixture.useStudio.getState().edit(d => {
+    d.pages[0].elements[0].props.text = '<p>修改后的文本框</p>'
+  }))
   await page.waitForFunction(() => fixture.useStudio.getState().view.sub === 0)
   assert.deepEqual(await options.evaluateAll(els => els.map(e => e.getAttribute('aria-label'))), ['第 1 页', '第 2 页'])
   assert.deepEqual(await page.evaluate(() => fixture.useStudio.getState().selection), ['letter'])

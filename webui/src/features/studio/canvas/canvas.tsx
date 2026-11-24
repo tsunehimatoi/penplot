@@ -67,7 +67,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
     useShallow((s) => ({
       doc: s.doc, view: s.view, selection: s.selection, tool: s.tool, spaceHand: s.spaceHand, zoom: s.zoom, overlays: s.overlays,
       fitRequest: s.fitRequest, animate: s.animate, bgAlign: s.bgAlign, bgCalib: s.bgCalib, bgTouch: s.bgTouch, readOnly: s.readOnly,
-      inlineEditId: s.inlineEditId, strokePreview: s.strokePreview,
+      focusedTextId: s.focusedTextId,
     })),
   )
   const pagination = usePagination(st.doc)
@@ -172,7 +172,11 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
     if (!page) return
     const target = e.target as Element & SVGElement
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
-    ;(e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId)
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
     hostRef.current?.focus({ preventScroll: true })
     // align mode: two fingers rotate/scale/move the background (unless the view mode is chosen)
     if (pointers.current.size === 2 && align && bg && !bg.locked && st.bgTouch === 'bg') {
@@ -492,7 +496,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
     }
     const el = id ? els.find((x) => x.id === id) : null
     if (el && (el.type === 'text' || el.type === 'flow_text')) {
-      useStudio.setState({ selection: [el.id], inlineEditId: el.id, strokePreview: false })
+      useStudio.setState({ selection: [el.id], focusedTextId: el.id })
       onRequestTextEdit?.(el.id)
       return
     }
@@ -506,6 +510,38 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
       }
     }
   }
+
+  const startElementMove = React.useCallback(
+    (el: Element, e: React.PointerEvent) => {
+      if (st.readOnly || el.locked) return
+      e.stopPropagation()
+      e.preventDefault()
+      ;(document.activeElement as HTMLElement | null)?.blur?.()
+      useStudio.getState().setFocusedTextId(null)
+      if (!st.selection.includes(el.id) || st.selection.length !== 1) {
+        studio.get().select([el.id])
+      }
+      const p = toWorld(e.clientX, e.clientY)
+      const box = elementAABB(el, paper)
+      const others = els.filter((x) => x.id !== el.id && !x.hidden).map((x) => elementAABB(x, paper))
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      try {
+        hostRef.current?.setPointerCapture(e.pointerId)
+      } catch {
+        /* ignore */
+      }
+      gesture.current = {
+        kind: 'move',
+        start: p,
+        ids: [el.id],
+        orig: new Map([[el.id, el]]),
+        box,
+        moved: false,
+        others,
+      }
+    },
+    [els, paper, st.readOnly, st.selection, toWorld],
+  )
 
   // ---------------------------------------------------------------- bounds warnings
   const bounds = React.useMemo(() => {
@@ -615,6 +651,10 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
           aria-roledescription="排版画布"
           aria-label={`第 ${pageNumber || 1} 页，${els.length} 个元素`}
           className="relative h-full w-full touch-none select-none overflow-hidden bg-canvas-desk outline-none"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endGesture}
+          onPointerCancel={endGesture}
         >
           <svg
             ref={svgRef}
@@ -622,10 +662,6 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
             height={size.height}
             className="absolute inset-0 block"
             style={{ cursor }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={endGesture}
-            onPointerCancel={endGesture}
             onPointerLeave={() => setHover(null)}
             onDoubleClick={onDoubleClick}
           >
@@ -688,7 +724,6 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
                     outPaper={!!bounds.get(el.id)?.outPaper}
                     outWork={!!bounds.get(el.id)?.outWork}
                     hovered={hover === el.id && !st.selection.includes(el.id) && st.tool === 'select'}
-                    strokePreview={st.strokePreview}
                   />
                 ),
               )}
@@ -717,21 +752,39 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
             <text x={sx(v, pw)} y={sy(v, 0) - 8} textAnchor="end" fontSize={12} fill="rgb(var(--secondary-label) / var(--secondary-label-a))" className="pointer-events-none select-none">
               {paper.name} · {pw}×{ph} mm · 第 {pageNumber || 1} 页 / 共 {pagination.length} 页
             </text>
-            {(st.overlays.origin || st.overlays.axes) && !align ? (
-              <OriginOverlay
-                v={v}
-                origin={origin}
-                paperW={pw}
-                paperH={ph}
-                content={cbox}
-                showAxes={st.overlays.axes}
-                showMarker={st.overlays.origin}
-                draggable={!st.readOnly}
-                touch={touch}
-                dragging={gesture.current?.kind === 'origin' ? { snap: originLabel, where: parkText(origin, pw, ph, cbox, true) } : null}
-              />
-            ) : null}
-            {align && bg ? <BgFrame v={v} bg={bg} touch={touch} label={liveLabel} calib={st.bgCalib} /> : null}
+          </svg>
+          <CanvasTextLayer
+            paper={paper}
+            v={v}
+            els={els}
+            sub={st.view.sub}
+            focusedTextId={st.focusedTextId}
+            readOnly={st.readOnly}
+            onStartMove={startElementMove}
+          />
+          <svg
+            width={size.width}
+            height={size.height}
+            className="pointer-events-none absolute inset-0 z-30 block"
+          >
+            <g style={{ pointerEvents: 'auto' }}>
+              {(st.overlays.origin || st.overlays.axes) && !align ? (
+                <OriginOverlay
+                  v={v}
+                  origin={origin}
+                  paperW={pw}
+                  paperH={ph}
+                  content={cbox}
+                  showAxes={st.overlays.axes}
+                  showMarker={st.overlays.origin}
+                  draggable={!st.readOnly}
+                  touch={touch}
+                  dragging={gesture.current?.kind === 'origin' ? { snap: originLabel, where: parkText(origin, pw, ph, cbox, true) } : null}
+                />
+              ) : null}
+              {align && bg ? <BgFrame v={v} bg={bg} touch={touch} label={liveLabel} calib={st.bgCalib} /> : null}
+              {selOverlay}
+            </g>
             {creating ? (
               creating.line ? (
                 <line x1={sx(v, creating.line[0].x)} y1={sy(v, creating.line[0].y)} x2={sx(v, creating.line[1].x)} y2={sy(v, creating.line[1].y)} stroke="rgb(var(--accent))" strokeWidth={1.5} />
@@ -741,21 +794,12 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
                 <rect x={sx(v, creating.box.x)} y={sy(v, creating.box.y)} width={creating.box.w * v.zoom} height={creating.box.h * v.zoom} fill="rgb(var(--accent) / 0.08)" stroke="rgb(var(--accent))" strokeDasharray={creating.tool === 'text' ? '4 3' : undefined} />
               )
             ) : null}
-            {selOverlay}
             {marquee ? (
               <rect x={sx(v, marquee.x)} y={sy(v, marquee.y)} width={marquee.w * v.zoom} height={marquee.h * v.zoom} fill="rgb(var(--accent) / 0.08)" stroke="rgb(var(--accent))" strokeWidth={1} className="pointer-events-none" />
             ) : null}
             <Guides v={v} lines={guides} />
             {st.overlays.rulers && !touch ? <Rulers v={v} highlight={selBox} /> : null}
           </svg>
-          <CanvasTextLayer
-            paper={paper}
-            v={v}
-            els={els}
-            sub={st.view.sub}
-            strokePreview={st.strokePreview}
-            inlineEditId={st.inlineEditId}
-          />
           {st.animate && pageRender.result && outIdx != null ? <StrokeAnimation key={`${pageRender.result.rid}/${outIdx}`} rid={pageRender.result.rid} index={outIdx} v={v} origin={originPoint(origin, pw, ph, cbox)} /> : null}
         </div>
       </ContextMenuTrigger>

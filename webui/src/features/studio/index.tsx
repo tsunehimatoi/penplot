@@ -21,8 +21,10 @@ import { useBreakpoint } from '@/lib/media'
 import { toast } from '@/lib/toast'
 import { addFiles, defaultFontId, lastKeys, setFallbackFont } from './actions'
 import { Canvas } from './canvas/canvas'
+import { needsBackendRich, substituteVars } from './client-stroke-layout'
 import { useActiveProfile, useAppSettings, useFontCoverage, useFonts, usePapers } from './data'
 import { errText } from './ext'
+import { ensureElementGlyphs } from './glyph-cache'
 import { onImport, takeImports } from './import-queue'
 import { Inspector } from './inspector/inspector'
 import { TextContent, TextStyle } from './inspector/text'
@@ -31,7 +33,7 @@ import { LayersList, Navigator, PagesList } from './panels/navigator'
 import {
   createProject, duplicateProject, LAST_KEY, overwriteServer, reloadFromServer, renameProject, saveAsTemplate, saveNow, useAutosave,
 } from './project-io'
-import { renderDocNow, requestElements, usePageRender, type RenderItem } from './render-engine'
+import { renderDocNow, requestElements, type RenderItem } from './render-engine'
 import { BackgroundAlignPanel, BackgroundPagesDialog, importBackgroundInteractive } from './sheets/background-panel'
 import { ExportSheet } from './sheets/export-sheet'
 import { PaperSheet } from './sheets/paper-sheet'
@@ -124,7 +126,7 @@ function Studio({ projectId }: { projectId: string }) {
       // new letter project: put the cursor straight into the body (05-review §1.2-2)
       const flow = q.data.doc.pages[0]?.elements.find((e) => e.type === 'flow_text')
       if (flow && flow.type === 'flow_text' && !flow.props.text) {
-        useStudio.setState({ selection: [flow.id], editTextOf: flow.id, inlineEditId: flow.id, strokePreview: false })
+        useStudio.setState({ selection: [flow.id], editTextOf: flow.id, focusedTextId: flow.id })
       }
     }
   }, [q.data])
@@ -174,10 +176,9 @@ function Editor() {
   const setInspector = useUi((s) => s.setInspector)
   const project = useStudio((s) => s.project)!
   const doc = useStudio((s) => s.doc)!
-  const version = useStudio((s) => s.version)
   const view = useStudio((s) => s.view)
   const saveState = useStudio((s) => s.saveState)
-  const strokePreview = useStudio((s) => s.strokePreview)
+  const animate = useStudio((s) => s.animate)
   const bgAlign = useStudio((s) => s.bgAlign && !!s.doc?.pages[s.view.page]?.background)
   const papers = usePapers()
   useFonts()
@@ -219,7 +220,7 @@ function Editor() {
   const vars = React.useMemo(() => variableValues(doc), [doc])
 
   // element-local renders (keys computed synchronously so the canvas can read them this render)
-  // When !strokePreview, skip text/flow_text so typing & formatting never trigger /preview requests.
+  // Regular & rich text render 100% on client via glyph-cache + client-stroke-layout; only LaTeX/charts/SVG hit /preview.
   const items = React.useMemo(() => {
     const out: RenderItem[] = []
     for (const p of doc.pages) {
@@ -228,21 +229,33 @@ function Editor() {
       for (const el of p.elements) {
         const key = elementKey(el, pp, vars)
         lastKeys.set(el.id, key)
-        if (!strokePreview && (el.type === 'flow_text' || el.type === 'text')) continue
+        if ((el.type === 'flow_text' || el.type === 'text') && !needsBackendRich(el, vars)) continue
         out.push({ key, el, paper: ref })
       }
     }
     return out
-  }, [doc, papers.data, vars, strokePreview])
+  }, [doc, papers.data, vars])
   React.useEffect(() => {
     if (papers.data) requestElements(project.id, items, vars)
   }, [items, project.id, vars, papers.data])
+  // Incrementally prefetch missing glyphs for all visible text/flow_text elements
   React.useEffect(() => {
-    if (!strokePreview || !papers.data) return
+    for (const p of doc.pages) {
+      for (const el of p.elements) {
+        if (el.hidden) continue
+        if (el.type === 'flow_text' || el.type === 'text') {
+          const text = substituteVars(el.props.text ?? '', vars)
+          ensureElementGlyphs(text, el.props.font_id, el.props.font_roles, el.props.font_mix)
+        }
+      }
+    }
+  }, [doc, vars])
+  // Never auto-run slow /render during editing; only compute page G-code on demand when stroke animation is toggled on.
+  React.useEffect(() => {
+    if (!animate || !papers.data) return
     const s = useStudio.getState()
     if (s.doc) void renderDocNow(project.id, s.doc, s.version, vars)
-  }, [strokePreview, project.id, papers.data, vars])
-  usePageRender(strokePreview && papers.data ? project.id : null, doc, version, vars)
+  }, [animate, project.id, papers.data, vars])
 
   // dropped / queued imports
   React.useEffect(() => {
@@ -334,7 +347,6 @@ function Editor() {
     preview: () => {
       const s = useStudio.getState()
       if (s.animate) return s.setAnimate(false)
-      s.setStrokePreview(true)
       void renderDocNow(project.id, s.doc!, s.version, vars).then(() => useStudio.getState().setAnimate(true))
     },
     openInspector: () => setSheet('inspector'),

@@ -1,45 +1,40 @@
 import { useMemo } from 'react'
 import type { ProjectDoc } from '@/api/studio'
-import { usePapers } from './data'
-import { resolveElementRender } from './element-render'
-import { paginateFlowHtml } from './flow-preview'
 import { lastKeys } from './actions'
-import { pagePaperRef, resolvePaper } from './model'
+import { layoutFlowStrokes, needsBackendRich } from './client-stroke-layout'
+import { usePapers } from './data'
+import { useGlyphCache } from './glyph-cache'
+import { pagePaperRef, resolvePaper, variableValues } from './model'
 import { useRender } from './render-engine'
-import { useStudio } from './store'
 
-/** Physical pages in print order; instant frontend pagination in WYSIWYG mode, backend pages in strokePreview. */
+/** Physical pages in print order; instant client-side single-stroke layout with backend override for LaTeX/charts/SVG. */
 export function usePagination(doc: ProjectDoc | null) {
   const renders = useRender((s) => s.els)
-  const strokePreview = useStudio((s) => s.strokePreview)
+  const glyphVersion = useGlyphCache((s) => s.version)
   const papers = usePapers()
 
-  return useMemo(() => (doc?.pages ?? []).flatMap((page, index) => {
-    let count = 1
-    const paper = resolvePaper(pagePaperRef(doc!, page), papers.data)
-    for (const el of page.elements) {
-      if (el.hidden) continue
-      if (el.type !== 'flow_text') {
-        count = Math.max(count, (el.page_offset ?? 0) + 1)
-        continue
-      }
-      const key = lastKeys.get(el.id)
-      const exactRender = key ? renders[key] : undefined
-      if (strokePreview && exactRender?.status === 'ok' && exactRender.pages?.length) {
-        count = Math.max(count, exactRender.pages.length)
-      } else {
-        const previewPages = paginateFlowHtml(el.props.text, el.props.format, paper, {
-          line_num: el.props.line_num,
-          text_size: el.props.text_size,
-        })
-        if (strokePreview) {
-          const { r } = resolveElementRender(el.id, exactRender)
-          count = Math.max(count, r?.pages?.length ?? previewPages.length)
+  return useMemo(() => {
+    void glyphVersion
+    const vars = doc ? variableValues(doc) : {}
+    return (doc?.pages ?? []).flatMap((page, index) => {
+      let count = 1
+      const paper = resolvePaper(pagePaperRef(doc!, page), papers.data)
+      for (const el of page.elements) {
+        if (el.hidden) continue
+        if (el.type !== 'flow_text') {
+          count = Math.max(count, (el.page_offset ?? 0) + 1)
+          continue
+        }
+        const key = lastKeys.get(el.id)
+        const exactRender = key ? renders[key] : undefined
+        if (needsBackendRich(el, vars) && exactRender?.status === 'ok' && exactRender.pages?.length) {
+          count = Math.max(count, exactRender.pages.length)
         } else {
-          count = Math.max(count, previewPages.length)
+          const clientPages = layoutFlowStrokes(el, paper, vars)
+          count = Math.max(count, clientPages.pages.length)
         }
       }
-    }
-    return Array.from({ length: count }, (_, sub) => ({ page: index, sub }))
-  }), [doc, renders, strokePreview, papers.data])
+      return Array.from({ length: count }, (_, sub) => ({ page: index, sub }))
+    })
+  }, [doc, renders, glyphVersion, papers.data])
 }

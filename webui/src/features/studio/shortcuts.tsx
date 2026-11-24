@@ -105,8 +105,9 @@ export function StudioShortcuts({ cmd }: { cmd: StudioCommands }) {
     'escape',
     () => {
       const s = st.getState()
-      if (s.inlineEditId) {
-        s.setInlineEdit(null)
+      if (s.focusedTextId) {
+        s.setFocusedTextId(null)
+        ;(document.activeElement as HTMLElement | null)?.blur?.()
         ;(document.querySelector('[data-studio-canvas]') as HTMLElement | null)?.focus({ preventScroll: true })
         return
       }
@@ -160,7 +161,7 @@ export function StudioShortcuts({ cmd }: { cmd: StudioCommands }) {
       const s = st.getState()
       const el = currentPage(s)?.elements.find((e) => e.id === s.selection[0])
       if (!el) return false
-      if (el.type === 'text' || el.type === 'flow_text') s.setInlineEdit(el.id)
+      if (el.type === 'text' || el.type === 'flow_text') s.setEditText(el.id)
       cmd.openTextEdit?.()
     },
     { id: 'studio.enter', hidden: true },

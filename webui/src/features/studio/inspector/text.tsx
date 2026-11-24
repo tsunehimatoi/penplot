@@ -6,10 +6,13 @@ import { Button, NumberField, Segmented, Textarea } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { plainToHtml } from '@/lib/html-to-md'
 import { toast } from '@/lib/toast'
-import { JITTER_PRESETS, NO_JITTER, DEFAULT_RICH_STYLE } from '../model'
+import { resolveTextRender } from '../client-stroke-layout'
+import { useGlyphCache } from '../glyph-cache'
+import { JITTER_PRESETS, NO_JITTER, DEFAULT_RICH_STYLE, pagePaperRef, resolvePaper, variableValues } from '../model'
 import { usePagination } from '../pagination'
 import { studio, useStudio } from '../store'
 import { useElementRender } from '../canvas/element-view'
+import { usePapers } from '../data'
 import { Help } from '../ext'
 import { FontConfig } from './font-config'
 import { pushRecentFont, useBestFont } from './font-picker'
@@ -43,11 +46,22 @@ export function TextContent({ el, autoFocus }: { el: TextElement | FlowTextEleme
   const fileRef = React.useRef<HTMLInputElement>(null)
   const [expanded, setExpanded] = React.useState(false)
   const [dlgMode, setDlgMode] = React.useState<EditorMode>('visual')
-  const strokePreview = useStudio((s) => s.strokePreview)
-  const inlineEditId = useStudio((s) => s.inlineEditId)
   const doc = useStudio((s) => s.doc)
+  const view = useStudio((s) => s.view)
+  const glyphVersion = useGlyphCache((s) => s.version)
+  const papers = usePapers()
   const pagination = usePagination(doc)
   const { r } = useElementRender(el)
+
+  const clientRender = React.useMemo(() => {
+    void glyphVersion
+    if (!doc) return null
+    const pg = doc.pages[Math.min(view.page, doc.pages.length - 1)]
+    const paper = resolvePaper(pagePaperRef(doc, pg), papers.data)
+    return resolveTextRender(el, paper, variableValues(doc), view.sub)
+  }, [doc, el, papers.data, view.page, view.sub, glyphVersion])
+  const missing = r?.missing?.length ? r.missing : clientRender?.missing ?? []
+  const overflow = r?.overflow ?? clientRender?.overflow ?? false
 
   const pageCount = React.useMemo(() => {
     if (!doc) return 1
@@ -101,8 +115,8 @@ export function TextContent({ el, autoFocus }: { el: TextElement | FlowTextEleme
             aria-label="文字内容"
           />
         )}
-        {r?.missing?.length ? <MissingGlyphs el={el} missing={r.missing} /> : null}
-        {r?.overflow ? <Note tone="orange" icon={<TriangleAlert />}>文字超出文本框高度，多余的行未绘制。</Note> : null}
+        {missing.length ? <MissingGlyphs el={el} missing={missing} /> : null}
+        {overflow ? <Note tone="orange" icon={<TriangleAlert />}>文字超出文本框高度，多余的行未绘制。</Note> : null}
       </Section>
     )
   }
@@ -118,10 +132,10 @@ export function TextContent({ el, autoFocus }: { el: TextElement | FlowTextEleme
           onClick={() => {
             const st = useStudio.getState()
             st.select([el.id])
-            st.setInlineEdit(inlineEditId === el.id ? null : el.id)
+            st.setEditText(el.id)
           }}
         >
-          {inlineEditId === el.id ? '完成画布编辑' : '画布直接编辑'}
+          聚焦文本框
         </Button>
 
         {el.type === 'flow_text' ? (
@@ -156,13 +170,6 @@ export function TextContent({ el, autoFocus }: { el: TextElement | FlowTextEleme
           </>
         ) : null}
 
-        <SwitchRow
-          label="预览笔画"
-          checked={strokePreview}
-          onChange={(v) => useStudio.getState().setStrokePreview(v)}
-          hint="按需计算单线路径"
-        />
-
         <p className="text-footnote tabular-nums text-secondary-label">
           {charCount.toLocaleString('zh-CN')} 字{el.type === 'flow_text' ? ` · 当前共 ${pageCount} 页` : ''}
         </p>
@@ -190,8 +197,8 @@ export function TextContent({ el, autoFocus }: { el: TextElement | FlowTextEleme
         />
       ) : null}
 
-      {r?.missing?.length ? <MissingGlyphs el={el} missing={r.missing} /> : null}
-      {r?.overflow ? <Note tone="orange" icon={<TriangleAlert />}>文字超出文本框高度，多余的行未绘制。</Note> : null}
+      {missing.length ? <MissingGlyphs el={el} missing={missing} /> : null}
+      {overflow ? <Note tone="orange" icon={<TriangleAlert />}>文字超出文本框高度，多余的行未绘制。</Note> : null}
     </Section>
   )
 }

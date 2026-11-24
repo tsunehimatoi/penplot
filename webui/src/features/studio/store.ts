@@ -72,12 +72,10 @@ export interface StudioState {
   fitRequest: number
   overlays: Overlays
   animate: boolean
-  /** Element id whose text should be edited (focus inspector textarea / open sheet). */
+  /** Element id whose text should be edited (focus canvas textbox / open sheet). */
   editTextOf: string | null
-  /** Element id currently being edited inline on the canvas. */
-  inlineEditId: string | null
-  /** Whether to render backend single-stroke paths on the canvas instead of instant WYSIWYG. */
-  strokePreview: boolean
+  /** Element id of the text/flow_text box that currently holds input focus (shows floating format toolbar). */
+  focusedTextId: string | null
 
   load: (p: Project) => void
   close: () => void
@@ -106,8 +104,7 @@ export interface StudioState {
   dragging: string[]
   setAnimate: (b: boolean) => void
   setEditText: (id: string | null) => void
-  setInlineEdit: (id: string | null) => void
-  setStrokePreview: (v: boolean) => void
+  setFocusedTextId: (id: string | null) => void
   /** 对齐背景 mode: the page background becomes the only editable object on the canvas. */
   bgAlign: boolean
   setBgAlign: (b: boolean) => void
@@ -150,15 +147,14 @@ export const useStudio = create<StudioState>((set, get) => ({
   selection: [],
   tool: 'select',
   readOnly: false,
-  setReadOnly: (v) => set(v ? { readOnly: true, tool: 'hand', selection: [], inlineEditId: null } : { readOnly: false }),
+  setReadOnly: (v) => set(v ? { readOnly: true, tool: 'hand', selection: [], focusedTextId: null } : { readOnly: false }),
   spaceHand: false,
   zoom: { zoom: 2, panX: 40, panY: 40 },
   fitRequest: 0,
   overlays: loadOverlays(),
   animate: false,
   editTextOf: null,
-  inlineEditId: null,
-  strokePreview: false,
+  focusedTextId: null,
   placement: { dx: 0, dy: 0 },
   dragging: [],
   setPlacement: (p) => {
@@ -189,12 +185,11 @@ export const useStudio = create<StudioState>((set, get) => ({
       fitRequest: get().fitRequest + 1,
       placement: loadPlacement(p.id),
       editTextOf: null,
-      inlineEditId: null,
-      strokePreview: false,
+      focusedTextId: null,
       bgAlign: false,
       bgCalib: null,
     }),
-  close: () => set({ project: null, doc: null, past: [], future: [], selection: [], editTextOf: null, inlineEditId: null, strokePreview: false }),
+  close: () => set({ project: null, doc: null, past: [], future: [], selection: [], editTextOf: null, focusedTextId: null }),
   setProjectMeta: (p) => {
     const cur = get().project
     if (cur) set({ project: { ...cur, ...p } })
@@ -273,14 +268,14 @@ export const useStudio = create<StudioState>((set, get) => ({
       view: v,
       selection: !pageChanged ? get().selection.filter((id) => get().doc?.pages[v.page]?.elements.some((e) => e.id === id && elementOnPage(e, v.sub))) : [],
       ...(pageChanged ? { bgCalib: null } : {}),
-      ...(viewChanged ? { inlineEditId: null } : {}),
+      ...(viewChanged ? { focusedTextId: null } : {}),
     })
   },
   select: (ids) => {
-    const curInline = get().inlineEditId
+    const curFocused = get().focusedTextId
     set({
       selection: ids,
-      ...(ids.length === 0 || (curInline && !ids.includes(curInline)) ? { inlineEditId: null } : {}),
+      ...(ids.length === 0 || (curFocused && !ids.includes(curFocused)) ? { focusedTextId: null } : {}),
     })
   },
   toggleSelect: (id) => {
@@ -301,9 +296,8 @@ export const useStudio = create<StudioState>((set, get) => ({
     }
   },
   setAnimate: (b) => set({ animate: b }),
-  setEditText: (id) => set(id ? { editTextOf: id, inlineEditId: id, strokePreview: false } : { editTextOf: null }),
-  setInlineEdit: (id) => set(id ? { inlineEditId: id, strokePreview: false } : { inlineEditId: null }),
-  setStrokePreview: (v) => set(v ? { strokePreview: true, inlineEditId: null } : { strokePreview: false }),
+  setEditText: (id) => set(id ? { editTextOf: id, focusedTextId: id } : { editTextOf: null }),
+  setFocusedTextId: (id) => set({ focusedTextId: id }),
   bgAlign: false,
   setBgAlign: (b) => set(b ? { bgAlign: true, selection: [], tool: 'select', animate: false } : { bgAlign: false, bgCalib: null }),
   bgCalib: null,

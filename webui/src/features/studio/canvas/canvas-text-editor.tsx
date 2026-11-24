@@ -1,14 +1,16 @@
 /**
- * Canvas-level WYSIWYG text display & inline editor overlay.
- * Aligns 1:1 with paper layout boxes in screen space (`sx`, `sy`, `zoom`),
- * rendering instant HTML in display mode and a Word-like contentEditable surface in edit mode.
+ * Canvas-level direct-on-stroke writing layer + move handle.
+ * Renders a transparent clickable `role="textbox"` overlay aligned 1:1 with the
+ * client-side single-stroke paths so users write directly on the strokes with zero
+ * ghosting and zero mode switching.
  */
+import { GripVertical } from 'lucide-react'
 import * as React from 'react'
 import { errorMessage } from '@/api/client'
 import { importFile, type Element, type FlowTextElement, type PaperBase, type TextElement } from '@/api/studio'
+import { cn } from '@/lib/cn'
 import { plainToHtml } from '@/lib/html-to-md'
 import { toast } from '@/lib/toast'
-import { paginateFlowHtml } from '../flow-preview'
 import { boxLineNum, effectiveLayoutBoxes } from '../model'
 import { studio, useStudio } from '../store'
 import {
@@ -32,42 +34,68 @@ export function CanvasTextLayer({
   v,
   els,
   sub,
-  strokePreview,
-  inlineEditId,
+  focusedTextId,
+  readOnly,
+  onStartMove,
 }: {
   paper: PaperBase
   v: Viewport
   els: Element[]
   sub: number
-  strokePreview: boolean
-  inlineEditId: string | null
+  focusedTextId: string | null
+  readOnly: boolean
+  onStartMove: (el: Element, e: React.PointerEvent) => void
 }) {
   const editTextOf = useStudio((s) => s.editTextOf)
 
-  // Bridge legacy `editTextOf` triggers (e.g. insertText / setMode) to canvas inline editing
+  // Focus the canvas textbox when triggered by `editTextOf` (e.g. new letter, Enter key, or inspector button)
   React.useEffect(() => {
     if (!editTextOf) return
     const st = useStudio.getState()
-    st.setInlineEdit(editTextOf)
+    st.setFocusedTextId(editTextOf)
     st.setEditText(null)
+    requestAnimationFrame(() => {
+      const box = document.querySelector(`[data-inline-editor="${editTextOf}"] [role="textbox"], [data-inline-editor="${editTextOf}"] textarea`) as HTMLElement | null
+      box?.focus({ preventScroll: true })
+    })
   }, [editTextOf])
 
-  if (strokePreview) return null
+  if (readOnly) return null
 
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden={inlineEditId == null}>
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <style>{`
+        .studio-transparent-text::selection,
+        .studio-transparent-text *::selection {
+          background: rgb(var(--accent) / 0.24);
+          color: transparent;
+        }
+      `}</style>
       {els.map((el) => {
+        if (el.hidden || el.locked) return null
         if (el.type === 'flow_text') {
-          if (inlineEditId === el.id) {
-            return <FlowInlineEditor key={el.id} el={el} paper={paper} v={v} sub={sub} />
-          }
-          return <FlowDisplay key={el.id} el={el} paper={paper} v={v} sub={sub} />
+          return (
+            <FlowDirectEditor
+              key={el.id}
+              el={el}
+              paper={paper}
+              v={v}
+              sub={sub}
+              focused={focusedTextId === el.id}
+              onStartMove={onStartMove}
+            />
+          )
         }
         if (el.type === 'text') {
-          if (inlineEditId === el.id) {
-            return <TextInlineEditor key={el.id} el={el} v={v} />
-          }
-          return <TextDisplay key={el.id} el={el} v={v} />
+          return (
+            <TextDirectEditor
+              key={el.id}
+              el={el}
+              v={v}
+              focused={focusedTextId === el.id}
+              onStartMove={onStartMove}
+            />
+          )
         }
         return null
       })}
@@ -75,83 +103,53 @@ export function CanvasTextLayer({
   )
 }
 
-const FlowDisplay = React.memo(function FlowDisplay({
+function MoveHandle({
   el,
-  paper,
-  v,
-  sub,
+  left,
+  top,
+  onStartMove,
 }: {
-  el: FlowTextElement
-  paper: PaperBase
-  v: Viewport
-  sub: number
+  el: Element
+  left: number
+  top: number
+  onStartMove: (el: Element, e: React.PointerEvent) => void
 }) {
-  const pages = React.useMemo(
-    () =>
-      paginateFlowHtml(el.props.text, el.props.format, paper, {
-        line_num: el.props.line_num,
-        text_size: el.props.text_size,
-      }),
-    [el.props.text, el.props.format, paper, el.props.line_num, el.props.text_size],
-  )
-  const pageData = pages[sub]
-  if (!pageData) return null
-
-  const ox = el.transform.x
-  const oy = el.transform.y
-  const textAlign = ALIGN_CSS[el.props.align] ?? 'left'
-  const padLeft = (el.props.paragraph?.left ?? 0) * v.zoom
-  const padRight = (el.props.paragraph?.right ?? 0) * v.zoom
-  const indent = el.props.paragraph?.spe_type === 1 ? (el.props.paragraph.spe_value ?? 0) * v.zoom : 0
-
+  const label = `移动${el.type === 'flow_text' ? '文本框' : '自由文本框'}`
   return (
-    <div style={{ opacity: el.hidden ? 0.3 : 1 }}>
-      {pageData.boxes.map((box) => {
-        const lineH = (box.h_mm / Math.max(1, box.lineNum)) * v.zoom
-        const fontSize = Math.max(6, lineH * (el.props.text_size || 0.72))
-        return (
-          <div
-            key={box.boxId}
-            className="pointer-events-none absolute overflow-hidden select-none"
-            style={{
-              left: sx(v, box.x_mm + ox),
-              top: sy(v, box.y_mm + oy),
-              width: box.w_mm * v.zoom,
-              height: box.h_mm * v.zoom,
-              paddingLeft: padLeft,
-              paddingRight: padRight,
-            }}
-          >
-            {box.html ? (
-              <div
-                className="rich-wysiwyg"
-                style={{
-                  fontSize,
-                  lineHeight: `${lineH}px`,
-                  textAlign,
-                  textIndent: indent || undefined,
-                  color: 'rgb(var(--ink))',
-                }}
-                dangerouslySetInnerHTML={{ __html: box.html }}
-              />
-            ) : null}
-          </div>
-        )
-      })}
-    </div>
+    <button
+      type="button"
+      data-move-handle={el.id}
+      aria-label={label}
+      title={label}
+      onPointerDown={(e) => onStartMove(el, e)}
+      onClick={(e) => e.stopPropagation()}
+      className="pointer-events-auto absolute z-30 flex h-5 items-center gap-0.5 rounded-t border border-b-0 border-separator/70 bg-bg-elevated/92 px-1.5 text-[11px] font-medium text-secondary-label shadow-sm backdrop-blur-sm transition-colors hover:border-accent hover:text-label active:cursor-grabbing"
+      style={{
+        left,
+        top: Math.max(2, top - 20),
+        cursor: 'grab',
+      }}
+    >
+      <GripVertical className="size-3" />
+      <span>移动</span>
+    </button>
   )
-})
+}
 
-function FlowInlineEditor({
+function FlowDirectEditor({
   el,
   paper,
   v,
   sub,
+  focused,
+  onStartMove,
 }: {
   el: FlowTextElement
   paper: PaperBase
   v: Viewport
   sub: number
+  focused: boolean
+  onStartMove: (el: Element, e: React.PointerEvent) => void
 }) {
   const [mode, setMode] = React.useState<EditorMode>('visual')
   const fileRef = React.useRef<HTMLInputElement>(null)
@@ -171,6 +169,8 @@ function FlowInlineEditor({
   const lineH = (activeBox.h_mm / Math.max(1, lineNum)) * v.zoom
   const fontSize = Math.max(6, lineH * (el.props.text_size || 0.72))
   const textAlign = ALIGN_CSS[el.props.align] ?? 'left'
+  const padLeft = (el.props.paragraph?.left ?? 0) * v.zoom
+  const padRight = (el.props.paragraph?.right ?? 0) * v.zoom
 
   const commitProps = React.useCallback(
     (patch: Record<string, unknown>, coalesce?: string) => {
@@ -207,148 +207,189 @@ function FlowInlineEditor({
 
   const safeTop = Math.max(0, top)
   const maxEditorH = Math.max(80, Math.min(height, v.height - safeTop - 72))
-  const editorW = Math.max(180, width)
+  const editorW = Math.max(120, width)
   const maxToolbarW = Math.max(220, v.width - 24)
   const toolbarW = Math.min(maxToolbarW, Math.max(editorW, 480))
   const toolbarLeft = Math.max(12 - left, Math.min(0, v.width - 12 - left - toolbarW))
   const toolbarBelow = top < 88
 
   return (
-    <div
-      data-inline-editor={el.id}
-      data-page-sub={sub}
-      className="pointer-events-auto absolute z-20 select-text"
-      style={{
-        left,
-        top,
-        width: editorW,
-        height: maxEditorH,
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onDoubleClick={(e) => e.stopPropagation()}
-    >
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".md,.markdown,.docx,.html,.htm,.txt"
-        className="hidden"
-        onChange={(e) => void handleImportFiles(e.currentTarget.files)}
-      />
-      <WysiwygSurface
-        elId={el.id}
-        mode={mode}
-        fmt={fmt}
-        text={text}
-        compact
-        autoFocus
-        showModeToggle
-        onModeChange={setMode}
-        onFormatChange={(nextFmt) => commitProps({ format: nextFmt })}
-        onImportClick={() => fileRef.current?.click()}
-        onDone={() => useStudio.getState().setInlineEdit(null)}
-        onToolbarPointerDown={(e) => e.stopPropagation()}
-        toolbarClassName="mat-thin bg-bg-elevated/95 shadow-lg backdrop-blur-md"
-        toolbarStyle={{
-          position: 'absolute',
-          ...(toolbarBelow ? { top: '100%', marginTop: 6 } : { bottom: '100%', marginBottom: 6 }),
-          left: toolbarLeft,
-          width: toolbarW,
-          maxWidth: maxToolbarW,
-          zIndex: 30,
-        }}
-        wrapperClassName="!min-h-0 bg-bg-elevated/92 ring-2 ring-accent shadow-sm"
-        wrapperStyle={{
+    <>
+      <MoveHandle el={el} left={left} top={top} onStartMove={onStartMove} />
+      <div
+        data-inline-editor={el.id}
+        data-page-sub={sub}
+        className={cn('pointer-events-auto absolute select-text', focused ? 'z-20' : 'z-10')}
+        style={{
+          left,
+          top,
+          width: editorW,
           height: maxEditorH,
-          maxHeight: maxEditorH,
-          padding: '2px 4px',
         }}
-        editorStyle={{
-          fontSize,
-          lineHeight: `${lineH}px`,
-          textAlign,
-          color: 'rgb(var(--ink))',
+        onPointerDown={(e) => {
+          e.stopPropagation()
+          const st = useStudio.getState()
+          if (st.selection.length !== 1 || st.selection[0] !== el.id) st.select([el.id])
+          if (st.focusedTextId !== el.id) st.setFocusedTextId(el.id)
         }}
-        onCommit={(nextText, nextFmt, coalesce) =>
-          commitProps({ text: nextText, format: nextFmt }, coalesce ? 'text' : undefined)
-        }
-      />
-    </div>
+        onFocus={() => {
+          const st = useStudio.getState()
+          if (st.selection.length !== 1 || st.selection[0] !== el.id) st.select([el.id])
+          if (st.focusedTextId !== el.id) st.setFocusedTextId(el.id)
+        }}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+            if (useStudio.getState().focusedTextId === el.id) {
+              useStudio.getState().setFocusedTextId(null)
+            }
+          }
+        }}
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".md,.markdown,.docx,.html,.htm,.txt"
+          className="hidden"
+          onChange={(e) => void handleImportFiles(e.currentTarget.files)}
+        />
+        <WysiwygSurface
+          elId={el.id}
+          mode={mode}
+          fmt={fmt}
+          text={text}
+          compact
+          showModeToggle
+          onModeChange={setMode}
+          onFormatChange={(nextFmt) => commitProps({ format: nextFmt })}
+          onImportClick={() => fileRef.current?.click()}
+          onToolbarPointerDown={(e) => e.stopPropagation()}
+          toolbarClassName={focused ? 'mat-thin bg-bg-elevated/95 shadow-lg backdrop-blur-md' : 'hidden'}
+          toolbarStyle={{
+            position: 'absolute',
+            ...(toolbarBelow ? { top: '100%', marginTop: 6 } : { bottom: '100%', marginBottom: 6 }),
+            left: toolbarLeft,
+            width: toolbarW,
+            maxWidth: maxToolbarW,
+            zIndex: 30,
+          }}
+          wrapperClassName={cn(
+            '!min-h-0 !shadow-none',
+            mode === 'visual' && 'studio-transparent-text',
+            mode === 'source'
+              ? 'bg-bg-elevated/92 ring-2 ring-accent'
+              : focused
+                ? '!bg-transparent ring-1 ring-accent/55'
+                : '!bg-transparent !ring-0',
+          )}
+          wrapperStyle={{
+            height: maxEditorH,
+            maxHeight: maxEditorH,
+            paddingTop: 0,
+            paddingBottom: 0,
+            paddingLeft: padLeft,
+            paddingRight: padRight,
+          }}
+          editorStyle={{
+            fontSize,
+            lineHeight: `${lineH}px`,
+            textAlign,
+            ...(mode === 'visual'
+              ? {
+                  color: 'transparent',
+                  background: 'transparent',
+                  caretColor: 'rgb(var(--accent))',
+                }
+              : {
+                  color: 'rgb(var(--ink))',
+                }),
+          }}
+          onCommit={(nextText, nextFmt, coalesce) =>
+            commitProps({ text: nextText, format: nextFmt }, coalesce ? 'text' : undefined)
+          }
+        />
+      </div>
+    </>
   )
 }
 
-const TextDisplay = React.memo(function TextDisplay({ el, v }: { el: TextElement; v: Viewport }) {
+function TextDirectEditor({
+  el,
+  v,
+  focused,
+  onStartMove,
+}: {
+  el: TextElement
+  v: Viewport
+  focused: boolean
+  onStartMove: (el: Element, e: React.PointerEvent) => void
+}) {
   const sc = el.transform.scale || 1
-  const fontSize = Math.max(6, el.props.size_mm * v.zoom * sc)
+  const fontSize = Math.max(8, el.props.size_mm * v.zoom * sc)
   const align = ALIGN_CSS[el.props.align] ?? 'left'
-  const rotDeg = el.transform.rotation || 0
+  const left = sx(v, el.transform.x)
+  const top = sy(v, el.transform.y)
+  const width = Math.max(80, (el.props.box?.w ?? 80) * v.zoom)
+  const height = Math.max(28, (el.props.box?.h ?? el.props.size_mm * el.props.line_height * Math.max(1, el.props.text.split('\n').length)) * v.zoom)
 
   return (
-    <div
-      className="pointer-events-none absolute select-none"
-      style={{
-        left: sx(v, el.transform.x),
-        top: sy(v, el.transform.y),
-        width: el.props.box ? el.props.box.w * v.zoom : undefined,
-        height: el.props.box ? el.props.box.h * v.zoom : undefined,
-        fontSize,
-        lineHeight: el.props.line_height,
-        textAlign: align,
-        whiteSpace: el.props.box ? 'pre-wrap' : 'pre',
-        color: 'rgb(var(--ink))',
-        opacity: el.hidden ? 0.3 : 1,
-        transform: rotDeg ? `rotate(${rotDeg}deg)` : undefined,
-        transformOrigin: '0 0',
-      }}
-    >
-      {el.props.text}
-    </div>
-  )
-})
-
-function TextInlineEditor({ el, v }: { el: TextElement; v: Viewport }) {
-  const ref = React.useRef<HTMLTextAreaElement>(null)
-  const sc = el.transform.scale || 1
-  const fontSize = Math.max(10, el.props.size_mm * v.zoom * sc)
-  const align = ALIGN_CSS[el.props.align] ?? 'left'
-
-  React.useEffect(() => {
-    ref.current?.focus()
-    ref.current?.select()
-  }, [el.id])
-
-  return (
-    <div
-      data-inline-editor={el.id}
-      className="pointer-events-auto absolute z-20"
-      style={{
-        left: sx(v, el.transform.x),
-        top: sy(v, el.transform.y),
-        width: Math.max(140, (el.props.box?.w ?? 80) * v.zoom),
-        minHeight: Math.max(36, (el.props.box?.h ?? el.props.size_mm * el.props.line_height * 2) * v.zoom),
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onDoubleClick={(e) => e.stopPropagation()}
-    >
-      <textarea
-        ref={ref}
-        aria-label="文字内容"
-        value={el.props.text}
-        onChange={(e) => studio.setProps(el.id, { text: e.currentTarget.value }, 'text')}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            e.stopPropagation()
-            useStudio.getState().setInlineEdit(null)
-          }
-        }}
-        placeholder="输入文字，可使用 {{变量}}"
-        className="h-full w-full resize rounded-sm bg-bg-elevated/90 px-1.5 py-1 text-label outline-none ring-2 ring-accent"
+    <>
+      <MoveHandle el={el} left={left} top={top} onStartMove={onStartMove} />
+      <div
+        data-inline-editor={el.id}
+        className={cn('pointer-events-auto absolute', focused ? 'z-20' : 'z-10')}
         style={{
-          fontSize,
-          lineHeight: el.props.line_height,
-          textAlign: align,
-          minHeight: Math.max(36, (el.props.box?.h ?? el.props.size_mm * el.props.line_height * 2) * v.zoom),
+          left,
+          top,
+          width,
+          height,
         }}
-      />
-    </div>
+        onPointerDown={(e) => {
+          e.stopPropagation()
+          const st = useStudio.getState()
+          if (st.selection.length !== 1 || st.selection[0] !== el.id) st.select([el.id])
+          if (st.focusedTextId !== el.id) st.setFocusedTextId(el.id)
+        }}
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
+        <textarea
+          role="textbox"
+          aria-multiline="true"
+          aria-label="文本框内容"
+          value={el.props.text}
+          onFocus={() => {
+            const st = useStudio.getState()
+            if (st.selection.length !== 1 || st.selection[0] !== el.id) st.select([el.id])
+            if (st.focusedTextId !== el.id) st.setFocusedTextId(el.id)
+          }}
+          onBlur={() => {
+            if (useStudio.getState().focusedTextId === el.id) {
+              useStudio.getState().setFocusedTextId(null)
+            }
+          }}
+          onChange={(e) => studio.setProps(el.id, { text: e.currentTarget.value }, 'text')}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.stopPropagation()
+              e.currentTarget.blur()
+              useStudio.getState().setFocusedTextId(null)
+              ;(document.querySelector('[data-studio-canvas]') as HTMLElement | null)?.focus({ preventScroll: true })
+            }
+          }}
+          className={cn(
+            'studio-transparent-text h-full w-full resize-none overflow-hidden rounded-sm bg-transparent p-0 outline-none',
+            focused ? 'ring-1 ring-accent/55' : 'ring-0',
+          )}
+          style={{
+            fontSize,
+            lineHeight: el.props.line_height,
+            textAlign: align,
+            color: 'transparent',
+            background: 'transparent',
+            caretColor: 'rgb(var(--accent))',
+          }}
+        />
+      </div>
+    </>
   )
 }
