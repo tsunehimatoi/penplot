@@ -45,7 +45,12 @@ export function useJobs(params: { status?: string; batch_id?: string; limit?: nu
     queryKey: qk.jobs.list(params),
     queryFn: () => api.get<Job[]>('/jobs', { query: { limit: 200, ...params } }),
     select: (d: unknown) => (Array.isArray(d) ? (d as Job[]) : []),
-    staleTime: 5_000,
+    staleTime: 2_000,
+    refetchInterval: (q) => {
+      const list = Array.isArray(q.state.data) ? (q.state.data as Job[]) : []
+      const hasActive = list.some((j) => j.status === 'running' || j.status === 'preparing' || j.status === 'stopping')
+      return hasActive ? 2_000 : 10_000
+    },
   })
 }
 
@@ -95,7 +100,11 @@ export function useJobActions() {
     onSettled: invalidate,
   })
   const retry = useMutation({
-    mutationFn: ({ id, from_line }: { id: string; from_line?: number | null }) => api.post<Job>(`/jobs/${id}/retry`, from_line ? { from_line } : {}),
+    mutationFn: ({ id, from_line, in_place }: { id: string; from_line?: number | null; in_place?: boolean }) =>
+      api.post<Job>(`/jobs/${id}/retry`, {
+        ...(from_line != null ? { from_line } : {}),
+        ...(in_place ? { in_place: true } : {}),
+      }),
     meta: { errorTitle: '重新打印失败' },
     onSettled: invalidate,
   })

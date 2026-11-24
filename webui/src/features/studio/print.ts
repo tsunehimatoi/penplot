@@ -5,6 +5,7 @@ import { qk, queryClient } from '@/api/query'
 import { renderProject, type Job, type PrintOverrides, type ProfileDoc, type ProjectDoc, type RenderResult, type TaskWatch } from '@/api/studio'
 import { useLive } from '@/api/store'
 import { confirm } from '@/lib/confirm'
+import { uid } from '@/lib/id'
 import { toast } from '@/lib/toast'
 import { clone, variableValues } from './model'
 import { useStudio } from './store'
@@ -141,6 +142,7 @@ export interface StartOptions {
  */
 export async function createJobs(o: StartOptions): Promise<Job[]> {
   const s = useStudio.getState()
+  const batchId = `b${uid('').slice(0, 8)}`
   const jobs: Job[] = []
   for (let i = 0; i < o.pages.length; i++) {
     const idx = o.pages[i]
@@ -150,6 +152,8 @@ export async function createJobs(o: StartOptions): Promise<Job[]> {
       profile_id: o.profileId,
       overrides: o.overrides,
       start: false,
+      batch_id: batchId,
+      seq: i + 1,
     }
     jobs.push(await api.post<Job>('/jobs', body, { timeoutMs: 120_000, idempotencyKey: true }))
   }

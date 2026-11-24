@@ -3585,6 +3585,10 @@ export interface components {
              * @default false
              */
             allow_out_of_bounds: boolean;
+            /** Batch Id */
+            batch_id?: string | null;
+            /** Seq */
+            seq?: number | null;
         };
         /** JobError */
         JobError: {
@@ -3647,6 +3651,8 @@ export interface components {
         JobRetry: {
             /** From Line */
             from_line?: number | null;
+            /** In Place */
+            in_place?: boolean;
         };
         /**
          * JobSource
