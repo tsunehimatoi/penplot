@@ -289,6 +289,28 @@ def test_html_blank_lines_containers_pagebreaks_and_alignment():
     # One blank line between A (line 0) and B (line 2) -> dy == 2 * line_h (2 * 10mm = 20mm)
     assert abs((bb_b[1] - bb_a[1]) - 20.0) < 0.01
 
+    # Centered & right-aligned paragraphs ignore first-line / hanging indent (spe_type 1/2)
+    el_indented_center = {
+        'id': 'center-with-indent',
+        'type': 'flow_text',
+        'props': {
+            'text': '<p style="text-align:center">AB</p><p style="text-align:right">CD</p><p>EF</p>',
+            'format': 'html',
+            'paragraph': {'spe_type': 1, 'spe_value': 8.0, 'left': 0.0, 'right': 0.0},
+            'seed': 1,
+        },
+    }
+    pages_ic = flow_text_pages(el_indented_center, paper, _make_fake_res(ascender=True), {}, Settings(), warn)
+    assert len(pages_ic) == 1 and len(pages_ic[0]) == 6
+    bb_center = bbox_of(pages_ic[0][0:2])
+    bb_right = bbox_of(pages_ic[0][2:4])
+    bb_left = bbox_of(pages_ic[0][4:6])
+    # Paper width 120, margins l=10, r=10 -> box center is 60.0, box right edge is 110.0
+    assert abs((bb_center[0] + bb_center[2]) / 2.0 - 60.0) < 1.5
+    assert abs(bb_right[2] - 110.0) < 1.5
+    # Left-aligned paragraph still honors spe_type=1 indent (10 + 8 = 18.0)
+    assert bb_left[0] >= 17.9
+
 
 def test_multibox_flow_same_page_then_expand_pages():
     from penplot.geometry import bbox_of

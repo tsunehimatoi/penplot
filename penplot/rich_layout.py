@@ -522,9 +522,13 @@ class RichTextDocument:
                 continue
 
             if isinstance(blk, ParagraphBlock):
-                spe1 = fmt.spe_value if fmt.spe_type == 1 else 0.0
-                spe2 = fmt.spe_value if fmt.spe_type == 2 else 0.0
                 align = blk.align or default_align
+                if align in ('C', 'R'):
+                    spe1 = 0.0
+                    spe2 = 0.0
+                else:
+                    spe1 = fmt.spe_value if fmt.spe_type == 1 else 0.0
+                    spe2 = fmt.spe_value if fmt.spe_type == 2 else 0.0
 
                 def _para_geom(li, _s1=spe1, _s2=spe2):
                     base_left, avail_base = self._box_frame(fmt, indent_left)
