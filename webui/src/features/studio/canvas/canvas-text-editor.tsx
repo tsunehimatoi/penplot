@@ -205,6 +205,14 @@ function FlowInlineEditor({
     }
   }
 
+  const safeTop = Math.max(0, top)
+  const maxEditorH = Math.max(80, Math.min(height, v.height - safeTop - 72))
+  const editorW = Math.max(180, width)
+  const maxToolbarW = Math.max(220, v.width - 24)
+  const toolbarW = Math.min(maxToolbarW, Math.max(editorW, 480))
+  const toolbarLeft = Math.max(12 - left, Math.min(0, v.width - 12 - left - toolbarW))
+  const toolbarBelow = top < 88
+
   return (
     <div
       data-inline-editor={el.id}
@@ -213,8 +221,8 @@ function FlowInlineEditor({
       style={{
         left,
         top,
-        width: Math.max(180, width),
-        minHeight: Math.max(80, height),
+        width: editorW,
+        height: maxEditorH,
       }}
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
@@ -242,17 +250,16 @@ function FlowInlineEditor({
         toolbarClassName="mat-thin bg-bg-elevated/95 shadow-lg backdrop-blur-md"
         toolbarStyle={{
           position: 'absolute',
-          bottom: '100%',
-          left: 0,
-          marginBottom: 6,
-          width: 'max-content',
-          maxWidth: 'min(92vw, 720px)',
+          ...(toolbarBelow ? { top: '100%', marginTop: 6 } : { bottom: '100%', marginBottom: 6 }),
+          left: toolbarLeft,
+          width: toolbarW,
+          maxWidth: maxToolbarW,
           zIndex: 30,
         }}
-        wrapperClassName="bg-bg-elevated/92 ring-2 ring-accent shadow-sm"
+        wrapperClassName="!min-h-0 bg-bg-elevated/92 ring-2 ring-accent shadow-sm"
         wrapperStyle={{
-          minHeight: Math.max(80, height),
-          maxHeight: Math.max(220, height * 1.35),
+          height: maxEditorH,
+          maxHeight: maxEditorH,
           padding: '2px 4px',
         }}
         editorStyle={{
