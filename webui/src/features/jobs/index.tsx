@@ -10,6 +10,7 @@ import { Button, Card, EmptyState, ErrorState, IconButton, SkeletonList } from '
 import { cn } from '@/lib/cn'
 import { confirm } from '@/lib/confirm'
 import { useBreakpoint } from '@/lib/media'
+import { CLEAR_JOB_LABELS, runJobCleanup } from './bulk-actions'
 import { groupJobsBySend, type JobGroup } from './grouping'
 import { JobDetailSheet } from './job-detail'
 import { RecoveryBanner } from './recovery-wizard'
@@ -27,7 +28,7 @@ export default function JobsPage() {
   const bp = useBreakpoint()
   const compact = bp === 'compact'
   const all = useJobs()
-  const { remove, removeBatch } = useJobActions()
+  const { remove, removeBatch, clear } = useJobActions()
   const { liveJob, progress } = useLive(
     useShallow((s) => ({
       liveJob: s.job,
@@ -147,6 +148,18 @@ export default function JobsPage() {
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 empty:hidden">
           <RecoveryBanner jobs={all.data} />
+        </div>
+
+        <div role="group" aria-label="清理任务" className="flex flex-wrap justify-end gap-2">
+          {(['queued', 'history'] as const).map((scope) => (
+            <Button key={scope} size="sm" variant="gray" icon={<Trash2 />}
+              disabled={!all.data?.length || !!all.error || clear.isPending}
+              loading={clear.isPending && clear.variables?.scope === scope}
+              onClick={() => void runJobCleanup(clear, scope)}
+            >
+              {CLEAR_JOB_LABELS[scope]}
+            </Button>
+          ))}
         </div>
 
         {/* Group Switcher Bar */}
