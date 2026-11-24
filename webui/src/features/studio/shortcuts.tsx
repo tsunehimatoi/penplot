@@ -45,7 +45,7 @@ export function StudioShortcuts({ cmd }: { cmd: StudioCommands }) {
   const hasSel = () => st.getState().selection.length > 0 && !layerOpen()
   const free = () => !layerOpen()
   useShortcut('mod+enter', cmd.preview, { id: 'studio.preview', description: '立即预览（笔顺）', group: G })
-  useShortcut('mod+p', cmd.openPrint, { id: 'studio.print', description: '打印', group: G, allowInEditable: true })
+  useShortcut('mod+p', cmd.openPrint, { id: 'studio.print', description: '打印设置', group: G, allowInEditable: true })
   useShortcut('mod+shift+e', cmd.openExport, { id: 'studio.export', description: '导出', group: G })
   useShortcut('mod+o', () => cmd.openImport(), { id: 'studio.import', description: '导入文件', group: G })
   useShortcut('mod+s', () => void saveNow({ force: true }), { id: 'studio.save', description: '立即保存', group: G, allowInEditable: true })

@@ -9,6 +9,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { api, isApiError } from '@/api/client'
 import { useCanEdit } from '@/api/collab'
 import { queryClient, qk } from '@/api/query'
+import { useLive } from '@/api/store'
 import type { Project, ProjectSummary } from '@/api/studio'
 import { Page } from '@/app/page'
 import { useUi } from '@/app/ui-store'
@@ -30,6 +31,7 @@ import { Inspector } from './inspector/inspector'
 import { TextContent, TextStyle } from './inspector/text'
 import { elementKey, emptyDoc, makeFlow, pagePaperRef, paperDims, hasTravel, mergeOrigin, profileOrigin, resolvePaper, variableValues } from './model'
 import { LayersList, Navigator, PagesList } from './panels/navigator'
+import { createJobs, renderForOutput } from './print'
 import {
   createProject, duplicateProject, LAST_KEY, overwriteServer, reloadFromServer, renameProject, saveAsTemplate, saveNow, useAutosave,
 } from './project-io'
@@ -170,6 +172,7 @@ function Studio({ projectId }: { projectId: string }) {
 }
 
 function Editor() {
+  const navigate = useNavigate()
   const bp = useBreakpoint()
   const compact = bp === 'compact'
   const inspectorOpen = useUi((s) => s.inspector[bp])
@@ -199,6 +202,8 @@ function Editor() {
   }, [cjk.data])
   const { profile } = useActiveProfile()
   const [sheet, setSheet] = React.useState<null | 'paper' | 'print' | 'export' | 'projects' | 'position' | 'template' | 'rename' | 'layers' | 'inspector' | 'text'>(null)
+  const [printing, setPrinting] = React.useState(false)
+  const printInFlight = React.useRef(false)
   const [navOpen, setNavOpen] = React.useState(true)
   const fileRef = React.useRef<HTMLInputElement>(null)
   const [accept, setAccept] = React.useState('')
@@ -326,9 +331,46 @@ function Editor() {
     if (proj.length) setSheet('projects')
   }
 
+  const printDirectly = async () => {
+    if (printInFlight.current || sheet === 'print') return
+    const machine = useLive.getState().machine
+    if (!machine?.connected || machine.busy) {
+      toast.error(machine?.connected ? '写字机正忙' : '先连接写字机')
+      return
+    }
+    printInFlight.current = true
+    setPrinting(true)
+    try {
+      const profileId = profile?.id ?? null
+      const result = await renderForOutput({ profileId })
+      if (!result.pages.length) throw new Error('没有可打印的页面')
+      if (result.pages.some((page) => page.out_of_work_area)) {
+        toast.error('内容超出机器行程', { action: { label: '打印设置', onClick: () => setSheet('print') } })
+        return
+      }
+      const jobs = await createJobs({
+        result, pages: result.pages.map((page) => page.index), name: project.name, projectId: project.id,
+        profileId, overrides: null, interactive: false,
+      })
+      toast.success(jobs[0]?.status === 'queued' ? `已加入队列（${jobs.length} 个任务）` : '已开始打印', {
+        action: { label: '查看进度', onClick: () => navigate('/jobs') },
+      })
+    } catch (error) {
+      const penUnknown = isApiError(error) && error.code === 'pen_unknown'
+      toast.error('无法开始打印', {
+        description: penUnknown ? '请先抬笔并设为原点（含 Z），再从任务页开始。' : errText(error),
+        action: penUnknown ? { label: '查看任务', onClick: () => navigate('/jobs') } : undefined,
+      })
+    } finally {
+      printInFlight.current = false
+      setPrinting(false)
+    }
+  }
+
   const cmd: StudioCommands = {
     openProjects: () => setSheet('projects'),
-    openPrint: () => setSheet('print'),
+    openPrint: () => { if (!printInFlight.current) setSheet('print') },
+    print: () => void printDirectly(),
     openExport: () => setSheet('export'),
     openPosition: () => setSheet('position'),
     openImport,
@@ -398,7 +440,7 @@ function Editor() {
       }
       actions={
         <>
-          {canEdit ? <PrimaryActions cmd={cmd} compact={compact} /> : null}
+          {canEdit ? <PrimaryActions cmd={cmd} compact={compact} printing={printing} /> : null}
         </>
       }
     >

@@ -78,7 +78,6 @@ export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: f
   const [range, setRange] = React.useState<'all' | 'current' | 'custom'>('all')
   const [custom, setCustom] = React.useState('1')
   const [previewIndex, setPreviewIndex] = React.useState<number | null>(null)
-  const [ready, setReady] = React.useState(false)
   const [framed, setFramed] = React.useState(false)
   const [framing, setFraming] = React.useState(false)
   const [frameMode, setFrameMode] = React.useState<FrameMode>('up')
@@ -88,7 +87,6 @@ export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: f
 
   React.useEffect(() => {
     if (open) {
-      setReady(false)
       setFramed(false)
       setProfileId(null)
       setPreviewIndex(null)
@@ -206,7 +204,7 @@ export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: f
     }
     setStarting(true)
     try {
-      const jobs = await createJobs({ result, pages: selected, name: project.name, profileId: profile?.id ?? null, overrides: copies > 1 ? { copies } : null, start: true, allowOutOfBounds: outWork && isAdmin, penUpConfirmed: ready })
+      const jobs = await createJobs({ result, pages: selected, name: project.name, projectId: project.id, profileId: profile?.id ?? null, overrides: copies > 1 ? { copies } : null, interactive: true, allowOutOfBounds: outWork && isAdmin })
       onOpenChange(false)
       const startedNow = jobs[0]?.status !== 'queued'
       toast.success(startedNow ? `已开始 · ${formatDurationSpoken(total)}` : `已加入队列（${jobs.length} 个任务）`, {
@@ -220,14 +218,14 @@ export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: f
     }
   }
 
-  const blockReason = !connected ? '先连接写字机' : busyMachine ? '写字机正忙' : !result ? (busy ? '正在计算…' : '没有算出结果，请重试') : !selected.length ? '没有选中页面' : outWork && !isAdmin ? '内容超出机器行程' : !ready ? '请确认笔已抬起并停在起点' : null
+  const blockReason = !connected ? '先连接写字机' : busyMachine ? '写字机正忙' : busy ? '正在计算…' : !result ? '没有算出结果，请重试' : !selected.length ? '没有选中页面' : outWork && !isAdmin ? '内容超出机器行程' : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="xl" onOpenAutoFocus={(e) => e.preventDefault()} className={cn(compact ? 'h-[100dvh] max-h-none w-screen max-w-none rounded-none' : 'h-[min(680px,calc(100dvh-32px))] max-w-[880px]')}>
         <div className="flex h-full min-h-0 flex-col">
           <div className="hairline-b flex shrink-0 items-center gap-3 px-5 py-3 pr-12">
-            <DialogTitle>打印</DialogTitle>
+            <DialogTitle>打印设置</DialogTitle>
             <span className="truncate text-footnote text-secondary-label">
               {project.name} · {outs.length || doc.pages.length} 页
             </span>
@@ -429,18 +427,13 @@ export function PrintSheet({ open, onOpenChange, paper: fallbackPaper, origin: f
               {compact ? '导出' : '导出 G 代码'}
             </Button>
             <div className={cn('min-w-2 flex-1', compact && 'hidden')} />
-            <label className={cn('flex items-center gap-2 text-body', compact && 'order-1 w-full')}>
-              <input type="checkbox" checked={ready} onChange={(e) => setReady(e.currentTarget.checked)} className="size-4 accent-[rgb(var(--accent))]" />
-              {compact ? '纸张和笔已就位：笔已抬起，停在原点' : '纸张和笔已就位：纸已放好，笔已抬起，停在原点位置'}
-            </label>
-            {!framed && connected ? <span className={cn('text-footnote text-on-tint-orange', compact && 'order-1 w-full -mt-1')}>建议先走边框确认位置</span> : null}
             {outWork && isAdmin ? <span className="flex items-center gap-1 text-footnote text-red"><TriangleAlert className="size-3.5" />超出行程</span> : null}
             <Button onClick={() => onOpenChange(false)} className={compact ? 'order-2' : undefined}>取消</Button>
             <Button className={compact ? 'order-2 flex-1' : undefined} variant={outWork ? 'destructive' : 'filled'} loading={starting} disabled={!!blockReason} onClick={start} title={blockReason ?? undefined}>
               {outWork && isAdmin ? '仍要打印…' : '开始打印'}
             </Button>
           </div>
-          {blockReason && blockReason !== '请确认笔已抬起并停在起点' ? <p className="-mt-2 px-5 pb-3 text-right text-footnote text-secondary-label">{blockReason}</p> : null}
+          {blockReason ? <p className="-mt-2 px-5 pb-3 text-right text-footnote text-secondary-label">{blockReason}</p> : null}
         </div>
       </DialogContent>
     </Dialog>

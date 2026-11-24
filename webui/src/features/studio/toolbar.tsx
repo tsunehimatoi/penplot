@@ -46,6 +46,7 @@ export function BackgroundToggle() {
 export interface StudioCommands {
   openProjects: () => void
   openPrint: () => void
+  print: () => void
   openExport: () => void
   openPosition: () => void
   openImport: (accept?: string) => void
@@ -228,14 +229,25 @@ export function InsertMenu({ cmd, trigger }: { cmd: StudioCommands; trigger?: Re
   )
 }
 
-export function PrimaryActions({ cmd, compact }: { cmd: StudioCommands; compact: boolean }) {
+export function PrimaryActions({ cmd, compact, printing }: { cmd: StudioCommands; compact: boolean; printing: boolean }) {
   const animate = useStudio((s) => s.animate)
+  const printControl = (
+    <div role="group" aria-label="打印操作" className={cn('inline-flex shrink-0 items-stretch', !compact && 'ml-1')}>
+      <Button variant={compact ? 'tinted' : 'filled'} size={compact ? 'sm' : 'md'}
+        icon={compact ? undefined : <Printer />} className="rounded-e-none" loading={printing} onClick={cmd.print}>
+        打印
+      </Button>
+      <Button variant={compact ? 'tinted' : 'filled'} size={compact ? 'sm' : 'md'}
+        aria-label="打印设置" aria-haspopup="dialog" title="打印设置" disabled={printing} onClick={cmd.openPrint}
+        className={cn('rounded-s-none border-s px-1.5 pointer-coarse:px-2.5', compact ? 'border-accent/20' : 'border-white/30')}>
+        <ChevronDown aria-hidden />
+      </Button>
+    </div>
+  )
   if (compact) {
     return (
       <>
-        <IconButton label="打印" shortcut="mod+p" onClick={cmd.openPrint} variant="tinted" size="sm">
-          <Printer />
-        </IconButton>
+        {printControl}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <IconButton label="更多" size="sm">
@@ -283,9 +295,7 @@ export function PrimaryActions({ cmd, compact }: { cmd: StudioCommands; compact:
       <IconButton label="导出" shortcut="mod+shift+e" onClick={cmd.openExport}>
         <Download />
       </IconButton>
-      <Button variant="filled" size="md" icon={<Printer />} onClick={cmd.openPrint} title="打印（⌘P）" className="ml-1">
-        打印
-      </Button>
+      {printControl}
     </>
   )
 }

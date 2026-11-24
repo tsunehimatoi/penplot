@@ -1,5 +1,5 @@
 /** Output pipeline: render the doc for print/export (with the per-job placement offset), frame, create jobs. */
-import { guardStart } from '@/api/job-guard'
+import { guardStart, type StartFlags } from '@/api/job-guard'
 import { api, errorMessage, isApiError } from '@/api/client'
 import { qk, queryClient } from '@/api/query'
 import { renderProject, type Job, type PrintOverrides, type ProfileDoc, type ProjectDoc, type RenderResult, type TaskWatch } from '@/api/studio'
@@ -125,29 +125,25 @@ export interface StartOptions {
   result: RenderResult
   pages: number[]
   name: string
+  projectId: string
   profileId: string | null
   overrides: PrintOverrides | null
-  start: boolean
+  interactive: boolean
   /** Admin already confirmed printing beyond the work area. */
   allowOutOfBounds?: boolean
-  /** Checklist「纸张和笔已就位：笔已抬起，停在原点位置」was ticked → POST …/start {pen_up_confirmed:true}. */
-  penUpConfirmed?: boolean
 }
 
 /**
- * Create one queued job per output page, then start the first through the start guard
- * (pen_unknown → 「笔已抬起，开始」 retries with pen_up_confirmed; out_of_work_area → server issues / admin override;
- * job_active → stays queued).
- * Creating with start:false first means a refused start never leaves a duplicate job behind.
+ * Queue the output pages before starting the first. The settings dialog can guide
+ * recovery from a start-time guard. Direct printing reports the server error without a dialog.
  */
 export async function createJobs(o: StartOptions): Promise<Job[]> {
-  const s = useStudio.getState()
   const batchId = `b${uid('').slice(0, 8)}`
   const jobs: Job[] = []
   for (let i = 0; i < o.pages.length; i++) {
     const idx = o.pages[i]
     const body = {
-      source: { render_id: o.result.rid, page: idx, project_id: s.project?.id ?? null },
+      source: { render_id: o.result.rid, page: idx, project_id: o.projectId },
       name: o.pages.length > 1 ? `${o.name} 第${idx + 1}页` : o.name,
       profile_id: o.profileId,
       overrides: o.overrides,
@@ -157,23 +153,24 @@ export async function createJobs(o: StartOptions): Promise<Job[]> {
     }
     jobs.push(await api.post<Job>('/jobs', body, { timeoutMs: 120_000, idempotencyKey: true }))
   }
-  if (o.start && jobs[0]) {
+  if (jobs[0]) {
     try {
-      const started = await guardStart(
-        ({ allowOutOfBounds, penUpConfirmed }) =>
-          api.post<Job>(`/jobs/${jobs[0].id}/start`, {
-            ...(allowOutOfBounds ? { allow_out_of_bounds: true } : {}),
-            ...(penUpConfirmed ? { pen_up_confirmed: true } : {}),
-          }),
-        { allowOutOfBounds: !!o.allowOutOfBounds, penUpConfirmed: !!o.penUpConfirmed },
-      )
+      const attempt = ({ allowOutOfBounds, penUpConfirmed }: StartFlags) =>
+        api.post<Job>(`/jobs/${jobs[0].id}/start`, {
+          ...(allowOutOfBounds ? { allow_out_of_bounds: true } : {}),
+          ...(penUpConfirmed ? { pen_up_confirmed: true } : {}),
+        })
+      const started = o.interactive
+        ? await guardStart(attempt, { allowOutOfBounds: o.allowOutOfBounds })
+        : await attempt({ allowOutOfBounds: false, penUpConfirmed: false })
       if (started) jobs[0] = started
     } catch (e) {
       if (isApiError(e) && e.status === 409 && e.code === 'job_active') {
         toast.info('已有任务在运行，新任务已加入队列', { description: '当前任务完成后，可在任务页开始。' })
       } else throw e
+    } finally {
+      void queryClient.invalidateQueries({ queryKey: qk.jobs.all })
     }
   }
-  void queryClient.invalidateQueries({ queryKey: qk.jobs.all })
   return jobs
 }

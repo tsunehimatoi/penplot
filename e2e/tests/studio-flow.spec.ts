@@ -3,6 +3,55 @@ import { uniq } from '../helpers/env'
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
+test('print button starts the job directly and the arrow opens settings', async ({ page }) => {
+  const name = uniq('E2E直接打印')
+  const response = await page.request.post('/api/v1/projects', { data: {
+    name,
+    doc: { name, pages: [{ id: 'p1', elements: [{
+      id: 'print', type: 'flow_text',
+      props: { text: 'Hello', format: 'plain', font_id: 'builtin', seed: 42 },
+    }] }] },
+  } })
+  await expect(response).toBeOK()
+  const project = await response.json()
+  const request = page.request
+  const machine = async () => (await request.get('/api/v1/machine/status')).json()
+  if (!(await machine()).connected) await request.post('/api/v1/machine/connect', { data: {} })
+  await expect.poll(async () => (await machine()).connected).toBe(true)
+  if ((await machine()).grbl_state.startsWith('Alarm')) {
+    await expect(await request.post('/api/v1/machine/unlock', { data: {} })).toBeOK()
+  }
+  await expect.poll(async () => (await machine()).grbl_state).toBe('Idle')
+  await expect(await request.post('/api/v1/machine/pen', { data: { state: 'up' } })).toBeOK()
+  await expect(await request.post('/api/v1/machine/zero', { data: { axes: 'xyz' } })).toBeOK()
+
+  await page.goto('/welcome')
+  await page.getByRole('button', { name: '以后再说' }).click()
+  await expect(page).toHaveURL(/\/studio/)
+  await page.goto('/studio/' + project.id)
+  const controls = page.getByRole('group', { name: '打印操作' })
+  await controls.getByRole('button', { name: '打印设置', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: '打印设置', exact: true })
+  await expect(settings).toBeVisible()
+  await expect(settings.getByRole('button', { name: '开始打印', exact: true })).toBeEnabled()
+  await expect(settings.getByText(/纸张和笔已就位|建议先走边框确认位置/)).toHaveCount(0)
+  await settings.getByRole('button', { name: '取消', exact: true }).click()
+
+  const start = page.waitForResponse((res) =>
+    res.request().method() === 'POST' && /\/api\/v1\/jobs\/[^/]+\/start$/.test(new URL(res.url()).pathname),
+  )
+  await controls.getByRole('button', { name: '打印', exact: true }).click()
+  const started = await start
+  expect(started.ok(), await started.text()).toBe(true)
+  expect(started.request().postDataJSON()).toEqual({})
+  const job = await started.json()
+  expect(job.name).toBe(name)
+  await expect(page.getByText('已开始打印', { exact: true })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
+  await expect.poll(async () => (await (await request.get('/api/v1/jobs/' + job.id)).json()).status).toBe('done')
+})
+
 test('paste omits empty clipboard list shells and preserves real lists', async ({ page, viewport }) => {
   test.skip((viewport?.width ?? 1440) < 768, 'desktop studio editor')
   const name = uniq('E2E粘贴')
