@@ -25,6 +25,7 @@ import { outputIndex, pagePolylines, useRender } from '../render-engine'
 import { usePagination } from '../pagination'
 import { currentPage, studio, useStudio } from '../store'
 import { ElementView, useElementRender } from './element-view'
+import { CanvasTextLayer } from './canvas-text-editor'
 import { Guides, HANDLES, handlePoint, OriginOverlay, RULER, Rulers, SelectionFrame, sx, sy, type Handle, type Viewport } from './overlays'
 import { StrokeAnimation } from './stroke-anim'
 import { aroundPivot, bgCorners, imgToPage, liveBackground, normDeg, pageToImg, type PageBackground } from '../background'
@@ -66,6 +67,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
     useShallow((s) => ({
       doc: s.doc, view: s.view, selection: s.selection, tool: s.tool, spaceHand: s.spaceHand, zoom: s.zoom, overlays: s.overlays,
       fitRequest: s.fitRequest, animate: s.animate, bgAlign: s.bgAlign, bgCalib: s.bgCalib, bgTouch: s.bgTouch, readOnly: s.readOnly,
+      inlineEditId: s.inlineEditId, strokePreview: s.strokePreview,
     })),
   )
   const pagination = usePagination(st.doc)
@@ -480,10 +482,17 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
   }
 
   const onDoubleClick = (e: React.MouseEvent) => {
-    const id = ((e.target as SVGElement).closest?.('[data-el-id]') as SVGElement | null)?.getAttribute('data-el-id') ?? null
+    let id = ((e.target as SVGElement).closest?.('[data-el-id]') as SVGElement | null)?.getAttribute('data-el-id') ?? null
+    if (!id) {
+      id =
+        document
+          .elementsFromPoint(e.clientX, e.clientY)
+          .map((node) => (node as SVGElement).closest?.('[data-el-id]')?.getAttribute('data-el-id'))
+          .find(Boolean) ?? null
+    }
     const el = id ? els.find((x) => x.id === id) : null
     if (el && (el.type === 'text' || el.type === 'flow_text')) {
-      useStudio.setState({ selection: [el.id], editTextOf: el.id })
+      useStudio.setState({ selection: [el.id], inlineEditId: el.id, strokePreview: false })
       onRequestTextEdit?.(el.id)
       return
     }
@@ -679,6 +688,7 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
                     outPaper={!!bounds.get(el.id)?.outPaper}
                     outWork={!!bounds.get(el.id)?.outWork}
                     hovered={hover === el.id && !st.selection.includes(el.id) && st.tool === 'select'}
+                    strokePreview={st.strokePreview}
                   />
                 ),
               )}
@@ -738,6 +748,14 @@ export function Canvas({ paper, origin, workArea, insetBottom = 0, onRequestText
             <Guides v={v} lines={guides} />
             {st.overlays.rulers && !touch ? <Rulers v={v} highlight={selBox} /> : null}
           </svg>
+          <CanvasTextLayer
+            paper={paper}
+            v={v}
+            els={els}
+            sub={st.view.sub}
+            strokePreview={st.strokePreview}
+            inlineEditId={st.inlineEditId}
+          />
           {st.animate && pageRender.result && outIdx != null ? <StrokeAnimation key={`${pageRender.result.rid}/${outIdx}`} rid={pageRender.result.rid} index={outIdx} v={v} origin={originPoint(origin, pw, ph, cbox)} /> : null}
         </div>
       </ContextMenuTrigger>

@@ -6,7 +6,7 @@ import { useElementRender } from '../element-render'
 export { useElementRender } from '../element-render'
 
 export const ElementView = React.memo(function ElementView({
-  el, paper, zoom, sub, dim, showSource, outPaper, outWork, hovered,
+  el, paper, zoom, sub, dim, showSource, outPaper, outWork, hovered, strokePreview = true,
 }: {
   el: Element
   paper: PaperBase
@@ -17,11 +17,18 @@ export const ElementView = React.memo(function ElementView({
   outPaper: boolean
   outWork: boolean
   hovered: boolean
+  strokePreview?: boolean
 }) {
   const { r, stale } = useElementRender(el)
   const lb = localBox(el, paper, r?.bbox)
   const strokeW = Math.max(0.9, 0.3 * zoom)
-  const d = el.type === 'flow_text' ? r?.pages?.[sub]?.d ?? (sub === 0 ? r?.d : '') : r?.d
+  const isTextEl = el.type === 'flow_text' || el.type === 'text'
+  const hideStrokeAndPlaceholder = !strokePreview && isTextEl
+  const d = hideStrokeAndPlaceholder
+    ? undefined
+    : el.type === 'flow_text'
+      ? r?.pages?.[sub]?.d ?? (sub === 0 ? r?.d : '')
+      : r?.d
   const isSourceImage = el.type === 'image' && (showSource || !d)
   return (
     <g transform={svgTransform(el.transform)} opacity={el.hidden ? 0.3 : 1} data-el={el.id}>
@@ -50,8 +57,8 @@ export const ElementView = React.memo(function ElementView({
           style={{ pointerEvents: 'none' }}
         />
       ) : null}
-      {!d && (!r || r.status === 'pending') ? <Placeholder box={lb} label={r?.progress ? `渲染中 ${Math.round(r.progress * 100)}%` : '渲染中…'} /> : null}
-      {r?.status === 'error' ? <Placeholder box={lb} label={r.error ?? '渲染失败'} error /> : null}
+      {!hideStrokeAndPlaceholder && !d && (!r || r.status === 'pending') ? <Placeholder box={lb} label={r?.progress ? `渲染中 ${Math.round(r.progress * 100)}%` : '渲染中…'} /> : null}
+      {!hideStrokeAndPlaceholder && r?.status === 'error' ? <Placeholder box={lb} label={r.error ?? '渲染失败'} error /> : null}
       {outPaper || outWork ? (
         <rect
           x={lb.x}

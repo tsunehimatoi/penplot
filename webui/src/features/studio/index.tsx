@@ -123,7 +123,9 @@ function Studio({ projectId }: { projectId: string }) {
       localStorage.setItem(LAST_KEY, q.data.id)
       // new letter project: put the cursor straight into the body (05-review §1.2-2)
       const flow = q.data.doc.pages[0]?.elements.find((e) => e.type === 'flow_text')
-      if (flow && flow.type === 'flow_text' && !flow.props.text) useStudio.setState({ selection: [flow.id], editTextOf: flow.id })
+      if (flow && flow.type === 'flow_text' && !flow.props.text) {
+        useStudio.setState({ selection: [flow.id], editTextOf: flow.id, inlineEditId: flow.id, strokePreview: false })
+      }
     }
   }, [q.data])
   React.useEffect(() => () => {
@@ -175,6 +177,7 @@ function Editor() {
   const version = useStudio((s) => s.version)
   const view = useStudio((s) => s.view)
   const saveState = useStudio((s) => s.saveState)
+  const strokePreview = useStudio((s) => s.strokePreview)
   const bgAlign = useStudio((s) => s.bgAlign && !!s.doc?.pages[s.view.page]?.background)
   const papers = usePapers()
   useFonts()
@@ -216,6 +219,7 @@ function Editor() {
   const vars = React.useMemo(() => variableValues(doc), [doc])
 
   // element-local renders (keys computed synchronously so the canvas can read them this render)
+  // When !strokePreview, skip text/flow_text so typing & formatting never trigger /preview requests.
   const items = React.useMemo(() => {
     const out: RenderItem[] = []
     for (const p of doc.pages) {
@@ -224,15 +228,21 @@ function Editor() {
       for (const el of p.elements) {
         const key = elementKey(el, pp, vars)
         lastKeys.set(el.id, key)
+        if (!strokePreview && (el.type === 'flow_text' || el.type === 'text')) continue
         out.push({ key, el, paper: ref })
       }
     }
     return out
-  }, [doc, papers.data, vars])
+  }, [doc, papers.data, vars, strokePreview])
   React.useEffect(() => {
     if (papers.data) requestElements(project.id, items, vars)
   }, [items, project.id, vars, papers.data])
-  usePageRender(papers.data ? project.id : null, doc, version, vars)
+  React.useEffect(() => {
+    if (!strokePreview || !papers.data) return
+    const s = useStudio.getState()
+    if (s.doc) void renderDocNow(project.id, s.doc, s.version, vars)
+  }, [strokePreview, project.id, papers.data, vars])
+  usePageRender(strokePreview && papers.data ? project.id : null, doc, version, vars)
 
   // dropped / queued imports
   React.useEffect(() => {
@@ -324,6 +334,7 @@ function Editor() {
     preview: () => {
       const s = useStudio.getState()
       if (s.animate) return s.setAnimate(false)
+      s.setStrokePreview(true)
       void renderDocNow(project.id, s.doc!, s.version, vars).then(() => useStudio.getState().setAnimate(true))
     },
     openInspector: () => setSheet('inspector'),

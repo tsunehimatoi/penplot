@@ -292,7 +292,17 @@ export function PrimaryActions({ cmd, compact }: { cmd: StudioCommands; compact:
 
 /** Floating bar at the bottom of the canvas: zoom, preview mode, overlays, stats. */
 export function CanvasBar({ compact }: { compact: boolean }) {
-  const { zoom, overlays, animate, view, version, tool } = useStudio(useShallow((s) => ({ zoom: s.zoom, overlays: s.overlays, animate: s.animate, view: s.view, version: s.version, tool: s.tool })))
+  const { zoom, overlays, animate, view, version, tool, strokePreview } = useStudio(
+    useShallow((s) => ({
+      zoom: s.zoom,
+      overlays: s.overlays,
+      animate: s.animate,
+      view: s.view,
+      version: s.version,
+      tool: s.tool,
+      strokePreview: s.strokePreview,
+    })),
+  )
   const page = useRender((s) => s.page)
   const idx = outputIndex(page.result, view.page, view.sub)
   const rp = idx != null ? page.result?.pages[idx] : null
@@ -329,6 +339,18 @@ export function CanvasBar({ compact }: { compact: boolean }) {
         <Maximize />
       </IconButton>
       <span className="mx-0.5 h-4 w-px bg-separator" />
+      <Button
+        type="button"
+        size="sm"
+        variant={strokePreview ? 'filled' : 'tinted'}
+        icon={strokePreview ? <Pencil /> : <PenTool />}
+        onClick={() => useStudio.getState().setStrokePreview(!strokePreview)}
+        title={strokePreview ? '返回画布所见即所得直接编辑' : '按当前排版计算一次后端单线笔画预览'}
+        aria-pressed={strokePreview}
+        className="h-6 px-2 text-footnote"
+      >
+        {strokePreview ? '返回编辑' : '预览笔画'}
+      </Button>
       <Segmented
         value={animate ? 'order' : 'static'}
         onValueChange={(v) => useStudio.getState().setAnimate(v === 'order')}
@@ -380,8 +402,10 @@ export function CanvasBar({ compact }: { compact: boolean }) {
               </>
             ) : page.status === 'error' ? (
               <span className="text-red">{page.error}</span>
-            ) : (
+            ) : strokePreview ? (
               '正在计算…'
+            ) : (
+              '所见即所得'
             )}
           </span>
         </>

@@ -105,6 +105,11 @@ export function StudioShortcuts({ cmd }: { cmd: StudioCommands }) {
     'escape',
     () => {
       const s = st.getState()
+      if (s.inlineEditId) {
+        s.setInlineEdit(null)
+        ;(document.querySelector('[data-studio-canvas]') as HTMLElement | null)?.focus({ preventScroll: true })
+        return
+      }
       if (s.bgCalib) return s.setBgCalib(null)
       if (s.bgAlign) return s.setBgAlign(false)
       if (s.tool !== 'select') return s.setTool('select')
@@ -113,7 +118,7 @@ export function StudioShortcuts({ cmd }: { cmd: StudioCommands }) {
       if (job && isJobActive(job) && job.status === 'running') return void confirmStopJob(job)
       return false
     },
-    { id: 'studio.esc', hidden: true, when: free },
+    { id: 'studio.esc', hidden: true, when: free, allowInEditable: true },
   )
   useShortcut(
     'tab',
@@ -155,7 +160,7 @@ export function StudioShortcuts({ cmd }: { cmd: StudioCommands }) {
       const s = st.getState()
       const el = currentPage(s)?.elements.find((e) => e.id === s.selection[0])
       if (!el) return false
-      if (el.type === 'text' || el.type === 'flow_text') s.setEditText(el.id)
+      if (el.type === 'text' || el.type === 'flow_text') s.setInlineEdit(el.id)
       cmd.openTextEdit?.()
     },
     { id: 'studio.enter', hidden: true },

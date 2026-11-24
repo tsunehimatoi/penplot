@@ -74,6 +74,10 @@ export interface StudioState {
   animate: boolean
   /** Element id whose text should be edited (focus inspector textarea / open sheet). */
   editTextOf: string | null
+  /** Element id currently being edited inline on the canvas. */
+  inlineEditId: string | null
+  /** Whether to render backend single-stroke paths on the canvas instead of instant WYSIWYG. */
+  strokePreview: boolean
 
   load: (p: Project) => void
   close: () => void
@@ -102,6 +106,8 @@ export interface StudioState {
   dragging: string[]
   setAnimate: (b: boolean) => void
   setEditText: (id: string | null) => void
+  setInlineEdit: (id: string | null) => void
+  setStrokePreview: (v: boolean) => void
   /** 对齐背景 mode: the page background becomes the only editable object on the canvas. */
   bgAlign: boolean
   setBgAlign: (b: boolean) => void
@@ -144,13 +150,15 @@ export const useStudio = create<StudioState>((set, get) => ({
   selection: [],
   tool: 'select',
   readOnly: false,
-  setReadOnly: (v) => set(v ? { readOnly: true, tool: 'hand', selection: [] } : { readOnly: false }),
+  setReadOnly: (v) => set(v ? { readOnly: true, tool: 'hand', selection: [], inlineEditId: null } : { readOnly: false }),
   spaceHand: false,
   zoom: { zoom: 2, panX: 40, panY: 40 },
   fitRequest: 0,
   overlays: loadOverlays(),
   animate: false,
   editTextOf: null,
+  inlineEditId: null,
+  strokePreview: false,
   placement: { dx: 0, dy: 0 },
   dragging: [],
   setPlacement: (p) => {
@@ -180,10 +188,13 @@ export const useStudio = create<StudioState>((set, get) => ({
       selection: [],
       fitRequest: get().fitRequest + 1,
       placement: loadPlacement(p.id),
+      editTextOf: null,
+      inlineEditId: null,
+      strokePreview: false,
       bgAlign: false,
       bgCalib: null,
     }),
-  close: () => set({ project: null, doc: null, past: [], future: [], selection: [] }),
+  close: () => set({ project: null, doc: null, past: [], future: [], selection: [], editTextOf: null, inlineEditId: null, strokePreview: false }),
   setProjectMeta: (p) => {
     const cur = get().project
     if (cur) set({ project: { ...cur, ...p } })
@@ -254,13 +265,24 @@ export const useStudio = create<StudioState>((set, get) => ({
     })
   },
 
-  setView: (v) =>
+  setView: (v) => {
+    const prev = get().view
+    const pageChanged = v.page !== prev.page
+    const viewChanged = pageChanged || v.sub !== prev.sub
     set({
       view: v,
-      selection: v.page === get().view.page ? get().selection.filter((id) => get().doc?.pages[v.page]?.elements.some((e) => e.id === id && elementOnPage(e, v.sub))) : [],
-      ...(v.page !== get().view.page ? { bgCalib: null } : {}),
-    }),
-  select: (ids) => set({ selection: ids }),
+      selection: !pageChanged ? get().selection.filter((id) => get().doc?.pages[v.page]?.elements.some((e) => e.id === id && elementOnPage(e, v.sub))) : [],
+      ...(pageChanged ? { bgCalib: null } : {}),
+      ...(viewChanged ? { inlineEditId: null } : {}),
+    })
+  },
+  select: (ids) => {
+    const curInline = get().inlineEditId
+    set({
+      selection: ids,
+      ...(ids.length === 0 || (curInline && !ids.includes(curInline)) ? { inlineEditId: null } : {}),
+    })
+  },
   toggleSelect: (id) => {
     const s = get().selection
     set({ selection: s.includes(id) ? s.filter((x) => x !== id) : [...s, id] })
@@ -279,7 +301,9 @@ export const useStudio = create<StudioState>((set, get) => ({
     }
   },
   setAnimate: (b) => set({ animate: b }),
-  setEditText: (id) => set({ editTextOf: id }),
+  setEditText: (id) => set(id ? { editTextOf: id, inlineEditId: id, strokePreview: false } : { editTextOf: null }),
+  setInlineEdit: (id) => set(id ? { inlineEditId: id, strokePreview: false } : { inlineEditId: null }),
+  setStrokePreview: (v) => set(v ? { strokePreview: true, inlineEditId: null } : { strokePreview: false }),
   bgAlign: false,
   setBgAlign: (b) => set(b ? { bgAlign: true, selection: [], tool: 'select', animate: false } : { bgAlign: false, bgCalib: null }),
   bgCalib: null,

@@ -1,16 +1,27 @@
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Dices, TriangleAlert } from 'lucide-react'
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Dices, FileUp, Maximize2, Pencil, TriangleAlert } from 'lucide-react'
 import * as React from 'react'
-import type { FlowTextElement, Jitter, TextElement } from '@/api/studio'
+import { errorMessage } from '@/api/client'
+import { importFile, type FlowTextElement, type Jitter, type TextElement } from '@/api/studio'
 import { Button, NumberField, Segmented, Textarea } from '@/components/ui'
 import { cn } from '@/lib/cn'
+import { plainToHtml } from '@/lib/html-to-md'
+import { toast } from '@/lib/toast'
 import { JITTER_PRESETS, NO_JITTER, DEFAULT_RICH_STYLE } from '../model'
+import { usePagination } from '../pagination'
 import { studio, useStudio } from '../store'
 import { useElementRender } from '../canvas/element-view'
 import { Help } from '../ext'
 import { FontConfig } from './font-config'
 import { pushRecentFont, useBestFont } from './font-picker'
 import { Note, Num, RangeRow, Row, Section, SegRow, SliderRow, SwitchRow } from './controls'
-import { RichFlowEditor } from './rich-editor'
+import {
+  normalizeEditorHtml,
+  RichEditorDialog,
+  RichFlowEditor,
+  toVisualHtml,
+  type EditorMode,
+  type FlowFormat,
+} from './rich-editor'
 
 const ALIGN = [
   { value: 'L' as const, icon: AlignLeft, ariaLabel: '左对齐' },
@@ -19,32 +30,166 @@ const ALIGN = [
   { value: 'D' as const, icon: AlignJustify, ariaLabel: '分散对齐' },
 ]
 
+function stripPlainChars(text: string, format?: FlowFormat): number {
+  if (!text) return 0
+  if (format === 'html') {
+    return text.replace(/<[^>]+>/g, '').replace(/\s+/g, '').length
+  }
+  return text.replace(/\s+/g, '').length
+}
+
 export function TextContent({ el, autoFocus }: { el: TextElement | FlowTextElement; autoFocus?: boolean }) {
   const ref = React.useRef<HTMLTextAreaElement>(null)
-  const editOf = useStudio((s) => s.editTextOf)
-  React.useEffect(() => {
-    if (editOf === el.id || autoFocus) {
-      ref.current?.focus()
-      ref.current?.select()
-      useStudio.getState().setEditText(null)
-    }
-  }, [editOf, el.id, autoFocus])
+  const fileRef = React.useRef<HTMLInputElement>(null)
+  const [expanded, setExpanded] = React.useState(false)
+  const [dlgMode, setDlgMode] = React.useState<EditorMode>('visual')
+  const strokePreview = useStudio((s) => s.strokePreview)
+  const inlineEditId = useStudio((s) => s.inlineEditId)
+  const doc = useStudio((s) => s.doc)
+  const pagination = usePagination(doc)
   const { r } = useElementRender(el)
+
+  const pageCount = React.useMemo(() => {
+    if (!doc) return 1
+    const pi = doc.pages.findIndex((p) => p.elements.some((e) => e.id === el.id))
+    return Math.max(1, pagination.filter((p) => p.page === (pi >= 0 ? pi : 0)).length)
+  }, [doc, el.id, pagination])
+
+  const charCount = el.type === 'flow_text'
+    ? stripPlainChars(el.props.text, el.props.format)
+    : stripPlainChars(el.props.text)
+
+  const handleImportFiles = async (files: FileList | null) => {
+    const file = files?.[0]
+    if (!file) return
+    try {
+      const res = await importFile(file)
+      if (res.kind === 'document') {
+        const html = normalizeEditorHtml(toVisualHtml(res.data.content, res.data.format as FlowFormat))
+        studio.setProps(el.id, { text: html, format: 'html' })
+        if (res.data.warnings?.length) toast.warning(file.name, { description: res.data.warnings.join('；') })
+        else toast.success(`已导入 ${file.name}`)
+      } else if (res.kind === 'text') {
+        const html = normalizeEditorHtml(plainToHtml(res.data.text))
+        studio.setProps(el.id, { text: html, format: 'html' })
+        toast.success(`已导入 ${file.name}`)
+      } else {
+        toast.error('请选择 .md / .docx / .html / .txt 文件')
+      }
+    } catch (err) {
+      toast.error(`导入失败：${file.name}`, { description: errorMessage(err) })
+    } finally {
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  // Compact sheet still provides a direct editor when opened explicitly
+  if (autoFocus) {
+    return (
+      <Section title={el.type === 'flow_text' ? '正文' : '内容'}>
+        {el.type === 'flow_text' ? (
+          <RichFlowEditor el={el} textareaRef={ref} />
+        ) : (
+          <Textarea
+            ref={ref}
+            autoFocus
+            value={el.props.text}
+            onChange={(e) => studio.setProps(el.id, { text: e.currentTarget.value }, 'text')}
+            rows={4}
+            className="font-[inherit] text-body"
+            placeholder="输入文字，可使用 {{变量}}"
+            aria-label="文字内容"
+          />
+        )}
+        {r?.missing?.length ? <MissingGlyphs el={el} missing={r.missing} /> : null}
+        {r?.overflow ? <Note tone="orange" icon={<TriangleAlert />}>文字超出文本框高度，多余的行未绘制。</Note> : null}
+      </Section>
+    )
+  }
+
   return (
     <Section title={el.type === 'flow_text' ? '正文' : '内容'}>
-      {el.type === 'flow_text' ? (
-        <RichFlowEditor el={el} textareaRef={ref} />
-      ) : (
-        <Textarea
-          ref={ref}
-          value={el.props.text}
-          onChange={(e) => studio.setProps(el.id, { text: e.currentTarget.value }, 'text')}
-          rows={4}
-          className="font-[inherit] text-body"
-          placeholder="输入文字，可使用 {{变量}}"
-          aria-label="文字内容"
+      <div className="flex flex-col gap-1.5 px-1">
+        <Button
+          type="button"
+          size="sm"
+          variant="filled"
+          icon={<Pencil />}
+          onClick={() => {
+            const st = useStudio.getState()
+            st.select([el.id])
+            st.setInlineEdit(inlineEditId === el.id ? null : el.id)
+          }}
+        >
+          {inlineEditId === el.id ? '完成画布编辑' : '画布直接编辑'}
+        </Button>
+
+        {el.type === 'flow_text' ? (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".md,.markdown,.docx,.html,.htm,.txt"
+              className="hidden"
+              onChange={(e) => void handleImportFiles(e.currentTarget.files)}
+            />
+            <div className="grid grid-cols-2 gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="gray"
+                icon={<FileUp />}
+                onClick={() => fileRef.current?.click()}
+              >
+                导入 MD / Word / HTML
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="gray"
+                icon={<Maximize2 />}
+                onClick={() => setExpanded(true)}
+              >
+                打开大窗编辑器
+              </Button>
+            </div>
+          </>
+        ) : null}
+
+        <SwitchRow
+          label="预览笔画"
+          checked={strokePreview}
+          onChange={(v) => useStudio.getState().setStrokePreview(v)}
+          hint="按需计算单线路径"
         />
-      )}
+
+        <p className="text-footnote tabular-nums text-secondary-label">
+          {charCount.toLocaleString('zh-CN')} 字{el.type === 'flow_text' ? ` · 当前共 ${pageCount} 页` : ''}
+        </p>
+      </div>
+
+      {el.type === 'flow_text' ? (
+        <RichEditorDialog
+          open={expanded}
+          onOpenChange={setExpanded}
+          elId={el.id}
+          mode={dlgMode}
+          onModeChange={setDlgMode}
+          fmt={el.props.format ?? 'plain'}
+          text={el.props.text ?? ''}
+          onCommit={(nextText, nextFmt, coalesce) =>
+            studio.setProps(el.id, { text: nextText, format: nextFmt }, coalesce ? 'text' : undefined)
+          }
+          onFormatChange={(nextFmt) => studio.setProps(el.id, { format: nextFmt })}
+          onUpgradeRich={() => {
+            const html = normalizeEditorHtml(toVisualHtml(el.props.text ?? '', el.props.format ?? 'plain'))
+            studio.setProps(el.id, { text: html, format: 'html' })
+            toast.success('已转换为可排版富文本格式')
+          }}
+          onImportClick={() => fileRef.current?.click()}
+        />
+      ) : null}
+
       {r?.missing?.length ? <MissingGlyphs el={el} missing={r.missing} /> : null}
       {r?.overflow ? <Note tone="orange" icon={<TriangleAlert />}>文字超出文本框高度，多余的行未绘制。</Note> : null}
     </Section>

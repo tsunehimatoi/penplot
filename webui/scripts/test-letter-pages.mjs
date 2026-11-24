@@ -24,7 +24,7 @@ import '/src/index.css'
 const h = React.createElement
 const doc = emptyDoc('分页回归')
 doc.print.origin = { ...DEFAULT_ORIGIN, anchor: 'content' }
-const flow = makeFlow(null, '第一页\\n第二页\\n第三页', 'plain')
+const flow = makeFlow(null, '<p>第一页</p><div data-pagebreak="true" style="page-break-after: always"></div><p>第二页</p><div data-pagebreak="true" style="page-break-after: always"></div><p>第三页</p>', 'html')
 flow.id = 'letter'
 doc.pages[0].elements = [flow, { ...makeShape('rect', 5, 5, 1), id: 'shape' }]
 doc.pages.push(newPage())
@@ -93,6 +93,7 @@ try {
   const options = page.locator('#pages [role="option"]')
   await options.nth(3).waitFor()
   assert.deepEqual(await options.evaluateAll(els => els.map(e => e.getAttribute('aria-label'))), ['第 1 页', '第 2 页', '第 3 页', '第 4 页'])
+  await page.evaluate(() => fixture.useStudio.getState().setStrokePreview(true))
   for (const number of [1, 2, 3]) {
     await page.getByRole('option', { name: '第 ' + number + ' 页', exact: true }).click()
     const hit = page.locator('#canvas [data-el-id="letter"]')
@@ -102,6 +103,7 @@ try {
     assert.equal(await page.locator('#canvas [data-el="letter"] path').first().getAttribute('d'), 'M40 ' + (40 + (number - 1) * 20) + 'h100')
     assert.equal(await page.locator('#canvas polygon').count() > 0, true, 'selection outline on every page')
   }
+  await page.evaluate(() => fixture.useStudio.getState().setStrokePreview(false))
   // Every letter page anchors to the component frame, and its origin can be dragged.
   for (const number of [1, 2, 3]) {
     await page.evaluate(() => fixture.useStudio.getState().edit(d => {
@@ -140,16 +142,23 @@ try {
   assert.equal(await page.locator('#layers [role="option"]').count(), 1, 'continuation only lists its letter')
   await page.evaluate(() => fixture.selectAll())
   assert.deepEqual(await page.evaluate(() => fixture.useStudio.getState().selection), ['letter'])
-  await page.getByLabel('文本框内容').fill('修改后的文本框')
+  await page.locator('#canvas [data-el-id="letter"]').dblclick({ position: { x: 80, y: 80 } })
+  const inlineTextbox = page.locator('#canvas').getByLabel('文本框内容')
+  await inlineTextbox.waitFor()
+  await inlineTextbox.focus()
+  await page.keyboard.type('修改后的文本框')
   assert.ok((await page.evaluate(() => fixture.useStudio.getState().doc.pages[0].elements[0].props.text)).includes('修改后的文本框'))
+  assert.equal(await page.evaluate(() => fixture.useStudio.getState().doc.pages[0].elements[0].props.format), 'html')
   await page.evaluate(() => fixture.useStudio.getState().undo())
   assert.equal(await page.evaluate(() => fixture.useStudio.getState().view.sub), 2, 'undo stays on the continuation')
   await page.evaluate(() => fixture.useStudio.getState().redo())
   assert.equal(await page.evaluate(() => fixture.useStudio.getState().view.sub), 2, 'redo stays on the continuation')
+  await page.evaluate(() => fixture.useStudio.getState().setInlineEdit(null))
   await page.evaluate(() => fixture.useStudio.getState().select([]))
   await page.getByRole('button', { name: '编辑文本框…' }).click()
   assert.equal(await page.evaluate(() => fixture.useStudio.getState().view.sub), 2, 'document inspector edits this continuation')
   assert.deepEqual(await page.evaluate(() => fixture.useStudio.getState().selection), ['letter'])
+  await page.evaluate(() => fixture.useStudio.getState().setInlineEdit(null))
   await page.evaluate(() => fixture.openPrint())
   const printDialog = page.getByRole('dialog', { name: '打印', exact: true })
   await printDialog.getByRole('radio', { name: '当前页', exact: true }).click()
@@ -210,6 +219,7 @@ try {
   await page.evaluate(() => fixture.useStudio.getState().select(['letter']))
   // A new render key must not temporarily collapse pages or lose the selected continuation.
   await page.evaluate(() => {
+    fixture.useStudio.getState().setStrokePreview(true)
     fixture.lastKeys.set('letter', 'next-render')
     fixture.useStudio.getState().edit(d => { d.pages[0].elements[0].props.seed += 1 })
     fixture.useRender.getState().set('next-render', { status: 'pending', at: 2 })

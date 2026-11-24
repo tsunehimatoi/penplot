@@ -1,6 +1,6 @@
 import {
   AlignCenter, AlignJustify, AlignLeft, AlignRight,
-  BarChart3, Bold, Code, CornerDownLeft, FileUp,
+  BarChart3, Bold, Check, Code, CornerDownLeft, FileUp,
   Heading1, Heading2, Heading3, Italic, List, ListOrdered,
   Maximize2, Pilcrow, Quote, SeparatorHorizontal, Sigma,
   Sparkles, Strikethrough, Table, Underline,
@@ -22,22 +22,22 @@ import { toast } from '@/lib/toast'
 import { studio, useStudio } from '../store'
 
 export type FlowFormat = 'plain' | 'markdown' | 'html'
-type EditorMode = 'visual' | 'source'
-type AlignKind = 'left' | 'center' | 'right' | 'justify'
-type BlockTag = 'p' | 'h1' | 'h2' | 'h3'
+export type EditorMode = 'visual' | 'source'
+export type AlignKind = 'left' | 'center' | 'right' | 'justify'
+export type BlockTag = 'p' | 'h1' | 'h2' | 'h3'
 
-const MODE_OPTIONS: { value: EditorMode; label: string }[] = [
+export const MODE_OPTIONS: { value: EditorMode; label: string }[] = [
   { value: 'visual', label: '可视化' },
   { value: 'source', label: '源码' },
 ]
 
-const FORMAT_OPTIONS: { value: FlowFormat; label: string }[] = [
+export const FORMAT_OPTIONS: { value: FlowFormat; label: string }[] = [
   { value: 'html', label: 'H5' },
   { value: 'markdown', label: 'MD' },
   { value: 'plain', label: 'TXT' },
 ]
 
-const FORMULA_PRESETS = [
+export const FORMULA_PRESETS = [
   { label: '行内公式 $...$', md: '$E = mc^2$', block: false },
   { label: '二次求根公式', md: '$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$', block: true },
   { label: '定积分', md: '$$\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}$$', block: true },
@@ -85,7 +85,7 @@ const TOP_BLOCK_TAGS = new Set([
 const ALIGNABLE_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'th', 'td', 'blockquote'])
 const HEADING_SWITCH_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
 
-interface ActiveFormatState {
+export interface ActiveFormatState {
   block: string
   align: AlignKind
   bold: boolean
@@ -98,7 +98,7 @@ interface ActiveFormatState {
   pre: boolean
 }
 
-const DEFAULT_ACTIVE: ActiveFormatState = {
+export const DEFAULT_ACTIVE: ActiveFormatState = {
   block: 'p',
   align: 'left',
   bold: false,
@@ -111,7 +111,7 @@ const DEFAULT_ACTIVE: ActiveFormatState = {
   pre: false,
 }
 
-function toVisualHtml(text: string, format: FlowFormat): string {
+export function toVisualHtml(text: string, format: FlowFormat): string {
   if (!text) return ''
   if (format === 'html') return sanitizePastedHtml(text)
   if (format === 'markdown') return markdownToHtml(text)
@@ -145,7 +145,7 @@ function stripTrailingSentinelBr(el: Element): void {
 }
 
 /** Normalize browser contentEditable DOM HTML into clean semantic HTML compatible with backend _RichHTMLParser. */
-function normalizeEditorHtml(rawHtml: string): string {
+export function normalizeEditorHtml(rawHtml: string): string {
   if (!rawHtml.trim()) return ''
   const sanitized = sanitizePastedHtml(rawHtml)
   if (!sanitized) return ''
@@ -235,7 +235,7 @@ function normalizeEditorHtml(rawHtml: string): string {
   return body.innerHTML.trim()
 }
 
-function hydrateEditorDom(editor: HTMLElement, html: string): void {
+export function hydrateEditorDom(editor: HTMLElement, html: string): void {
   editor.innerHTML = html
   for (const pb of editor.querySelectorAll('[data-pagebreak="true"], div[style*="page-break-after"], div[style*="page-break-before"]')) {
     pb.setAttribute('contenteditable', 'false')
@@ -243,28 +243,28 @@ function hydrateEditorDom(editor: HTMLElement, html: string): void {
   }
 }
 
-function getSelectionInside(editor: HTMLElement): Range | null {
+export function getSelectionInside(editor: HTMLElement): Range | null {
   const sel = window.getSelection()
   if (!sel || sel.rangeCount === 0) return null
   const range = sel.getRangeAt(0)
   return editor.contains(range.commonAncestorContainer) ? range : null
 }
 
-function setSelectionRange(range: Range): void {
+export function setSelectionRange(range: Range): void {
   const sel = window.getSelection()
   if (!sel) return
   sel.removeAllRanges()
   sel.addRange(range)
 }
 
-function placeCaretAtEnd(node: Node): void {
+export function placeCaretAtEnd(node: Node): void {
   const range = document.createRange()
   range.selectNodeContents(node)
   range.collapse(false)
   setSelectionRange(range)
 }
 
-function placeCaretInsideBlock(block: HTMLElement, atStart = false): void {
+export function placeCaretInsideBlock(block: HTMLElement, atStart = false): void {
   const range = document.createRange()
   if (isEmptyBlockNode(block)) {
     range.setStart(block, 0)
@@ -418,7 +418,7 @@ function insertAtCursor(
   return { next, ...pos }
 }
 
-function readActiveFormat(editor: HTMLElement): ActiveFormatState {
+export function readActiveFormat(editor: HTMLElement): ActiveFormatState {
   const range = getSelectionInside(editor)
   if (!range) return DEFAULT_ACTIVE
   const blk = findClosestBlock(editor, range.startContainer)
@@ -455,6 +455,32 @@ function readActiveFormat(editor: HTMLElement): ActiveFormatState {
     blockquote: !!nodeEl?.closest('blockquote'),
     pre: !!nodeEl?.closest('pre'),
   }
+}
+
+export function applyBlockAlign(ed: HTMLElement, range: Range, align: AlignKind): void {
+  const blocks = collectSelectedBlocks(ed, range)
+  for (const blk of blocks) {
+    blk.removeAttribute('align')
+    blk.style.textAlign = align
+  }
+  if (blocks.length === 1 && isEmptyBlockNode(blocks[0])) {
+    placeCaretInsideBlock(blocks[0], true)
+  }
+}
+
+export function insertBlankLine(ed: HTMLElement, range: Range): void {
+  if (ed.childNodes.length === 0 || (ed.children.length === 1 && isEmptyBlockNode(ed.children[0]) && !ed.children[0].getAttribute('style'))) {
+    ed.innerHTML = '<p><br></p><p><br></p>'
+    const second = ed.children[1] as HTMLElement
+    placeCaretInsideBlock(second, true)
+    return
+  }
+  const blk = ensureCaretInBlock(ed, range)
+  const topBlk = findTopBlockChild(ed, blk) ?? blk
+  const blank = document.createElement('p')
+  blank.innerHTML = '<br>'
+  topBlk.after(blank)
+  placeCaretInsideBlock(blank, true)
 }
 
 export function RichFlowEditor({
@@ -577,7 +603,7 @@ export function RichFlowEditor({
         </div>
       )}
 
-      <RichEditorSurface
+      <WysiwygSurface
         elId={el.id}
         mode={mode}
         fmt={fmt}
@@ -604,23 +630,55 @@ export function RichFlowEditor({
   )
 }
 
-function RichEditorSurface({
-  elId,
-  mode,
-  fmt,
-  text,
-  compact,
-  sourceRef,
-  onCommit,
-}: {
+export interface WysiwygSurfaceProps {
   elId: string
   mode: EditorMode
   fmt: FlowFormat
   text: string
-  compact: boolean
-  sourceRef: React.RefObject<HTMLTextAreaElement | null>
+  compact?: boolean
+  sourceRef?: React.RefObject<HTMLTextAreaElement | null>
   onCommit: (text: string, format: FlowFormat, coalesce?: boolean) => void
-}) {
+  autoFocus?: boolean
+  onModeChange?: (m: EditorMode) => void
+  onFormatChange?: (f: FlowFormat) => void
+  onImportClick?: () => void
+  onDone?: () => void
+  doneLabel?: string
+  showModeToggle?: boolean
+  toolbarClassName?: string
+  toolbarStyle?: React.CSSProperties
+  wrapperClassName?: string
+  wrapperStyle?: React.CSSProperties
+  editorClassName?: string
+  editorStyle?: React.CSSProperties
+  onToolbarPointerDown?: (e: React.PointerEvent) => void
+}
+
+export function WysiwygSurface({
+  elId,
+  mode,
+  fmt,
+  text,
+  compact = false,
+  sourceRef: externalSourceRef,
+  onCommit,
+  autoFocus = false,
+  onModeChange,
+  onFormatChange,
+  onImportClick,
+  onDone,
+  doneLabel = '完成',
+  showModeToggle = false,
+  toolbarClassName,
+  toolbarStyle,
+  wrapperClassName,
+  wrapperStyle,
+  editorClassName,
+  editorStyle,
+  onToolbarPointerDown,
+}: WysiwygSurfaceProps) {
+  const localSourceRef = React.useRef<HTMLTextAreaElement>(null)
+  const sourceRef = externalSourceRef ?? localSourceRef
   const editorRef = React.useRef<HTMLDivElement>(null)
   const composingRef = React.useRef(false)
   const lastEmittedHtmlRef = React.useRef<string | null>(null)
@@ -630,11 +688,13 @@ function RichEditorSurface({
 
   const editTextOf = useStudio((s) => s.editTextOf)
   React.useEffect(() => {
-    if (mode === 'visual' && editTextOf === elId && editorRef.current) {
+    if (mode === 'visual' && (editTextOf === elId || autoFocus) && editorRef.current) {
       editorRef.current.focus()
       placeCaretAtEnd(editorRef.current)
+    } else if (mode === 'source' && autoFocus && sourceRef.current) {
+      sourceRef.current.focus()
     }
-  }, [editTextOf, elId, mode])
+  }, [editTextOf, elId, mode, autoFocus, sourceRef])
 
   const externalVisualHtml = React.useMemo(
     () => normalizeEditorHtml(toVisualHtml(text, fmt)),
@@ -720,16 +780,7 @@ function RichEditorSurface({
   }
 
   const applyAlignment = (align: AlignKind) => {
-    withVisualSelection((ed, range) => {
-      const blocks = collectSelectedBlocks(ed, range)
-      for (const blk of blocks) {
-        blk.removeAttribute('align')
-        blk.style.textAlign = align
-      }
-      if (blocks.length === 1 && isEmptyBlockNode(blocks[0])) {
-        placeCaretInsideBlock(blocks[0], true)
-      }
-    })
+    withVisualSelection((ed, range) => applyBlockAlign(ed, range, align))
   }
 
   const applyBlockTag = (tag: BlockTag) => {
@@ -818,20 +869,7 @@ function RichEditorSurface({
   }
 
   const insertEmptyLine = () => {
-    withVisualSelection((ed, range) => {
-      if (ed.childNodes.length === 0 || (ed.children.length === 1 && isEmptyBlockNode(ed.children[0]) && !ed.children[0].getAttribute('style'))) {
-        ed.innerHTML = '<p><br></p><p><br></p>'
-        const second = ed.children[1] as HTMLElement
-        placeCaretInsideBlock(second, true)
-        return
-      }
-      const blk = ensureCaretInBlock(ed, range)
-      const topBlk = findTopBlockChild(ed, blk) ?? blk
-      const blank = document.createElement('p')
-      blank.innerHTML = '<br>'
-      topBlk.after(blank)
-      placeCaretInsideBlock(blank, true)
-    })
+    withVisualSelection((ed, range) => insertBlankLine(ed, range))
   }
 
   const insertCodeBlock = (lang = '', body = '代码内容') => {
@@ -1159,259 +1197,37 @@ function RichEditorSurface({
     })
   }
 
-  const btnCls = compact ? 'h-6 px-1.5 text-footnote' : 'h-7 px-2 text-footnote'
-  const activeBtnCls = 'bg-accent/15 text-accent'
-  const isSourceHtml = fmt === 'html'
-
-  const renderToolbar = () => {
-    if (mode === 'source') {
-      return (
-        <div className="flex flex-wrap items-center gap-0.5 rounded-md border border-separator/70 bg-fill/40 p-1">
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="一级标题"
-            onClick={() => handleSourceInsert(isSourceHtml ? '<h1>' : '# ', isSourceHtml ? '</h1>' : undefined)}>
-            <Heading1 className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="二级标题"
-            onClick={() => handleSourceInsert(isSourceHtml ? '<h2>' : '## ', isSourceHtml ? '</h2>' : undefined)}>
-            <Heading2 className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="三级标题"
-            onClick={() => handleSourceInsert(isSourceHtml ? '<h3>' : '### ', isSourceHtml ? '</h3>' : undefined)}>
-            <Heading3 className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="加粗"
-            onClick={() => handleSourceInsert(isSourceHtml ? '<strong>' : '**', isSourceHtml ? '</strong>' : '**')}>
-            <Bold className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="斜体"
-            onClick={() => handleSourceInsert(isSourceHtml ? '<em>' : '*', isSourceHtml ? '</em>' : '*')}>
-            <Italic className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="下划线"
-            onClick={() => handleSourceInsert('<u>', '</u>')}>
-            <Underline className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="删除线"
-            onClick={() => handleSourceInsert(isSourceHtml ? '<s>' : '~~', isSourceHtml ? '</s>' : '~~')}>
-            <Strikethrough className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="插入空行"
-            onClick={() => handleSourceInsert(isSourceHtml ? '\n<p><br></p>\n' : '\n\n')}>
-            <CornerDownLeft className="size-3.5" />
-            {!compact && <span>插入空行</span>}
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="无序列表"
-            onClick={() => handleSourceInsert(isSourceHtml ? '\n<ul>\n  <li>项目一</li>\n  <li>项目二</li>\n</ul>\n' : '\n- 项目一\n- 项目二\n')}>
-            <List className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="有序列表"
-            onClick={() => handleSourceInsert(isSourceHtml ? '\n<ol>\n  <li>第一项</li>\n  <li>第二项</li>\n</ol>\n' : '\n1. 第一项\n2. 第二项\n')}>
-            <ListOrdered className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="引用"
-            onClick={() => handleSourceInsert(isSourceHtml ? '\n<blockquote><p>引用内容</p></blockquote>\n' : '\n> 引用内容\n')}>
-            <Quote className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="代码块"
-            onClick={() => handleSourceInsert(isSourceHtml ? '\n<pre><code>' : '\n```\n', isSourceHtml ? '</code></pre>\n' : '\n```\n')}>
-            <Code className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="插入表格"
-            onClick={() => handleSourceInsert(
-              isSourceHtml
-                ? '\n<table><thead><tr><th>列1</th><th>列2</th></tr></thead><tbody><tr><td>数据1</td><td>数据2</td></tr></tbody></table>\n'
-                : '\n| 列1 | 列2 |\n| --- | --- |\n| 数据1 | 数据2 |\n',
-            )}>
-            <Table className="size-3.5" />
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" size="sm" variant="plain" className={btnCls} title="插入 LaTeX 公式">
-                <Sigma className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {FORMULA_PRESETS.map((p) => (
-                <DropdownMenuItem key={p.label} onSelect={() => handleSourceInsert(p.block ? `\n${p.md}\n` : p.md)}>
-                  {p.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" size="sm" variant="plain" className={btnCls} title="插入图表">
-                <BarChart3 className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {CHART_PRESETS.map((p) => (
-                <DropdownMenuItem
-                  key={p.label}
-                  onSelect={() => {
-                    const json = JSON.stringify(p.spec, null, 2)
-                    const snippet = isSourceHtml
-                      ? `\n<pre><code class="language-chart">\n${json}\n</code></pre>\n`
-                      : `\n\`\`\`chart\n${json}\n\`\`\`\n`
-                    handleSourceInsert(snippet)
-                  }}
-                >
-                  {p.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button type="button" size="sm" variant="plain" className={btnCls} title="插入分页符"
-            onClick={() => handleSourceInsert(isSourceHtml ? '\n<div style="page-break-after: always" data-pagebreak="true"></div>\n' : '\n===\n')}>
-            <SeparatorHorizontal className="size-3.5" />
-          </Button>
-        </div>
-      )
-    }
-
-    const keepFocus = (e: React.MouseEvent) => e.preventDefault()
-
-    return (
-      <div className="flex flex-wrap items-center gap-0.5 rounded-md border border-separator/70 bg-fill/40 p-1">
-        {/* Paragraph & headings */}
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.block === 'p' && activeBtnCls)} title="正文"
-          aria-pressed={active.block === 'p'} onMouseDown={keepFocus} onClick={() => applyBlockTag('p')}>
-          <Pilcrow className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.block === 'h1' && activeBtnCls)} title="一级标题"
-          aria-pressed={active.block === 'h1'} onMouseDown={keepFocus} onClick={() => applyBlockTag('h1')}>
-          <Heading1 className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.block === 'h2' && activeBtnCls)} title="二级标题"
-          aria-pressed={active.block === 'h2'} onMouseDown={keepFocus} onClick={() => applyBlockTag('h2')}>
-          <Heading2 className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.block === 'h3' && activeBtnCls)} title="三级标题"
-          aria-pressed={active.block === 'h3'} onMouseDown={keepFocus} onClick={() => applyBlockTag('h3')}>
-          <Heading3 className="size-3.5" />
-        </Button>
-
-        <span className="mx-0.5 h-4 w-px bg-separator/60" aria-hidden />
-
-        {/* Inline formatting */}
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.bold && activeBtnCls)} title="加粗"
-          aria-pressed={active.bold} onMouseDown={keepFocus} onClick={() => applyInlineCommand('bold')}>
-          <Bold className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.italic && activeBtnCls)} title="斜体"
-          aria-pressed={active.italic} onMouseDown={keepFocus} onClick={() => applyInlineCommand('italic')}>
-          <Italic className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.underline && activeBtnCls)} title="下划线"
-          aria-pressed={active.underline} onMouseDown={keepFocus} onClick={() => applyInlineCommand('underline')}>
-          <Underline className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.strike && activeBtnCls)} title="删除线"
-          aria-pressed={active.strike} onMouseDown={keepFocus} onClick={() => applyInlineCommand('strikeThrough')}>
-          <Strikethrough className="size-3.5" />
-        </Button>
-
-        <span className="mx-0.5 h-4 w-px bg-separator/60" aria-hidden />
-
-        {/* Line / paragraph alignment */}
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.align === 'left' && activeBtnCls)} title="左对齐"
-          aria-pressed={active.align === 'left'} onMouseDown={keepFocus} onClick={() => applyAlignment('left')}>
-          <AlignLeft className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.align === 'center' && activeBtnCls)} title="居中对齐"
-          aria-pressed={active.align === 'center'} onMouseDown={keepFocus} onClick={() => applyAlignment('center')}>
-          <AlignCenter className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.align === 'right' && activeBtnCls)} title="右对齐"
-          aria-pressed={active.align === 'right'} onMouseDown={keepFocus} onClick={() => applyAlignment('right')}>
-          <AlignRight className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.align === 'justify' && activeBtnCls)} title="两端对齐"
-          aria-pressed={active.align === 'justify'} onMouseDown={keepFocus} onClick={() => applyAlignment('justify')}>
-          <AlignJustify className="size-3.5" />
-        </Button>
-
-        <span className="mx-0.5 h-4 w-px bg-separator/60" aria-hidden />
-
-        {/* Blank line */}
-        <Button type="button" size="sm" variant="plain" className={btnCls} title="插入空行"
-          onMouseDown={keepFocus} onClick={insertEmptyLine}>
-          <CornerDownLeft className="size-3.5" />
-          <span>{compact ? '空行' : '插入空行'}</span>
-        </Button>
-
-        {/* Lists & blocks */}
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.ul && activeBtnCls)} title="无序列表"
-          aria-pressed={active.ul} onMouseDown={keepFocus} onClick={() => applyList(false)}>
-          <List className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.ol && activeBtnCls)} title="有序列表"
-          aria-pressed={active.ol} onMouseDown={keepFocus} onClick={() => applyList(true)}>
-          <ListOrdered className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.blockquote && activeBtnCls)} title="引用"
-          aria-pressed={active.blockquote} onMouseDown={keepFocus} onClick={toggleQuote}>
-          <Quote className="size-3.5" />
-        </Button>
-        <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.pre && activeBtnCls)} title="代码块"
-          aria-pressed={active.pre} onMouseDown={keepFocus} onClick={() => insertCodeBlock()}>
-          <Code className="size-3.5" />
-        </Button>
-
-        <span className="mx-0.5 h-4 w-px bg-separator/60" aria-hidden />
-
-        {/* Table, formula, chart, pagebreak */}
-        <Button type="button" size="sm" variant="plain" className={btnCls} title="插入表格"
-          onMouseDown={keepFocus} onClick={insertTable}>
-          <Table className="size-3.5" />
-        </Button>
-
-        <DropdownMenu onOpenChange={(open) => { if (open) saveSelection() }}>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" size="sm" variant="plain" className={btnCls} title="插入 LaTeX 公式" onPointerDown={saveSelection}>
-              <Sigma className="size-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {FORMULA_PRESETS.map((p) => (
-              <DropdownMenuItem key={p.label} onSelect={() => insertFormula(p)}>
-                {p.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <DropdownMenu onOpenChange={(open) => { if (open) saveSelection() }}>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" size="sm" variant="plain" className={btnCls} title="插入图表" onPointerDown={saveSelection}>
-              <BarChart3 className="size-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {CHART_PRESETS.map((p) => (
-              <DropdownMenuItem
-                key={p.label}
-                onSelect={() => insertCodeBlock('chart', JSON.stringify(p.spec, null, 2))}
-              >
-                {p.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <Button type="button" size="sm" variant="plain" className={btnCls} title="插入分页符"
-          onMouseDown={keepFocus} onClick={insertPageBreak}>
-          <SeparatorHorizontal className="size-3.5" />
-        </Button>
-      </div>
-    )
-  }
-
   const isEmptyVisual = externalVisualHtml.length === 0
 
   return (
     <div className={cn('flex flex-col gap-1.5', !compact && 'min-h-0 flex-1')}>
-      {renderToolbar()}
+      <RichFormatToolbar
+        mode={mode}
+        fmt={fmt}
+        compact={compact}
+        active={active}
+        onSourceInsert={handleSourceInsert}
+        onBlockTag={applyBlockTag}
+        onInlineCommand={applyInlineCommand}
+        onAlign={applyAlignment}
+        onInsertEmptyLine={insertEmptyLine}
+        onList={applyList}
+        onQuote={toggleQuote}
+        onCodeBlock={insertCodeBlock}
+        onTable={insertTable}
+        onFormula={insertFormula}
+        onPageBreak={insertPageBreak}
+        onSaveSelection={saveSelection}
+        showModeToggle={showModeToggle}
+        onModeChange={onModeChange}
+        onFormatChange={onFormatChange}
+        onImportClick={onImportClick}
+        onDone={onDone}
+        doneLabel={doneLabel}
+        className={toolbarClassName}
+        style={toolbarStyle}
+        onPointerDown={onToolbarPointerDown}
+      />
 
       {mode === 'visual' ? (
         <div
@@ -1421,10 +1237,12 @@ function RichEditorSurface({
               placeCaretAtEnd(editorRef.current)
             }
           }}
+          style={wrapperStyle}
           className={cn(
             'cursor-text overflow-y-auto rounded-sm bg-bg-elevated shadow-[inset_0_0_0_0.5px_rgb(var(--separator)/var(--separator-a)),0_0.5px_1px_rgb(0_0_0/0.04)]',
             'focus-within:shadow-[inset_0_0_0_1px_rgb(var(--accent)),0_0_0_3px_rgb(var(--accent)/0.3)]',
             compact ? 'min-h-[200px] max-h-[360px] px-2.5 py-2' : 'min-h-[360px] flex-1 px-4 py-3',
+            wrapperClassName,
           )}
         >
           <div
@@ -1436,7 +1254,8 @@ function RichEditorSurface({
             suppressContentEditableWarning
             data-empty={isEmptyVisual ? 'true' : undefined}
             data-placeholder="像 Word 一样直接输入或粘贴 Word / Markdown / 网页内容，支持选中行居中、插空行、表格、公式与图表…"
-            className={cn('rich-wysiwyg min-h-full')}
+            style={editorStyle}
+            className={cn('rich-wysiwyg min-h-full', editorClassName)}
             onFocus={() => {
               try {
                 document.execCommand('defaultParagraphSeparator', false, 'p')
@@ -1481,7 +1300,335 @@ function RichEditorSurface({
   )
 }
 
-function RichEditorDialog({
+export interface RichFormatToolbarProps {
+  mode: EditorMode
+  fmt: FlowFormat
+  compact?: boolean
+  active: ActiveFormatState
+  onSourceInsert: (snippet: string, wrapEnd?: string) => void
+  onBlockTag: (tag: BlockTag) => void
+  onInlineCommand: (cmd: 'bold' | 'italic' | 'underline' | 'strikeThrough') => void
+  onAlign: (align: AlignKind) => void
+  onInsertEmptyLine: () => void
+  onList: (ordered: boolean) => void
+  onQuote: () => void
+  onCodeBlock: (lang?: string, body?: string) => void
+  onTable: () => void
+  onFormula: (preset: (typeof FORMULA_PRESETS)[number]) => void
+  onPageBreak: () => void
+  onSaveSelection: () => void
+  showModeToggle?: boolean
+  onModeChange?: (m: EditorMode) => void
+  onFormatChange?: (f: FlowFormat) => void
+  onImportClick?: () => void
+  onDone?: () => void
+  doneLabel?: string
+  className?: string
+  style?: React.CSSProperties
+  onPointerDown?: (e: React.PointerEvent) => void
+}
+
+export function RichFormatToolbar({
+  mode,
+  fmt,
+  compact = false,
+  active,
+  onSourceInsert,
+  onBlockTag,
+  onInlineCommand,
+  onAlign,
+  onInsertEmptyLine,
+  onList,
+  onQuote,
+  onCodeBlock,
+  onTable,
+  onFormula,
+  onPageBreak,
+  onSaveSelection,
+  showModeToggle = false,
+  onModeChange,
+  onFormatChange,
+  onImportClick,
+  onDone,
+  doneLabel = '完成',
+  className,
+  style,
+  onPointerDown,
+}: RichFormatToolbarProps) {
+  const btnCls = compact ? 'h-6 px-1.5 text-footnote' : 'h-7 px-2 text-footnote'
+  const activeBtnCls = 'bg-accent/15 text-accent'
+  const isSourceHtml = fmt === 'html'
+  const keepFocus = (e: React.MouseEvent) => e.preventDefault()
+
+  const extraTail = (showModeToggle || onImportClick || onDone) ? (
+    <>
+      <span className="mx-0.5 h-4 w-px bg-separator/60" aria-hidden />
+      {onImportClick ? (
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="导入 MD / Word / HTML / TXT" onClick={onImportClick}>
+          <FileUp className="size-3.5" />
+          {!compact && <span>导入</span>}
+        </Button>
+      ) : null}
+      {showModeToggle && onModeChange ? (
+        <Segmented value={mode} onValueChange={onModeChange} options={MODE_OPTIONS} size="sm" aria-label="画布编辑模式" />
+      ) : null}
+      {mode === 'source' && onFormatChange ? (
+        <Segmented value={fmt} onValueChange={(v) => onFormatChange(v as FlowFormat)} options={FORMAT_OPTIONS} size="sm" aria-label="画布源码格式" />
+      ) : null}
+      {onDone ? (
+        <Button type="button" size="sm" variant="filled" className="h-6 px-2 text-footnote" icon={<Check className="size-3.5" />} onClick={onDone}>
+          {doneLabel}
+        </Button>
+      ) : null}
+    </>
+  ) : null
+
+  if (mode === 'source') {
+    return (
+      <div
+        className={cn('flex flex-wrap items-center gap-0.5 rounded-md border border-separator/70 bg-fill/40 p-1', className)}
+        style={style}
+        onPointerDown={onPointerDown}
+      >
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="一级标题"
+          onClick={() => onSourceInsert(isSourceHtml ? '<h1>' : '# ', isSourceHtml ? '</h1>' : undefined)}>
+          <Heading1 className="size-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="二级标题"
+          onClick={() => onSourceInsert(isSourceHtml ? '<h2>' : '## ', isSourceHtml ? '</h2>' : undefined)}>
+          <Heading2 className="size-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="三级标题"
+          onClick={() => onSourceInsert(isSourceHtml ? '<h3>' : '### ', isSourceHtml ? '</h3>' : undefined)}>
+          <Heading3 className="size-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="加粗"
+          onClick={() => onSourceInsert(isSourceHtml ? '<strong>' : '**', isSourceHtml ? '</strong>' : '**')}>
+          <Bold className="size-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="斜体"
+          onClick={() => onSourceInsert(isSourceHtml ? '<em>' : '*', isSourceHtml ? '</em>' : '*')}>
+          <Italic className="size-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="下划线"
+          onClick={() => onSourceInsert('<u>', '</u>')}>
+          <Underline className="size-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="删除线"
+          onClick={() => onSourceInsert(isSourceHtml ? '<s>' : '~~', isSourceHtml ? '</s>' : '~~')}>
+          <Strikethrough className="size-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="插入空行"
+          onClick={() => onSourceInsert(isSourceHtml ? '\n<p><br></p>\n' : '\n\n')}>
+          <CornerDownLeft className="size-3.5" />
+          {!compact && <span>插入空行</span>}
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="无序列表"
+          onClick={() => onSourceInsert(isSourceHtml ? '\n<ul>\n  <li>项目一</li>\n  <li>项目二</li>\n</ul>\n' : '\n- 项目一\n- 项目二\n')}>
+          <List className="size-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="有序列表"
+          onClick={() => onSourceInsert(isSourceHtml ? '\n<ol>\n  <li>第一项</li>\n  <li>第二项</li>\n</ol>\n' : '\n1. 第一项\n2. 第二项\n')}>
+          <ListOrdered className="size-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="引用"
+          onClick={() => onSourceInsert(isSourceHtml ? '\n<blockquote><p>引用内容</p></blockquote>\n' : '\n> 引用内容\n')}>
+          <Quote className="size-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="代码块"
+          onClick={() => onSourceInsert(isSourceHtml ? '\n<pre><code>' : '\n```\n', isSourceHtml ? '</code></pre>\n' : '\n```\n')}>
+          <Code className="size-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="插入表格"
+          onClick={() => onSourceInsert(
+            isSourceHtml
+              ? '\n<table><thead><tr><th>列1</th><th>列2</th></tr></thead><tbody><tr><td>数据1</td><td>数据2</td></tr></tbody></table>\n'
+              : '\n| 列1 | 列2 |\n| --- | --- |\n| 数据1 | 数据2 |\n',
+          )}>
+          <Table className="size-3.5" />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" size="sm" variant="plain" className={btnCls} title="插入 LaTeX 公式">
+              <Sigma className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {FORMULA_PRESETS.map((p) => (
+              <DropdownMenuItem key={p.label} onSelect={() => onSourceInsert(p.block ? `\n${p.md}\n` : p.md)}>
+                {p.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" size="sm" variant="plain" className={btnCls} title="插入图表">
+              <BarChart3 className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {CHART_PRESETS.map((p) => (
+              <DropdownMenuItem
+                key={p.label}
+                onSelect={() => {
+                  const json = JSON.stringify(p.spec, null, 2)
+                  const snippet = isSourceHtml
+                    ? `\n<pre><code class="language-chart">\n${json}\n</code></pre>\n`
+                    : `\n\`\`\`chart\n${json}\n\`\`\`\n`
+                  onSourceInsert(snippet)
+                }}
+              >
+                {p.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button type="button" size="sm" variant="plain" className={btnCls} title="插入分页符"
+          onClick={() => onSourceInsert(isSourceHtml ? '\n<div style="page-break-after: always" data-pagebreak="true"></div>\n' : '\n===\n')}>
+          <SeparatorHorizontal className="size-3.5" />
+        </Button>
+        {extraTail}
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={cn('flex flex-wrap items-center gap-0.5 rounded-md border border-separator/70 bg-fill/40 p-1', className)}
+      style={style}
+      onPointerDown={onPointerDown}
+    >
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.block === 'p' && activeBtnCls)} title="正文"
+        aria-pressed={active.block === 'p'} onMouseDown={keepFocus} onClick={() => onBlockTag('p')}>
+        <Pilcrow className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.block === 'h1' && activeBtnCls)} title="一级标题"
+        aria-pressed={active.block === 'h1'} onMouseDown={keepFocus} onClick={() => onBlockTag('h1')}>
+        <Heading1 className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.block === 'h2' && activeBtnCls)} title="二级标题"
+        aria-pressed={active.block === 'h2'} onMouseDown={keepFocus} onClick={() => onBlockTag('h2')}>
+        <Heading2 className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.block === 'h3' && activeBtnCls)} title="三级标题"
+        aria-pressed={active.block === 'h3'} onMouseDown={keepFocus} onClick={() => onBlockTag('h3')}>
+        <Heading3 className="size-3.5" />
+      </Button>
+
+      <span className="mx-0.5 h-4 w-px bg-separator/60" aria-hidden />
+
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.bold && activeBtnCls)} title="加粗"
+        aria-pressed={active.bold} onMouseDown={keepFocus} onClick={() => onInlineCommand('bold')}>
+        <Bold className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.italic && activeBtnCls)} title="斜体"
+        aria-pressed={active.italic} onMouseDown={keepFocus} onClick={() => onInlineCommand('italic')}>
+        <Italic className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.underline && activeBtnCls)} title="下划线"
+        aria-pressed={active.underline} onMouseDown={keepFocus} onClick={() => onInlineCommand('underline')}>
+        <Underline className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.strike && activeBtnCls)} title="删除线"
+        aria-pressed={active.strike} onMouseDown={keepFocus} onClick={() => onInlineCommand('strikeThrough')}>
+        <Strikethrough className="size-3.5" />
+      </Button>
+
+      <span className="mx-0.5 h-4 w-px bg-separator/60" aria-hidden />
+
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.align === 'left' && activeBtnCls)} title="左对齐"
+        aria-pressed={active.align === 'left'} onMouseDown={keepFocus} onClick={() => onAlign('left')}>
+        <AlignLeft className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.align === 'center' && activeBtnCls)} title="居中对齐"
+        aria-pressed={active.align === 'center'} onMouseDown={keepFocus} onClick={() => onAlign('center')}>
+        <AlignCenter className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.align === 'right' && activeBtnCls)} title="右对齐"
+        aria-pressed={active.align === 'right'} onMouseDown={keepFocus} onClick={() => onAlign('right')}>
+        <AlignRight className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.align === 'justify' && activeBtnCls)} title="两端对齐"
+        aria-pressed={active.align === 'justify'} onMouseDown={keepFocus} onClick={() => onAlign('justify')}>
+        <AlignJustify className="size-3.5" />
+      </Button>
+
+      <span className="mx-0.5 h-4 w-px bg-separator/60" aria-hidden />
+
+      <Button type="button" size="sm" variant="plain" className={btnCls} title="插入空行"
+        onMouseDown={keepFocus} onClick={onInsertEmptyLine}>
+        <CornerDownLeft className="size-3.5" />
+        <span>{compact ? '空行' : '插入空行'}</span>
+      </Button>
+
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.ul && activeBtnCls)} title="无序列表"
+        aria-pressed={active.ul} onMouseDown={keepFocus} onClick={() => onList(false)}>
+        <List className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.ol && activeBtnCls)} title="有序列表"
+        aria-pressed={active.ol} onMouseDown={keepFocus} onClick={() => onList(true)}>
+        <ListOrdered className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.blockquote && activeBtnCls)} title="引用"
+        aria-pressed={active.blockquote} onMouseDown={keepFocus} onClick={onQuote}>
+        <Quote className="size-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="plain" className={cn(btnCls, active.pre && activeBtnCls)} title="代码块"
+        aria-pressed={active.pre} onMouseDown={keepFocus} onClick={() => onCodeBlock()}>
+        <Code className="size-3.5" />
+      </Button>
+
+      <span className="mx-0.5 h-4 w-px bg-separator/60" aria-hidden />
+
+      <Button type="button" size="sm" variant="plain" className={btnCls} title="插入表格"
+        onMouseDown={keepFocus} onClick={onTable}>
+        <Table className="size-3.5" />
+      </Button>
+
+      <DropdownMenu onOpenChange={(open) => { if (open) onSaveSelection() }}>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" size="sm" variant="plain" className={btnCls} title="插入 LaTeX 公式" onPointerDown={onSaveSelection}>
+            <Sigma className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {FORMULA_PRESETS.map((p) => (
+            <DropdownMenuItem key={p.label} onSelect={() => onFormula(p)}>
+              {p.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <DropdownMenu onOpenChange={(open) => { if (open) onSaveSelection() }}>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" size="sm" variant="plain" className={btnCls} title="插入图表" onPointerDown={onSaveSelection}>
+            <BarChart3 className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {CHART_PRESETS.map((p) => (
+            <DropdownMenuItem
+              key={p.label}
+              onSelect={() => onCodeBlock('chart', JSON.stringify(p.spec, null, 2))}
+            >
+              {p.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Button type="button" size="sm" variant="plain" className={btnCls} title="插入分页符"
+        onMouseDown={keepFocus} onClick={onPageBreak}>
+        <SeparatorHorizontal className="size-3.5" />
+      </Button>
+      {extraTail}
+    </div>
+  )
+}
+
+export function RichEditorDialog({
   open,
   onOpenChange,
   elId,
@@ -1543,7 +1690,7 @@ function RichEditorDialog({
           </div>
         )}
 
-        <RichEditorSurface
+        <WysiwygSurface
           elId={elId}
           mode={mode}
           fmt={fmt}
