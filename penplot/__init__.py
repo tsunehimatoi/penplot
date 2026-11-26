@@ -7,7 +7,7 @@ text layout, G-code generation, image-to-path (edge / skeleton / halftone),
 preview, and serial machine control on Linux.
 """
 
-__version__ = '0.5.0'
+__version__ = '0.5.1'
 
 from .settings import (Settings, GrblSettings, MarlinSettings, EbbSettings,
                        KatSettings, AdvancedSettings, AxesSettings, MachineConfig)

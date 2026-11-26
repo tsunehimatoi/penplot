@@ -1,6 +1,6 @@
 {
   "name": "penplot-desktop",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Penplot desktop workbench (Electron + Python + MCP)",
   "author": "PenPlot contributors",
   "homepage": "https://github.com/tsunehimatoi/penplot",
