@@ -3,6 +3,7 @@ import json
 import multiprocessing as mp
 import os
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -101,7 +102,11 @@ def test_killed_owner_leaves_no_page_workers():
                 assert _winapi.WaitForSingleObject(handle, 5000) == 0
         else:
             from multiprocessing.connection import wait
-            assert len(wait(handles, timeout=5)) == len(handles)
+            deadline = time.monotonic() + 5
+            for pid, handle in zip(pids, handles):
+                assert wait([handle], timeout=max(0, deadline - time.monotonic())), (
+                    f'Page worker {pid} did not exit after its owner terminated'
+                )
     finally:
         if owner.is_alive():
             owner.terminate()
