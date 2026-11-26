@@ -116,16 +116,16 @@ def test_element_cache_render_identical(tmp_path, monkeypatch):
     ]}]}
     papers = [{'width_mm': 210, 'height_mm': 297}]
     mc = MachineConfig()
-    cd = str(tmp_path / 'el')
+    cd = tmp_path / 'el'
 
     def render(move=0):
         d = {'pages': [{'elements': [dict(e, transform=dict(e['transform'], x=e['transform']['x'] + move))
                                      for e in doc['pages'][0]['elements']]}]}
-        res = compose.Resolver(files={'img': img, 'svg': svg}, cache_dir=cd)
+        res = compose.Resolver(files={'img': img, 'svg': svg}, cache_dir=str(cd))
         return compose.render_document(d, papers, res, mc, origin=None)
     first = render()
-    n = len(os.listdir(cd))
-    assert n == 3                                   # image trace + svg + text
+    cache_files = set(cd.glob('*.bin'))
+    assert len(cache_files) == 3                     # image trace + svg + text
     monkeypatch.setattr(im, 'load_gray', lambda *a, **k: (_ for _ in ()).throw(AssertionError('re-traced')))
     monkeypatch.setattr(compose, 'vector_paths', lambda *a, **k: (_ for _ in ()).throw(AssertionError('re-parsed')))
     monkeypatch.setattr(compose, 'text_box_paths', lambda *a, **k: (_ for _ in ()).throw(AssertionError('re-laid')))
@@ -133,7 +133,7 @@ def test_element_cache_render_identical(tmp_path, monkeypatch):
     assert again[0].gcode == first[0].gcode         # hit == miss, byte for byte
     assert again[0].warnings == first[0].warnings
     moved = render(move=5)                          # moving never re-traces
-    assert len(os.listdir(cd)) == n
+    assert set(cd.glob('*.bin')) == cache_files
     assert abs(moved[0].bbox[0] - first[0].bbox[0] - 5) < 1e-3
 
 
